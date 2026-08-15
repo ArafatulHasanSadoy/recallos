@@ -203,6 +203,17 @@ class OcrBlocks extends Table {
   /// therefore available in the tap-to-assign picker.
   TextColumn get assignedFieldKey => text().nullable()();
 
+  /// Which field row owns this block.
+  ///
+  /// [assignedFieldKey] cannot answer this on its own: a card with two phone
+  /// numbers has two fields sharing one key, so re-assigning one of them could
+  /// not tell which blocks to release. Without that, a block the user moved
+  /// away from a field would stay marked as used and its text would vanish
+  /// from the picker for good.
+  IntColumn get fieldId => integer()
+      .nullable()
+      .references(CardFields, #id, onDelete: KeyAction.setNull)();
+
   IntColumn get orderIndex => integer().withDefault(const Constant(0))();
 }
 

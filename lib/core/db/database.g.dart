@@ -4854,6 +4854,20 @@ class $OcrBlocksTable extends OcrBlocks
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _fieldIdMeta = const VerificationMeta(
+    'fieldId',
+  );
+  @override
+  late final GeneratedColumn<int> fieldId = GeneratedColumn<int>(
+    'field_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES card_fields (id) ON DELETE SET NULL',
+    ),
+  );
   static const VerificationMeta _orderIndexMeta = const VerificationMeta(
     'orderIndex',
   );
@@ -4876,6 +4890,7 @@ class $OcrBlocksTable extends OcrBlocks
     script,
     engine,
     assignedFieldKey,
+    fieldId,
     orderIndex,
   ];
   @override
@@ -4948,6 +4963,12 @@ class $OcrBlocksTable extends OcrBlocks
         ),
       );
     }
+    if (data.containsKey('field_id')) {
+      context.handle(
+        _fieldIdMeta,
+        fieldId.isAcceptableOrUnknown(data['field_id']!, _fieldIdMeta),
+      );
+    }
     if (data.containsKey('order_index')) {
       context.handle(
         _orderIndexMeta,
@@ -4995,6 +5016,10 @@ class $OcrBlocksTable extends OcrBlocks
         DriftSqlType.string,
         data['${effectivePrefix}assigned_field_key'],
       ),
+      fieldId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}field_id'],
+      ),
       orderIndex: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}order_index'],
@@ -5029,6 +5054,15 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
   /// Which field this block was assigned to, if any. Null means unassigned and
   /// therefore available in the tap-to-assign picker.
   final String? assignedFieldKey;
+
+  /// Which field row owns this block.
+  ///
+  /// [assignedFieldKey] cannot answer this on its own: a card with two phone
+  /// numbers has two fields sharing one key, so re-assigning one of them could
+  /// not tell which blocks to release. Without that, a block the user moved
+  /// away from a field would stay marked as used and its text would vanish
+  /// from the picker for good.
+  final int? fieldId;
   final int orderIndex;
   const OcrBlockRow({
     required this.id,
@@ -5039,6 +5073,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     required this.script,
     this.engine,
     this.assignedFieldKey,
+    this.fieldId,
     required this.orderIndex,
   });
   @override
@@ -5055,6 +5090,9 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     }
     if (!nullToAbsent || assignedFieldKey != null) {
       map['assigned_field_key'] = Variable<String>(assignedFieldKey);
+    }
+    if (!nullToAbsent || fieldId != null) {
+      map['field_id'] = Variable<int>(fieldId);
     }
     map['order_index'] = Variable<int>(orderIndex);
     return map;
@@ -5074,6 +5112,9 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       assignedFieldKey: assignedFieldKey == null && nullToAbsent
           ? const Value.absent()
           : Value(assignedFieldKey),
+      fieldId: fieldId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fieldId),
       orderIndex: Value(orderIndex),
     );
   }
@@ -5092,6 +5133,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       script: serializer.fromJson<String>(json['script']),
       engine: serializer.fromJson<String?>(json['engine']),
       assignedFieldKey: serializer.fromJson<String?>(json['assignedFieldKey']),
+      fieldId: serializer.fromJson<int?>(json['fieldId']),
       orderIndex: serializer.fromJson<int>(json['orderIndex']),
     );
   }
@@ -5107,6 +5149,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       'script': serializer.toJson<String>(script),
       'engine': serializer.toJson<String?>(engine),
       'assignedFieldKey': serializer.toJson<String?>(assignedFieldKey),
+      'fieldId': serializer.toJson<int?>(fieldId),
       'orderIndex': serializer.toJson<int>(orderIndex),
     };
   }
@@ -5120,6 +5163,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     String? script,
     Value<String?> engine = const Value.absent(),
     Value<String?> assignedFieldKey = const Value.absent(),
+    Value<int?> fieldId = const Value.absent(),
     int? orderIndex,
   }) => OcrBlockRow(
     id: id ?? this.id,
@@ -5132,6 +5176,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     assignedFieldKey: assignedFieldKey.present
         ? assignedFieldKey.value
         : this.assignedFieldKey,
+    fieldId: fieldId.present ? fieldId.value : this.fieldId,
     orderIndex: orderIndex ?? this.orderIndex,
   );
   OcrBlockRow copyWithCompanion(OcrBlocksCompanion data) {
@@ -5148,6 +5193,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       assignedFieldKey: data.assignedFieldKey.present
           ? data.assignedFieldKey.value
           : this.assignedFieldKey,
+      fieldId: data.fieldId.present ? data.fieldId.value : this.fieldId,
       orderIndex: data.orderIndex.present
           ? data.orderIndex.value
           : this.orderIndex,
@@ -5165,6 +5211,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
           ..write('script: $script, ')
           ..write('engine: $engine, ')
           ..write('assignedFieldKey: $assignedFieldKey, ')
+          ..write('fieldId: $fieldId, ')
           ..write('orderIndex: $orderIndex')
           ..write(')'))
         .toString();
@@ -5180,6 +5227,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     script,
     engine,
     assignedFieldKey,
+    fieldId,
     orderIndex,
   );
   @override
@@ -5194,6 +5242,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
           other.script == this.script &&
           other.engine == this.engine &&
           other.assignedFieldKey == this.assignedFieldKey &&
+          other.fieldId == this.fieldId &&
           other.orderIndex == this.orderIndex);
 }
 
@@ -5206,6 +5255,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
   final Value<String> script;
   final Value<String?> engine;
   final Value<String?> assignedFieldKey;
+  final Value<int?> fieldId;
   final Value<int> orderIndex;
   const OcrBlocksCompanion({
     this.id = const Value.absent(),
@@ -5216,6 +5266,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     this.script = const Value.absent(),
     this.engine = const Value.absent(),
     this.assignedFieldKey = const Value.absent(),
+    this.fieldId = const Value.absent(),
     this.orderIndex = const Value.absent(),
   });
   OcrBlocksCompanion.insert({
@@ -5227,6 +5278,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     required String script,
     this.engine = const Value.absent(),
     this.assignedFieldKey = const Value.absent(),
+    this.fieldId = const Value.absent(),
     this.orderIndex = const Value.absent(),
   }) : cardId = Value(cardId),
        blockText = Value(blockText),
@@ -5242,6 +5294,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     Expression<String>? script,
     Expression<String>? engine,
     Expression<String>? assignedFieldKey,
+    Expression<int>? fieldId,
     Expression<int>? orderIndex,
   }) {
     return RawValuesInsertable({
@@ -5253,6 +5306,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
       if (script != null) 'script': script,
       if (engine != null) 'engine': engine,
       if (assignedFieldKey != null) 'assigned_field_key': assignedFieldKey,
+      if (fieldId != null) 'field_id': fieldId,
       if (orderIndex != null) 'order_index': orderIndex,
     });
   }
@@ -5266,6 +5320,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     Value<String>? script,
     Value<String?>? engine,
     Value<String?>? assignedFieldKey,
+    Value<int?>? fieldId,
     Value<int>? orderIndex,
   }) {
     return OcrBlocksCompanion(
@@ -5277,6 +5332,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
       script: script ?? this.script,
       engine: engine ?? this.engine,
       assignedFieldKey: assignedFieldKey ?? this.assignedFieldKey,
+      fieldId: fieldId ?? this.fieldId,
       orderIndex: orderIndex ?? this.orderIndex,
     );
   }
@@ -5308,6 +5364,9 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     if (assignedFieldKey.present) {
       map['assigned_field_key'] = Variable<String>(assignedFieldKey.value);
     }
+    if (fieldId.present) {
+      map['field_id'] = Variable<int>(fieldId.value);
+    }
     if (orderIndex.present) {
       map['order_index'] = Variable<int>(orderIndex.value);
     }
@@ -5325,6 +5384,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
           ..write('script: $script, ')
           ..write('engine: $engine, ')
           ..write('assignedFieldKey: $assignedFieldKey, ')
+          ..write('fieldId: $fieldId, ')
           ..write('orderIndex: $orderIndex')
           ..write(')'))
         .toString();
@@ -10948,6 +11008,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
+        'card_fields',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('ocr_blocks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
         'cards',
         limitUpdateKind: UpdateKind.delete,
       ),
@@ -14106,6 +14173,24 @@ final class $$CardFieldsTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
+
+  static MultiTypedResultKey<$OcrBlocksTable, List<OcrBlockRow>>
+  _ocrBlocksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.ocrBlocks,
+    aliasName: 'card_fields__id__ocr_blocks__field_id',
+  );
+
+  $$OcrBlocksTableProcessedTableManager get ocrBlocksRefs {
+    final manager = $$OcrBlocksTableTableManager(
+      $_db,
+      $_db.ocrBlocks,
+    ).filter((f) => f.fieldId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_ocrBlocksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$CardFieldsTableFilterComposer
@@ -14205,6 +14290,31 @@ class $$CardFieldsTableFilterComposer
           ),
     );
     return composer;
+  }
+
+  Expression<bool> ocrBlocksRefs(
+    Expression<bool> Function($$OcrBlocksTableFilterComposer f) f,
+  ) {
+    final $$OcrBlocksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.ocrBlocks,
+      getReferencedColumn: (t) => t.fieldId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OcrBlocksTableFilterComposer(
+            $db: $db,
+            $table: $db.ocrBlocks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
   }
 }
 
@@ -14386,6 +14496,31 @@ class $$CardFieldsTableAnnotationComposer
     );
     return composer;
   }
+
+  Expression<T> ocrBlocksRefs<T extends Object>(
+    Expression<T> Function($$OcrBlocksTableAnnotationComposer a) f,
+  ) {
+    final $$OcrBlocksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.ocrBlocks,
+      getReferencedColumn: (t) => t.fieldId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OcrBlocksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.ocrBlocks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CardFieldsTableTableManager
@@ -14401,7 +14536,7 @@ class $$CardFieldsTableTableManager
           $$CardFieldsTableUpdateCompanionBuilder,
           (CardField, $$CardFieldsTableReferences),
           CardField,
-          PrefetchHooks Function({bool cardId})
+          PrefetchHooks Function({bool cardId, bool ocrBlocksRefs})
         > {
   $$CardFieldsTableTableManager(_$AppDatabase db, $CardFieldsTable table)
     : super(
@@ -14486,10 +14621,10 @@ class $$CardFieldsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({cardId = false}) {
+          prefetchHooksCallback: ({cardId = false, ocrBlocksRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [],
+              explicitlyWatchedTables: [if (ocrBlocksRefs) db.ocrBlocks],
               addJoins:
                   <
                     T extends TableManagerState<
@@ -14523,7 +14658,27 @@ class $$CardFieldsTableTableManager
                     return state;
                   },
               getPrefetchedDataCallback: (items) async {
-                return [];
+                return [
+                  if (ocrBlocksRefs)
+                    await $_getPrefetchedData<
+                      CardField,
+                      $CardFieldsTable,
+                      OcrBlockRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$CardFieldsTableReferences
+                          ._ocrBlocksRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$CardFieldsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).ocrBlocksRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.fieldId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
             );
           },
@@ -14543,7 +14698,7 @@ typedef $$CardFieldsTableProcessedTableManager =
       $$CardFieldsTableUpdateCompanionBuilder,
       (CardField, $$CardFieldsTableReferences),
       CardField,
-      PrefetchHooks Function({bool cardId})
+      PrefetchHooks Function({bool cardId, bool ocrBlocksRefs})
     >;
 typedef $$ContactPointsTableCreateCompanionBuilder =
     ContactPointsCompanion Function({
@@ -15026,6 +15181,7 @@ typedef $$OcrBlocksTableCreateCompanionBuilder =
       required String script,
       Value<String?> engine,
       Value<String?> assignedFieldKey,
+      Value<int?> fieldId,
       Value<int> orderIndex,
     });
 typedef $$OcrBlocksTableUpdateCompanionBuilder =
@@ -15038,6 +15194,7 @@ typedef $$OcrBlocksTableUpdateCompanionBuilder =
       Value<String> script,
       Value<String?> engine,
       Value<String?> assignedFieldKey,
+      Value<int?> fieldId,
       Value<int> orderIndex,
     });
 
@@ -15056,6 +15213,23 @@ final class $$OcrBlocksTableReferences
       $_db.cards,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_cardIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $CardFieldsTable _fieldIdTable(_$AppDatabase db) =>
+      db.cardFields.createAlias('ocr_blocks__field_id__card_fields__id');
+
+  $$CardFieldsTableProcessedTableManager? get fieldId {
+    final $_column = $_itemColumn<int>('field_id');
+    if ($_column == null) return null;
+    final manager = $$CardFieldsTableTableManager(
+      $_db,
+      $_db.cardFields,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_fieldIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -15126,6 +15300,29 @@ class $$OcrBlocksTableFilterComposer
           }) => $$CardsTableFilterComposer(
             $db: $db,
             $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$CardFieldsTableFilterComposer get fieldId {
+    final $$CardFieldsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fieldId,
+      referencedTable: $db.cardFields,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardFieldsTableFilterComposer(
+            $db: $db,
+            $table: $db.cardFields,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -15207,6 +15404,29 @@ class $$OcrBlocksTableOrderingComposer
     );
     return composer;
   }
+
+  $$CardFieldsTableOrderingComposer get fieldId {
+    final $$CardFieldsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fieldId,
+      referencedTable: $db.cardFields,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardFieldsTableOrderingComposer(
+            $db: $db,
+            $table: $db.cardFields,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$OcrBlocksTableAnnotationComposer
@@ -15270,6 +15490,29 @@ class $$OcrBlocksTableAnnotationComposer
     );
     return composer;
   }
+
+  $$CardFieldsTableAnnotationComposer get fieldId {
+    final $$CardFieldsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fieldId,
+      referencedTable: $db.cardFields,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardFieldsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.cardFields,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$OcrBlocksTableTableManager
@@ -15285,7 +15528,7 @@ class $$OcrBlocksTableTableManager
           $$OcrBlocksTableUpdateCompanionBuilder,
           (OcrBlockRow, $$OcrBlocksTableReferences),
           OcrBlockRow,
-          PrefetchHooks Function({bool cardId})
+          PrefetchHooks Function({bool cardId, bool fieldId})
         > {
   $$OcrBlocksTableTableManager(_$AppDatabase db, $OcrBlocksTable table)
     : super(
@@ -15308,6 +15551,7 @@ class $$OcrBlocksTableTableManager
                 Value<String> script = const Value.absent(),
                 Value<String?> engine = const Value.absent(),
                 Value<String?> assignedFieldKey = const Value.absent(),
+                Value<int?> fieldId = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
               }) => OcrBlocksCompanion(
                 id: id,
@@ -15318,6 +15562,7 @@ class $$OcrBlocksTableTableManager
                 script: script,
                 engine: engine,
                 assignedFieldKey: assignedFieldKey,
+                fieldId: fieldId,
                 orderIndex: orderIndex,
               ),
           createCompanionCallback:
@@ -15330,6 +15575,7 @@ class $$OcrBlocksTableTableManager
                 required String script,
                 Value<String?> engine = const Value.absent(),
                 Value<String?> assignedFieldKey = const Value.absent(),
+                Value<int?> fieldId = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
               }) => OcrBlocksCompanion.insert(
                 id: id,
@@ -15340,6 +15586,7 @@ class $$OcrBlocksTableTableManager
                 script: script,
                 engine: engine,
                 assignedFieldKey: assignedFieldKey,
+                fieldId: fieldId,
                 orderIndex: orderIndex,
               ),
           withReferenceMapper: (p0) => p0
@@ -15350,7 +15597,7 @@ class $$OcrBlocksTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({cardId = false}) {
+          prefetchHooksCallback: ({cardId = false, fieldId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -15383,6 +15630,19 @@ class $$OcrBlocksTableTableManager
                               )
                               as T;
                     }
+                    if (fieldId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.fieldId,
+                                referencedTable: $$OcrBlocksTableReferences
+                                    ._fieldIdTable(db),
+                                referencedColumn: $$OcrBlocksTableReferences
+                                    ._fieldIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
 
                     return state;
                   },
@@ -15407,7 +15667,7 @@ typedef $$OcrBlocksTableProcessedTableManager =
       $$OcrBlocksTableUpdateCompanionBuilder,
       (OcrBlockRow, $$OcrBlocksTableReferences),
       OcrBlockRow,
-      PrefetchHooks Function({bool cardId})
+      PrefetchHooks Function({bool cardId, bool fieldId})
     >;
 typedef $$ExtractionAttemptsTableCreateCompanionBuilder =
     ExtractionAttemptsCompanion Function({

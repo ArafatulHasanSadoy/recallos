@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'recallos'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -61,6 +61,14 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
           await customStatement(_createSearchIndex);
           await _seedRankingWeights();
+        },
+        onUpgrade: (Migrator m, int from, int to) async {
+          // v2 — `ocr_blocks.field_id`. Which field owns a block could not be
+          // answered from `assigned_field_key` alone once the user could move a
+          // block between fields; see the column's own comment.
+          if (from < 2) {
+            await m.addColumn(ocrBlocks, ocrBlocks.fieldId);
+          }
         },
         beforeOpen: (OpeningDetails details) async {
           await customStatement('PRAGMA foreign_keys = ON');

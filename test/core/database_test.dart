@@ -1,6 +1,10 @@
-import 'package:drift/drift.dart';
+import 'dart:io';
+
+// `isNull` is exported by both drift and matcher; the matcher one is meant.
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 
@@ -11,6 +15,58 @@ void main() {
   tearDown(() async => db.close());
 
   group('migration', () {
+    test('a v1 database gains field_id without losing what is in it', () async {
+      // Wind a current database back to the v1 shape, then reopen it and let
+      // the migration run for real. Worth testing rather than assuming:
+      // SQLite refuses `ADD COLUMN` with a REFERENCES clause unless the column
+      // defaults to NULL, and foreign keys are switched on at open.
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recallos_migration');
+      addTearDown(() => dir.delete(recursive: true));
+
+      final File file = File(p.join(dir.path, 'recallos.sqlite'));
+      AppDatabase open() => AppDatabase(NativeDatabase(file));
+
+      // Opening the same file twice is the point of this test, and the two
+      // instances never overlap — the first is closed before the second opens.
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      addTearDown(
+        () => driftRuntimeOptions.dontWarnAboutMultipleDatabases = false,
+      );
+
+      final AppDatabase before = open();
+      final int cardId = await before.into(before.cards).insert(
+            CardsCompanion.insert(
+              imagePath: '/tmp/cards/card_1.jpg',
+              capturedAt: DateTime(2026, 8, 8),
+            ),
+          );
+      await before.into(before.ocrBlocks).insert(
+            OcrBlocksCompanion.insert(
+              cardId: cardId,
+              blockText: 'AQUARIUS',
+              rect: '10,10,310,50',
+              confidence: 0.9,
+              script: 'latin',
+            ),
+          );
+      await before.customStatement(
+        'ALTER TABLE ocr_blocks DROP COLUMN field_id',
+      );
+      await before.customStatement('PRAGMA user_version = 1');
+      await before.close();
+
+      final AppDatabase after = open();
+      addTearDown(after.close);
+
+      final List<OcrBlockRow> blocks = await after.select(after.ocrBlocks).get();
+      expect(blocks, hasLength(1), reason: 'the upgrade must not drop rows');
+      expect(blocks.single.blockText, 'AQUARIUS');
+      // Existing blocks belong to no field until the user says otherwise.
+      expect(blocks.single.fieldId, isNull);
+      expect(await after.select(after.cards).get(), hasLength(1));
+    });
+
     test('creates every table and seeds ranking weights', () async {
       final List<RankingWeight> weights =
           await db.select(db.rankingWeights).get();
