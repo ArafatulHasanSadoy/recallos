@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
+import '../../../core/extraction/field_validator.dart';
 import '../../../core/intelligence/ocr_engine.dart' as ocr;
 
 final databaseProvider = Provider<AppDatabase>((Ref ref) {
@@ -19,6 +21,16 @@ final databaseProvider = Provider<AppDatabase>((Ref ref) {
 final cardRepositoryProvider = Provider<CardRepository>(
   (Ref ref) => CardRepository(ref.watch(databaseProvider)),
 );
+
+/// One card and everything attached to it, as a live stream.
+///
+/// Watched by both the review screen and the detail screen: a card is in the
+/// database from the moment its photo is, so reviewing a fresh scan and
+/// revisiting an old one are the same view over the same rows.
+final cardDetailProvider =
+    StreamProvider.family<CardDetail?, int>((Ref ref, int id) {
+  return ref.watch(cardRepositoryProvider).watchCard(id);
+});
 
 /// A saved card, flattened for list display.
 class CardSummary {
@@ -54,7 +66,7 @@ class CardDetail {
     required this.card,
     required this.fields,
     required this.notes,
-    required this.unassignedText,
+    required this.blocks,
   });
 
   final CardRow card;
@@ -65,10 +77,22 @@ class CardDetail {
 
   final List<Note> notes;
 
-  /// Text OCR read but no field claimed. Shown so the user can see everything
-  /// that was on the card, and — once tap-to-assign lands — fix a bad layout
-  /// without retyping.
-  final List<String> unassignedText;
+  /// Every region OCR read, in reading order — claimed or not.
+  ///
+  /// The whole list rather than only the leftovers, because the picker offers
+  /// all of them: repairing a bad layout usually means taking a block *away*
+  /// from the field that wrongly claimed it.
+  final List<OcrBlockRow> blocks;
+
+  /// Blocks no field claimed. Shown so the user can see everything that was on
+  /// the card, and pick from it without retyping.
+  List<OcrBlockRow> get unassignedBlocks => blocks
+      .where((OcrBlockRow b) =>
+          b.fieldId == null && b.blockText.trim().isNotEmpty)
+      .toList();
+
+  List<String> get unassignedText =>
+      unassignedBlocks.map((OcrBlockRow b) => b.blockText.trim()).toList();
 
   String? valueOf(String key) {
     for (final CardField f in fields) {
@@ -133,17 +157,45 @@ class CardRepository {
     required CardExtraction extraction,
   }) async {
     await _db.transaction(() async {
+      // Anything the user confirmed or corrected outlives re-extraction. The
+      // engine may change its mind freely; a human answer is not something it
+      // gets to overwrite, or a retry would silently undo every repair.
+      final List<CardField> verified = await (_db.select(_db.cardFields)
+            ..where(($CardFieldsTable f) =>
+                f.cardId.equals(cardId) & f.verifiedByUser.equals(true)))
+          .get();
+
       await (_db.delete(_db.ocrBlocks)
             ..where(($OcrBlocksTable b) => b.cardId.equals(cardId)))
           .go();
       await (_db.delete(_db.cardFields)
-            ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
+            ..where(($CardFieldsTable f) =>
+                f.cardId.equals(cardId) & f.verifiedByUser.equals(false)))
           .go();
 
-      final Set<int> assigned = <int>{
-        for (final ExtractedField f in extraction.fields)
-          if (f.sourceBlockIndex != null) f.sourceBlockIndex!,
-      };
+      final List<ExtractedField> incoming =
+          _withoutSuperseded(verified, extraction.fields);
+
+      // Fields before blocks: a block records the field row that owns it, so
+      // those ids have to exist first.
+      final Map<int, int> fieldIdOfBlock = <int, int>{};
+      for (final ExtractedField f in incoming) {
+        final int fieldId = await _db.into(_db.cardFields).insert(
+              CardFieldsCompanion.insert(
+                cardId: cardId,
+                fieldKey: f.fieldKey,
+                value: f.value,
+                normalizedValue: Value<String?>(f.normalizedValue),
+                source: FactSource.printed,
+                confidence: Value<double?>(f.confidence),
+                validationIssue: Value<String?>(f.issue),
+                regionRect: Value<String?>(f.regionRect),
+              ),
+            );
+        for (final int i in f.sourceBlockIndices) {
+          fieldIdOfBlock[i] = fieldId;
+        }
+      }
 
       await _db.batch((Batch batch) {
         batch.insertAll(_db.ocrBlocks, <OcrBlocksCompanion>[
@@ -155,24 +207,9 @@ class CardRepository {
               confidence: result.blocks[i].confidence,
               script: result.blocks[i].script.name,
               engine: Value<String?>(result.blocks[i].engine),
-              assignedFieldKey: Value<String?>(
-                assigned.contains(i) ? _keyForBlock(extraction, i) : null,
-              ),
+              assignedFieldKey: Value<String?>(_keyForBlock(incoming, i)),
+              fieldId: Value<int?>(fieldIdOfBlock[i]),
               orderIndex: Value<int>(i),
-            ),
-        ]);
-
-        batch.insertAll(_db.cardFields, <CardFieldsCompanion>[
-          for (final ExtractedField f in extraction.fields)
-            CardFieldsCompanion.insert(
-              cardId: cardId,
-              fieldKey: f.fieldKey,
-              value: f.value,
-              normalizedValue: Value<String?>(f.normalizedValue),
-              source: FactSource.printed,
-              confidence: Value<double?>(f.confidence),
-              validationIssue: Value<String?>(f.issue),
-              regionRect: Value<String?>(f.regionRect),
             ),
         ]);
       });
@@ -184,7 +221,9 @@ class CardRepository {
           rawOcrText: Value<String?>(result.plainText),
           ocrEngine: Value<String?>(result.engine),
           extractionStatus: Value<ExtractionStatus>(
-            extraction.isEmpty
+            // A card the user has already repaired is never "failed", however
+            // little this particular run managed to read.
+            (extraction.isEmpty && verified.isEmpty)
                 ? ExtractionStatus.failed
                 : extraction.isUseful
                     ? ExtractionStatus.complete
@@ -314,17 +353,30 @@ class CardRepository {
   }
 
   /// Saved cards, newest first, as a live stream so the library updates itself.
+  ///
+  /// Driven by an explicit [readsFrom] rather than `select(cards).watch()`, for
+  /// the reason spelled out on [watchCard]: the title of a row comes out of
+  /// `card_fields`, so a stream watching only `cards` never notices it change.
   Stream<List<CardSummary>> watchCards() {
-    final query = _db.select(_db.cards)
-      ..where(($CardsTable c) => c.deletedAt.isNull())
-      ..orderBy(<OrderClauseGenerator<$CardsTable>>[
-        ($CardsTable c) =>
-            OrderingTerm(expression: c.capturedAt, mode: OrderingMode.desc),
-      ]);
-
-    return query.watch().asyncMap((List<CardRow> rows) async {
+    return _db
+        .customSelect(
+          'SELECT id FROM cards WHERE deleted_at IS NULL '
+          'ORDER BY captured_at DESC',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            _db.cards,
+            _db.cardFields,
+            _db.notes,
+          },
+        )
+        .watch()
+        .asyncMap((List<QueryRow> ids) async {
       final List<CardSummary> out = <CardSummary>[];
-      for (final CardRow row in rows) {
+      for (final QueryRow id in ids) {
+        final CardRow? row = await (_db.select(_db.cards)
+              ..where(($CardsTable c) => c.id.equals(id.read<int>('id'))))
+            .getSingleOrNull();
+        if (row == null) continue;
+
         final List<CardField> fields = await (_db.select(_db.cardFields)
               ..where(($CardFieldsTable f) => f.cardId.equals(row.id)))
             .get();
@@ -359,13 +411,31 @@ class CardRepository {
 
   /// Watches one card and everything attached to it.
   ///
-  /// A stream rather than a one-shot read so that editing a note or deleting
-  /// the card updates the detail screen without it having to re-query.
+  /// The [readsFrom] set is load-bearing, not decoration. Drift re-runs a
+  /// stream when the tables of *its own query* change — and if this were the
+  /// obvious `select(cards).watch()`, it would only ever fire for writes to
+  /// `cards`. Almost everything on the screen lives elsewhere: fields, notes
+  /// and OCR blocks. Without naming them, a corrected field is written to the
+  /// database and never reaches the screen, so Save appears to do nothing.
   Stream<CardDetail?> watchCard(int cardId) {
-    final query = _db.select(_db.cards)
-      ..where(($CardsTable c) => c.id.equals(cardId) & c.deletedAt.isNull());
+    return _db
+        .customSelect(
+          'SELECT id FROM cards WHERE id = ? AND deleted_at IS NULL',
+          variables: <Variable<Object>>[Variable<int>(cardId)],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            _db.cards,
+            _db.cardFields,
+            _db.notes,
+            _db.ocrBlocks,
+          },
+        )
+        .watch()
+        .asyncMap((List<QueryRow> ids) async {
+      if (ids.isEmpty) return null;
 
-    return query.watchSingleOrNull().asyncMap((CardRow? card) async {
+      final CardRow? card = await (_db.select(_db.cards)
+            ..where(($CardsTable c) => c.id.equals(cardId)))
+          .getSingleOrNull();
       if (card == null) return null;
 
       final List<CardField> fields = await (_db.select(_db.cardFields)
@@ -376,8 +446,7 @@ class CardRepository {
                 n.subjectType.equals('card') & n.subjectId.equals(cardId)))
           .get();
       final List<OcrBlockRow> blocks = await (_db.select(_db.ocrBlocks)
-            ..where(($OcrBlocksTable b) =>
-                b.cardId.equals(cardId) & b.assignedFieldKey.isNull())
+            ..where(($OcrBlocksTable b) => b.cardId.equals(cardId))
             ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
               ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
             ]))
@@ -404,21 +473,270 @@ class CardRepository {
         card: card,
         fields: fields,
         notes: notes,
-        unassignedText: blocks
-            .map((OcrBlockRow b) => b.blockText.trim())
-            .where((String t) => t.isNotEmpty)
-            .toList(),
+        blocks: blocks,
       );
     });
+  }
+
+  // --- Corrections ---------------------------------------------------------
+  //
+  // Every method here records the result as the user's own — `source = user`,
+  // `verifiedByUser = true` — which is also where the manual correction rate
+  // comes from, straight out of real usage and with no extra instrumentation.
+  //
+  // Callers must re-index the card afterwards, the same way capture does after
+  // attaching a note: a corrected value that search cannot find is not much of
+  // a correction.
+
+  /// Applies a correction to one field.
+  ///
+  /// [blockIds] re-sources the field from the card's own OCR text — the value
+  /// becomes those blocks joined in reading order, and the highlighted region
+  /// follows them. That is the repair worth offering first: it costs taps
+  /// rather than typing, and typing is where people give up. [value] is the
+  /// fallback for text OCR never read correctly in the first place, and
+  /// [fieldKey] re-labels a value that was read fine but filed wrong.
+  Future<void> updateField({
+    required int fieldId,
+    String? value,
+    String? fieldKey,
+    List<int>? blockIds,
+  }) async {
+    final CardField? existing = await (_db.select(_db.cardFields)
+          ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
+        .getSingleOrNull();
+    if (existing == null) return;
+
+    final String key = fieldKey ?? existing.fieldKey;
+    final List<OcrBlockRow> blocks = blockIds == null
+        ? const <OcrBlockRow>[]
+        : await _blocksByIds(existing.cardId, blockIds);
+
+    final String text = blocks.isNotEmpty
+        ? _joinBlocks(blocks)
+        : (value ?? existing.value).trim();
+    // An empty correction is a deletion the user did not ask for.
+    if (text.isEmpty) return;
+
+    final FieldValidation check = validateField(key, text);
+
+    await _db.transaction(() async {
+      await (_db.update(_db.cardFields)
+            ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
+          .write(CardFieldsCompanion(
+        fieldKey: Value<String>(key),
+        value: Value<String>(text),
+        normalizedValue: Value<String?>(check.normalized),
+        source: const Value<FactSource>(FactSource.user),
+        verifiedByUser: const Value<bool>(true),
+        validationIssue: Value<String?>(check.issue),
+        regionRect: blocks.isEmpty
+            ? const Value<String?>.absent()
+            : Value<String?>(_unionRect(blocks)),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ));
+
+      if (blocks.isNotEmpty) {
+        await _claimBlocks(fieldId: fieldId, key: key, blocks: blocks);
+      } else {
+        // Sources unchanged, but the label may not be.
+        await (_db.update(_db.ocrBlocks)
+              ..where(($OcrBlocksTable b) => b.fieldId.equals(fieldId)))
+            .write(OcrBlocksCompanion(assignedFieldKey: Value<String?>(key)));
+      }
+
+      await _logEdit(existing.cardId);
+    });
+  }
+
+  /// Adds a field extraction missed entirely.
+  Future<void> addField({
+    required int cardId,
+    required String fieldKey,
+    String? value,
+    List<int>? blockIds,
+  }) async {
+    final List<OcrBlockRow> blocks = blockIds == null
+        ? const <OcrBlockRow>[]
+        : await _blocksByIds(cardId, blockIds);
+
+    final String text =
+        blocks.isNotEmpty ? _joinBlocks(blocks) : (value ?? '').trim();
+    if (text.isEmpty) return;
+
+    final FieldValidation check = validateField(fieldKey, text);
+
+    await _db.transaction(() async {
+      final int fieldId = await _db.into(_db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: fieldKey,
+              value: text,
+              normalizedValue: Value<String?>(check.normalized),
+              source: FactSource.user,
+              verifiedByUser: const Value<bool>(true),
+              validationIssue: Value<String?>(check.issue),
+              regionRect: Value<String?>(
+                blocks.isEmpty ? null : _unionRect(blocks),
+              ),
+            ),
+          );
+
+      if (blocks.isNotEmpty) {
+        await _claimBlocks(fieldId: fieldId, key: fieldKey, blocks: blocks);
+      }
+      await _logEdit(cardId);
+    });
+  }
+
+  /// Removes a field that is not on the card at all.
+  ///
+  /// The blocks behind it go back to the picker rather than staying spoken
+  /// for, so nothing the engine read becomes unreachable.
+  Future<void> deleteField(int fieldId) async {
+    final CardField? existing = await (_db.select(_db.cardFields)
+          ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
+        .getSingleOrNull();
+    if (existing == null) return;
+
+    await _db.transaction(() async {
+      await _releaseBlocks(fieldId);
+      await (_db.delete(_db.cardFields)
+            ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
+          .go();
+      await _logEdit(existing.cardId);
+    });
+  }
+
+  Future<List<OcrBlockRow>> _blocksByIds(int cardId, List<int> ids) async {
+    if (ids.isEmpty) return const <OcrBlockRow>[];
+    final List<OcrBlockRow> rows = await (_db.select(_db.ocrBlocks)
+          ..where(($OcrBlocksTable b) =>
+              b.cardId.equals(cardId) & b.id.isIn(ids))
+          ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+            ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
+          ]))
+        .get();
+    return rows;
+  }
+
+  /// Hands [blocks] to one field, releasing whatever it held before.
+  ///
+  /// The release is the part that matters. Without it a block the user moved
+  /// away from a field would stay marked as used, vanish from the picker, and
+  /// never be offered again.
+  Future<void> _claimBlocks({
+    required int fieldId,
+    required String key,
+    required List<OcrBlockRow> blocks,
+  }) async {
+    await _releaseBlocks(fieldId);
+    for (final OcrBlockRow b in blocks) {
+      await (_db.update(_db.ocrBlocks)
+            ..where(($OcrBlocksTable t) => t.id.equals(b.id)))
+          .write(OcrBlocksCompanion(
+        fieldId: Value<int?>(fieldId),
+        assignedFieldKey: Value<String?>(key),
+      ));
+    }
+  }
+
+  Future<void> _releaseBlocks(int fieldId) =>
+      (_db.update(_db.ocrBlocks)
+            ..where(($OcrBlocksTable b) => b.fieldId.equals(fieldId)))
+          .write(const OcrBlocksCompanion(
+        fieldId: Value<int?>(null),
+        assignedFieldKey: Value<String?>(null),
+      ));
+
+  Future<void> _logEdit(int cardId) async {
+    await _db.into(_db.interactions).insert(
+          InteractionsCompanion.insert(
+            subjectType: 'card',
+            subjectId: cardId,
+            kind: InteractionKind.edited,
+            detail: const Value<String?>('field corrected'),
+          ),
+        );
+    // A card whose fields changed did change. Stage 2 sync will read this, and
+    // it keeps `cards` honest rather than only its children.
+    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+        .write(CardsCompanion(updatedAt: Value<DateTime>(DateTime.now())));
+  }
+
+  // --- Helpers -------------------------------------------------------------
+
+  static String _joinBlocks(List<OcrBlockRow> blocks) => blocks
+      .map((OcrBlockRow b) => b.blockText.trim())
+      .where((String t) => t.isNotEmpty)
+      .join(' ');
+
+  /// Keys where several values on one card are normal.
+  ///
+  /// This matters when re-extraction meets a field the user has already fixed:
+  /// a second phone number is a new fact worth keeping, while a second company
+  /// name is just the engine contradicting a human.
+  static const Set<String> _repeatableKeys = <String>{
+    FieldKeys.phone,
+    FieldKeys.email,
+  };
+
+  /// Drops incoming fields that a verified one has already answered.
+  static List<ExtractedField> _withoutSuperseded(
+    List<CardField> verified,
+    List<ExtractedField> incoming,
+  ) {
+    if (verified.isEmpty) return incoming;
+
+    String identity(String key, String? normalized, String value) =>
+        '$key ${normalized ?? value.toLowerCase()}';
+
+    final Set<String> settledKeys = <String>{
+      for (final CardField f in verified)
+        if (!_repeatableKeys.contains(f.fieldKey)) f.fieldKey,
+    };
+    final Set<String> settledValues = <String>{
+      for (final CardField f in verified)
+        identity(f.fieldKey, f.normalizedValue, f.value),
+    };
+
+    return incoming
+        .where((ExtractedField f) =>
+            !settledKeys.contains(f.fieldKey) &&
+            !settledValues
+                .contains(identity(f.fieldKey, f.normalizedValue, f.value)))
+        .toList();
   }
 
   static String _rectOf(ocr.OcrBlock b) =>
       '${b.rect.left.round()},${b.rect.top.round()},'
       '${b.rect.right.round()},${b.rect.bottom.round()}';
 
-  static String? _keyForBlock(CardExtraction extraction, int index) {
-    for (final ExtractedField f in extraction.fields) {
-      if (f.sourceBlockIndex == index) return f.fieldKey;
+  /// The box enclosing every block behind a field, so highlighting a merged
+  /// value boxes all of it rather than only its first line.
+  static String? _unionRect(List<OcrBlockRow> blocks) {
+    double? left, top, right, bottom;
+    for (final OcrBlockRow b in blocks) {
+      final List<double> v = b.rect
+          .split(',')
+          .map((String s) => double.tryParse(s.trim()))
+          .whereType<double>()
+          .toList();
+      if (v.length != 4) continue;
+
+      left = left == null ? v[0] : math.min(left, v[0]);
+      top = top == null ? v[1] : math.min(top, v[1]);
+      right = right == null ? v[2] : math.max(right, v[2]);
+      bottom = bottom == null ? v[3] : math.max(bottom, v[3]);
+    }
+    if (left == null) return null;
+    return '${left.round()},${top!.round()},'
+        '${right!.round()},${bottom!.round()}';
+  }
+
+  static String? _keyForBlock(List<ExtractedField> fields, int index) {
+    for (final ExtractedField f in fields) {
+      if (f.sourceBlockIndices.contains(index)) return f.fieldKey;
     }
     return null;
   }
