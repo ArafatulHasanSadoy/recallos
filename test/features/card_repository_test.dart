@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' show Rect;
 
 // `isNull` and `isNotNull` are exported by both drift and matcher; the matcher
@@ -5,6 +6,7 @@ import 'dart:ui' show Rect;
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
@@ -410,6 +412,105 @@ void main() {
       // The phone was never corrected, so a fresh read is free to supply it.
       expect((await fieldOf(FieldKeys.phone)).normalizedValue,
           '+8801711223344');
+    });
+  });
+
+  group('downscaled images and thumbnails', () {
+    late CardRepository repo;
+    late Directory dir;
+
+    setUp(() async {
+      repo = CardRepository(db);
+      dir = await Directory.systemTemp.createTemp('recallos_images');
+    });
+    tearDown(() async => dir.delete(recursive: true));
+
+    File write(String name) {
+      final File file = File(p.join(dir.path, name));
+      file.writeAsStringSync(name);
+      return file;
+    }
+
+    test('swaps in the resized card and drops the oversized copy', () async {
+      final File original = write('original.jpg');
+      final int id = await db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: original.path,
+              capturedAt: DateTime(2026, 8, 15),
+            ),
+          );
+
+      final File resized = write('card.jpg');
+      final File thumb = write('card_thumb.jpg');
+      await repo.attachImages(
+        cardId: id,
+        imagePath: resized.path,
+        thumbPath: thumb.path,
+      );
+
+      final CardRow card = await load(id);
+      expect(card.imagePath, resized.path);
+      expect(card.thumbPath, thumb.path);
+      // The full-resolution first copy exists only to make the save survive a
+      // crash; leaving it behind would double storage on every card.
+      expect(original.existsSync(), isFalse);
+    });
+
+    test('surfaces the thumbnail to the library list', () async {
+      final File resized = write('card.jpg');
+      final File thumb = write('card_thumb.jpg');
+      final int id = await db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: resized.path,
+              capturedAt: DateTime(2026, 8, 15),
+              thumbPath: Value<String?>(thumb.path),
+            ),
+          );
+
+      final List<CardSummary> cards = await repo.watchCards().first;
+      final CardSummary summary =
+          cards.firstWhere((CardSummary c) => c.id == id);
+
+      expect(summary.thumbPath, thumb.path);
+      // A list row decodes the thumbnail, not the card.
+      expect(summary.displayPath, thumb.path);
+    });
+
+    test('falls back to the full image for cards saved before thumbnails',
+        () async {
+      final File resized = write('legacy.jpg');
+      final int id = await db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: resized.path,
+              capturedAt: DateTime(2026, 8, 15),
+            ),
+          );
+
+      final List<CardSummary> cards = await repo.watchCards().first;
+      final CardSummary summary =
+          cards.firstWhere((CardSummary c) => c.id == id);
+
+      expect(summary.thumbPath, isNull);
+      expect(summary.displayPath, resized.path);
+    });
+
+    test('purging takes the thumbnail with it', () async {
+      final File resized = write('card.jpg');
+      final File thumb = write('card_thumb.jpg');
+      final int id = await db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: resized.path,
+              capturedAt: DateTime(2026, 8, 15),
+              thumbPath: Value<String?>(thumb.path),
+            ),
+          );
+
+      await repo.purge(id);
+
+      expect(resized.existsSync(), isFalse);
+      // Without this every deleted card leaves a file behind on a phone that
+      // was short of space to begin with.
+      expect(thumb.existsSync(), isFalse);
     });
   });
 

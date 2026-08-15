@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../../core/extraction/card_extractor.dart';
+import '../../../core/imaging/card_image_processor.dart';
 import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/theme/app_theme.dart';
@@ -34,7 +36,6 @@ class CaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _CaptureScreenState extends ConsumerState<CaptureScreen> {
-  final ImagePicker _picker = ImagePicker();
   final OcrEngine _engine = MlKitOcrEngine();
 
   File? _image;
@@ -71,53 +72,70 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       _cardId = null;
     }
 
-    final XFile? shot;
+    final List<String>? pages;
     try {
-      shot = await _picker.pickImage(
-        source: ImageSource.camera,
-        // Capped rather than full resolution: a 12-megapixel bitmap decodes to
-        // ~50 MB, which is what actually kills this app on a 3 GB phone. Card
-        // text stays legible well below the sensor's limit.
-        maxWidth: 1600,
-        imageQuality: 90,
+      pages = await CunningDocumentScanner.getPictures(
+        // One card at a time. The scanner finds the edges, corrects the
+        // perspective and hands back the card alone rather than the desk it
+        // was lying on — which is also a large free win for OCR, since the
+        // text now fills the frame instead of a third of it.
+        noOfPages: 1,
+        scannerSource: ScannerSource.cameraAndGallery,
+        androidScannerMode: AndroidScannerMode.full,
+        iosScannerOptions: IosScannerOptions(
+          imageFormat: IosImageFormat.jpg,
+          jpgCompressionQuality: 0.9,
+        ),
       );
+    } on CunningDocumentScannerException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.code == 'permission_denied'
+          ? 'RecallOS needs camera access to scan a card.'
+          : 'Could not open the scanner: ${e.message}');
+      return;
     } on Object catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Could not open the camera: $e');
+      setState(() => _error = 'Could not open the scanner: $e');
       return;
     }
     if (!mounted) return;
 
-    // User backed out of the camera without taking a shot.
-    if (shot == null) {
+    // User backed out of the scanner without keeping a page.
+    if (pages == null || pages.isEmpty) {
       if (_image == null && mounted) context.pop();
       return;
     }
 
+    final File scanned = File(pages.first);
     setState(() {
-      _image = File(shot!.path);
+      _image = scanned;
       _loading = true;
       _highlight = null;
       _error = null;
     });
 
     try {
-      // Save first. From here on the card survives whatever happens next.
-      final int cardId = await repo.createPending(File(shot.path));
+      // Save first, out of the scanner's cache and into our own storage. From
+      // here on the card survives whatever happens next.
+      final ({int id, File image}) pending = await repo.createPending(scanned);
       if (!mounted) return;
-      setState(() => _cardId = cardId);
+      setState(() => _cardId = pending.id);
 
-      final OcrResult result = await _engine.recognize(File(shot.path));
+      final File working = await _prepare(repo, pending, scanned);
+      if (!mounted) return;
+      setState(() => _image = working);
+
+      final OcrResult result = await _engine.recognize(working);
       final CardExtraction extraction =
           CardFieldExtractor.extract(result.blocks);
       await repo.attachExtraction(
-        cardId: cardId,
+        cardId: pending.id,
         result: result,
         extraction: extraction,
       );
       // Index straight away so a card is findable even if the user backs out
       // before writing a note.
-      await ref.read(searchRepositoryProvider).reindexCard(cardId);
+      await ref.read(searchRepositoryProvider).reindexCard(pending.id);
 
       if (!mounted) return;
       setState(() {
@@ -133,6 +151,54 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
         _loading = false;
         _error = 'Could not read the card: $e';
       });
+    }
+  }
+
+  /// Downscales the capture, writes its thumbnail, and returns the file
+  /// everything downstream should use.
+  ///
+  /// **The returned file is the one OCR must read.** Field regions are recorded
+  /// in the pixel space of whatever image the engine was given, and the screens
+  /// paint highlights onto the stored image — so resizing after recognition,
+  /// or displaying a different file from the one recognised, would put every
+  /// highlight somewhere other than the words it came from. Nothing would
+  /// throw; it would just be quietly wrong.
+  ///
+  /// Runs in an isolate because decoding a full-resolution photo on the UI
+  /// thread drops frames on exactly the hardware this app is aimed at.
+  Future<File> _prepare(
+    CardRepository repo,
+    ({int id, File image}) pending,
+    File scanned,
+  ) async {
+    try {
+      final Directory cards = await repo.cardsDirectory();
+      final String targetDir = cards.path;
+      final String baseName =
+          'card_${pending.id}_${DateTime.now().microsecondsSinceEpoch}';
+
+      final PreparedImage prepared = await Isolate.run(
+        () => prepareCardImage(CardImageRequest(
+          sourcePath: scanned.path,
+          targetDir: targetDir,
+          baseName: baseName,
+        )),
+      );
+
+      await repo.attachImages(
+        cardId: pending.id,
+        imagePath: prepared.imagePath,
+        thumbPath: prepared.thumbPath,
+      );
+
+      // The plugin's cache has served its purpose now that the pixels are ours.
+      unawaited(CunningDocumentScanner.cleanCache());
+      return File(prepared.imagePath);
+    } on Object {
+      // A card must never be lost to an image step. Fall back to the full-size
+      // copy already saved — same pixels, so regions still line up — and carry
+      // on to OCR.
+      return pending.image;
     }
   }
 

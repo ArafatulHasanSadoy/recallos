@@ -39,6 +39,7 @@ class CardSummary {
     required this.imagePath,
     required this.capturedAt,
     required this.status,
+    this.thumbPath,
     this.title,
     this.subtitle,
     this.note,
@@ -46,8 +47,16 @@ class CardSummary {
 
   final int id;
   final String imagePath;
+
+  /// Smaller copy for list rows. Null for cards saved before thumbnails
+  /// existed, which fall back to the full image.
+  final String? thumbPath;
+
   final DateTime capturedAt;
   final ExtractionStatus status;
+
+  /// What a list row should decode: the thumbnail when there is one.
+  String get displayPath => thumbPath ?? imagePath;
 
   /// Company, or the person, or a fallback — never empty.
   final String? title;
@@ -127,23 +136,62 @@ class CardRepository {
   ///
   /// Returns before any recognition has been attempted. That is deliberate:
   /// everything after this point can fail without losing the card.
-  Future<int> createPending(File source) async {
-    final Directory dir = await getApplicationDocumentsDirectory();
-    final Directory cards = Directory(p.join(dir.path, 'cards'));
-    if (!cards.existsSync()) {
-      await cards.create(recursive: true);
-    }
+  /// Returns the new row's id and the copy now under our control — the scanner
+  /// hands back a cache file the system is free to reclaim.
+  Future<({int id, File image})> createPending(File source) async {
+    final Directory cards = await cardsDirectory();
 
     final String name =
         'card_${DateTime.now().microsecondsSinceEpoch}${p.extension(source.path)}';
     final File stored = await source.copy(p.join(cards.path, name));
 
-    return _db.into(_db.cards).insert(
+    final int id = await _db.into(_db.cards).insert(
           CardsCompanion.insert(
             imagePath: stored.path,
             capturedAt: DateTime.now(),
           ),
         );
+    return (id: id, image: stored);
+  }
+
+  /// Where card images live, created on first use.
+  ///
+  /// Public because capture hands this to the resize isolate as its output
+  /// directory — the isolate cannot call platform channels itself.
+  Future<Directory> cardsDirectory() async {
+    final Directory dir = await getApplicationDocumentsDirectory();
+    final Directory cards = Directory(p.join(dir.path, 'cards'));
+    if (!cards.existsSync()) {
+      await cards.create(recursive: true);
+    }
+    return cards;
+  }
+
+  /// Swaps in the downscaled card and its thumbnail.
+  ///
+  /// Capture copies the scanner's full-resolution output and opens the row
+  /// *before* resizing, so that a crash between the two still leaves a
+  /// recoverable card. This replaces that oversized first copy and deletes it.
+  Future<void> attachImages({
+    required int cardId,
+    required String imagePath,
+    required String thumbPath,
+  }) async {
+    final CardRow? card = await (_db.select(_db.cards)
+          ..where(($CardsTable c) => c.id.equals(cardId)))
+        .getSingleOrNull();
+    if (card == null) return;
+
+    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+        .write(CardsCompanion(
+      imagePath: Value<String>(imagePath),
+      thumbPath: Value<String?>(thumbPath),
+      updatedAt: Value<DateTime>(DateTime.now()),
+    ));
+
+    if (card.imagePath != imagePath) {
+      await _deleteFile(card.imagePath);
+    }
   }
 
   /// Folds OCR output into an existing card.
@@ -318,15 +366,11 @@ class CardRepository {
         .getSingleOrNull();
 
     if (card != null) {
-      final File image = File(card.imagePath);
-      if (image.existsSync()) {
-        try {
-          await image.delete();
-        } on Object {
-          // A file we cannot delete is not worth failing the flow over — the
-          // row still goes, so it stops being reachable.
-        }
-      }
+      await _deleteFile(card.imagePath);
+      // The thumbnail goes too, or every deleted card leaves one behind on a
+      // phone that was short of space to begin with.
+      final String? thumb = card.thumbPath;
+      if (thumb != null) await _deleteFile(thumb);
     }
 
     await _db.transaction(() async {
@@ -396,6 +440,7 @@ class CardRepository {
         out.add(CardSummary(
           id: row.id,
           imagePath: row.imagePath,
+          thumbPath: row.thumbPath,
           capturedAt: row.capturedAt,
           status: row.extractionStatus,
           title: valueOf(FieldKeys.company) ??
@@ -665,6 +710,20 @@ class CardRepository {
   }
 
   // --- Helpers -------------------------------------------------------------
+
+  /// Removes a file if it is there, and shrugs if it will not go.
+  ///
+  /// A file we cannot delete is not worth failing a flow over — the row goes
+  /// either way, so the card stops being reachable.
+  static Future<void> _deleteFile(String path) async {
+    final File file = File(path);
+    if (!file.existsSync()) return;
+    try {
+      await file.delete();
+    } on Object {
+      // Deliberately ignored; see above.
+    }
+  }
 
   static String _joinBlocks(List<OcrBlockRow> blocks) => blocks
       .map((OcrBlockRow b) => b.blockText.trim())
