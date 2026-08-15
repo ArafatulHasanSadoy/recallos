@@ -203,7 +203,7 @@ flutter test
 flutter analyze
 ```
 
-131 tests. The valuable ones are in `test/core/`: phone normalisation against
+207 tests. The valuable ones are in `test/core/`: phone normalisation against
 the BTRC numbering plan, Bengali-Latin digit confusables (kept — Bengali
 numerals still appear on Latin-script cards), cross-field sanity checks, the
 identity-graph case of one person holding three roles with a different number
