@@ -237,4 +237,83 @@ void main() {
       expect(result.ofKey(FieldKeys.phone), hasLength(1));
     });
   });
+
+  // A brand word set large over a smaller descriptor is one business name
+  // printed as two lines. Read separately, the keyword test picks the
+  // descriptor as the company — it beats the size ranking outright — and the
+  // brand is then left over to be filed as a person. Both facts come out wrong.
+  group('CardFieldExtractor — stacked logotype', () {
+    test('reads a brand over its descriptor as one company', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('AQUARIUS', top: 10, height: 40),
+        block('Pet Shop', top: 56, height: 18),
+        block('01711-223344', top: 100, height: 16),
+        block('Shop 12, Mirpur, Dhaka', top: 122, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'AQUARIUS Pet Shop');
+    });
+
+    test('invents no person from the brand word', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('AQUARIUS', top: 10, height: 40),
+        block('Pet Shop', top: 56, height: 18),
+        block('01711-223344', top: 100, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('marks every merged block as claimed', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('AQUARIUS', top: 10, height: 40),
+        block('Pet Shop', top: 56, height: 18),
+      ]);
+
+      // Both lines belong to the company, so neither may resurface as
+      // unassigned text or the detail screen shows the name twice.
+      expect(result.firstOfKey(FieldKeys.company)?.sourceBlockIndices,
+          <int>[0, 1]);
+      expect(result.unassignedBlockIndices, isEmpty);
+    });
+
+    test('leaves a person above their employer alone', () {
+      // The same vertical arrangement, but the two lines are set at similar
+      // weights — peers rather than a logotype and its descriptor.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Rahim Uddin', top: 10, height: 30),
+        block('Medica Books Ltd', top: 50, height: 28),
+        block('01711-223344', top: 90, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Medica Books Ltd');
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Rahim Uddin');
+    });
+
+    test('leaves a small company line alone when a job title names a person',
+        () {
+      // Descriptor-sized company under a large name, which would otherwise
+      // merge — except the designation proves a human is on this card.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('MD. KARIM', top: 10, height: 40),
+        block('Karim Traders Ltd', top: 56, height: 18),
+        block('Proprietor', top: 80, height: 14),
+        block('01711-223344', top: 110, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Karim Traders Ltd');
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'MD. KARIM');
+    });
+
+    test('does not join lines set far apart', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('AQUARIUS', top: 10, height: 40),
+        // Half the card away — a separate piece of information, not a subtitle.
+        block('Pet Shop', top: 220, height: 18),
+        block('01711-223344', top: 260, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, isNot(contains('AQUARIUS')));
+    });
+  });
 }

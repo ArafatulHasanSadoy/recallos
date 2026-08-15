@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import '../intelligence/ocr_engine.dart';
 import 'phone.dart';
@@ -39,7 +40,7 @@ class ExtractedField {
     this.regionRect,
     this.issue,
     this.needsReview = false,
-    this.sourceBlockIndex,
+    this.sourceBlockIndices = const <int>[],
   });
 
   final String fieldKey;
@@ -67,8 +68,17 @@ class ExtractedField {
 
   final bool needsReview;
 
-  /// Index into the block list, so the caller can mark that block assigned.
-  final int? sourceBlockIndex;
+  /// Indices into the block list, so the caller can mark those blocks assigned.
+  ///
+  /// Usually one, but not always: an address that wrapped across lines, or a
+  /// company name set as stacked type, genuinely comes from several blocks.
+  /// Every one has to be recorded or the leftovers resurface under "other
+  /// text" on the detail screen while already being part of a field.
+  final List<int> sourceBlockIndices;
+
+  /// The block this field is anchored to, for callers that only need one.
+  int? get sourceBlockIndex =>
+      sourceBlockIndices.isEmpty ? null : sourceBlockIndices.first;
 
   @override
   String toString() => '$fieldKey="$value" (${confidence.toStringAsFixed(2)})'
@@ -108,6 +118,37 @@ class CardExtraction {
       firstOfKey(FieldKeys.email) != null ||
       (firstOfKey(FieldKeys.personName) != null &&
           firstOfKey(FieldKeys.company) != null);
+}
+
+/// A line competing to be the person or the business.
+///
+/// Usually one OCR block. Occasionally two, when a business sets its name as
+/// stacked type and the engine returns each line separately — see
+/// [CardFieldExtractor._mergeStackedType].
+class _NameCandidate {
+  const _NameCandidate({
+    required this.indices,
+    required this.text,
+    required this.rect,
+    required this.confidence,
+    required this.size,
+  });
+
+  factory _NameCandidate.of(int index, OcrBlock block) => _NameCandidate(
+        indices: <int>[index],
+        text: block.text.trim(),
+        rect: block.rect,
+        confidence: CardFieldExtractor._confidenceOf(block),
+        size: CardFieldExtractor._textSize(block),
+      );
+
+  final List<int> indices;
+  final String text;
+  final Rect rect;
+  final double confidence;
+
+  /// How large the type is drawn, independent of how many lines it occupies.
+  final double size;
 }
 
 /// Assigns OCR blocks to card fields using deterministic rules.
@@ -227,7 +268,7 @@ abstract final class CardFieldExtractor {
           // Restoring a digit is an inference, so it gets confirmed like any
           // other guess.
           needsReview: p.needsReview || display != raw,
-          sourceBlockIndex: i,
+          sourceBlockIndices: <int>[i],
         ));
         claimed.add(i);
       }
@@ -243,7 +284,7 @@ abstract final class CardFieldExtractor {
           regionRect: _rectOf(block),
           issue: e.issue ?? (e.repaired ? 'ocr_repaired' : null),
           needsReview: e.needsReview,
-          sourceBlockIndex: i,
+          sourceBlockIndices: <int>[i],
         ));
         claimed.add(i);
       }
@@ -257,7 +298,7 @@ abstract final class CardFieldExtractor {
           normalizedValue: w.domain,
           confidence: ocr,
           regionRect: _rectOf(block),
-          sourceBlockIndex: i,
+          sourceBlockIndices: <int>[i],
         ));
         claimed.add(i);
       }
@@ -284,6 +325,12 @@ abstract final class CardFieldExtractor {
 
   /// A Bangladeshi postcode as printed: `Dhaka-1205`.
   static final RegExp _postcode = RegExp(r'[A-Za-z]\s*-\s*\d{4}\b');
+
+  /// Whether [text] reads as a postal address.
+  ///
+  /// Public because the same question is asked of a value the user just typed
+  /// or reassigned, not only of one OCR produced — see `field_validator.dart`.
+  static bool looksLikeAddress(String text) => _looksLikeAddress(text);
 
   static bool _looksLikeAddress(String text) =>
       _containsWord(text, addressKeywords) ||
@@ -312,7 +359,9 @@ abstract final class CardFieldExtractor {
       value: joined,
       confidence: _confidenceOf(blocks[hits.first]) * 0.8,
       regionRect: _rectOf(blocks[hits.first]),
-      sourceBlockIndex: hits.first,
+      // Every line, not just the first: the continuation lines are consumed by
+      // this field and must not reappear as unassigned text.
+      sourceBlockIndices: hits,
     ));
     claimed.addAll(hits);
   }
@@ -341,7 +390,7 @@ abstract final class CardFieldExtractor {
         value: text,
         confidence: _confidenceOf(blocks[i]) * 0.85,
         regionRect: _rectOf(blocks[i]),
-        sourceBlockIndex: i,
+        sourceBlockIndices: <int>[i],
       ));
       claimed.add(i);
       return;
@@ -354,6 +403,9 @@ abstract final class CardFieldExtractor {
     'enquiry', 'enquiries', 'inquiry', 'mail', 'help', 'service', 'services',
     'marketing', 'accounts', 'booking', 'bookings', 'order', 'orders',
   };
+
+  /// Longest line still plausible as a name or a business.
+  static const int _maxNameLength = 80;
 
   /// Picks the organization, and a person only when one is actually there.
   ///
@@ -371,23 +423,14 @@ abstract final class CardFieldExtractor {
     List<ExtractedField> out,
     Set<int> claimed,
   ) {
-    final List<int> candidates = <int>[
+    final List<int> usable = <int>[
       for (int i = 0; i < blocks.length; i++)
         if (!claimed.contains(i) &&
             blocks[i].text.trim().isNotEmpty &&
-            blocks[i].text.trim().length <= 80)
+            blocks[i].text.trim().length <= _maxNameLength)
           i,
     ];
-    if (candidates.isEmpty) return;
-
-    // Bigger text first; ties break toward the top of the card. Size is the
-    // short side of the box so a card photographed sideways ranks the same as
-    // one held straight — see [_textSize].
-    candidates.sort((int a, int b) {
-      final int bySize = _textSize(blocks[b]).compareTo(_textSize(blocks[a]));
-      if (bySize != 0) return bySize;
-      return blocks[a].rect.top.compareTo(blocks[b].rect.top);
-    });
+    if (usable.isEmpty) return;
 
     final String? knownDomain = out
         .where((ExtractedField f) =>
@@ -397,50 +440,175 @@ abstract final class CardFieldExtractor {
         .map((String v) => v.contains('@') ? v.split('@').last : v)
         .firstOrNull;
 
-    bool looksLikeCompany(int i) {
-      final String text = blocks[i].text.trim();
-      return _containsWord(text, companyKeywords) ||
-          (knownDomain != null && _matchesDomain(text, knownDomain));
-    }
+    bool textLooksLikeCompany(String text) =>
+        _containsWord(text, companyKeywords) ||
+        (knownDomain != null && _matchesDomain(text, knownDomain));
+
+    // Evidence that a human is on this card at all. It decides two things:
+    // whether stacked type may be read as one business name, and whether a
+    // person is looked for once the business has been picked.
+    final bool hasDesignation =
+        out.any((ExtractedField f) => f.fieldKey == FieldKeys.designation);
+    final bool hasPersonalEmail = out
+        .where((ExtractedField f) => f.fieldKey == FieldKeys.email)
+        .map((ExtractedField f) => f.normalizedValue)
+        .whereType<String>()
+        .any((String email) {
+      final String local = email.split('@').first;
+      return local.isNotEmpty &&
+          !_genericEmailLocals.contains(local) &&
+          !RegExp(r'^\d+$').hasMatch(local);
+    });
+
+    final List<_NameCandidate> candidates =
+        (hasDesignation || hasPersonalEmail)
+            ? <_NameCandidate>[
+                for (final int i in usable) _NameCandidate.of(i, blocks[i]),
+              ]
+            : _mergeStackedType(blocks, usable, textLooksLikeCompany);
+
+    // Bigger text first; ties break toward the top of the card. Size is the
+    // short side of the box so a card photographed sideways ranks the same as
+    // one held straight — see [_textSize].
+    candidates.sort((_NameCandidate a, _NameCandidate b) {
+      final int bySize = b.size.compareTo(a.size);
+      if (bySize != 0) return bySize;
+      return a.rect.top.compareTo(b.rect.top);
+    });
+
+    bool looksLikeCompany(_NameCandidate c) => textLooksLikeCompany(c.text);
 
     // The organization is whichever leftover line carries company signals, or
     // failing that simply the most prominent one.
-    final int companyIndex =
-        candidates.firstWhere(looksLikeCompany, orElse: () => candidates.first);
-    final bool companyIsConfident = looksLikeCompany(companyIndex);
+    final _NameCandidate company = candidates.firstWhere(
+      looksLikeCompany,
+      orElse: () => candidates.first,
+    );
+    final bool companyIsConfident = looksLikeCompany(company);
 
-    if (!claimed.contains(companyIndex)) {
-      out.add(ExtractedField(
-        fieldKey: FieldKeys.company,
-        value: blocks[companyIndex].text.trim(),
-        confidence: _confidenceOf(blocks[companyIndex]) *
-            (companyIsConfident ? 0.85 : 0.7),
-        regionRect: _rectOf(blocks[companyIndex]),
-        needsReview: true,
-        sourceBlockIndex: companyIndex,
-      ));
-      claimed.add(companyIndex);
-    }
+    out.add(ExtractedField(
+      fieldKey: FieldKeys.company,
+      value: company.text,
+      confidence: company.confidence * (companyIsConfident ? 0.85 : 0.7),
+      regionRect: _rectString(company.rect),
+      needsReview: true,
+      sourceBlockIndices: company.indices,
+    ));
+    claimed.addAll(company.indices);
 
-    final int? nameIndex = _findPerson(
-      blocks: blocks,
+    final _NameCandidate? person = _findPerson(
       candidates: candidates,
-      out: out,
-      companyIndex: companyIndex,
+      company: company,
       companyIsConfident: companyIsConfident,
+      hasDesignation: hasDesignation,
+      hasPersonalEmail: hasPersonalEmail,
       looksLikeCompany: looksLikeCompany,
     );
-    if (nameIndex == null || claimed.contains(nameIndex)) return;
+    if (person == null || person.indices.any(claimed.contains)) return;
 
     out.add(ExtractedField(
       fieldKey: FieldKeys.personName,
-      value: blocks[nameIndex].text.trim(),
-      confidence: _confidenceOf(blocks[nameIndex]) * 0.7,
-      regionRect: _rectOf(blocks[nameIndex]),
+      value: person.text,
+      confidence: person.confidence * 0.7,
+      regionRect: _rectString(person.rect),
       needsReview: true, // Layout is a guess; always worth a glance.
-      sourceBlockIndex: nameIndex,
+      sourceBlockIndices: person.indices,
     ));
-    claimed.add(nameIndex);
+    claimed.addAll(person.indices);
+  }
+
+  /// Joins a brand line with the smaller descriptor stacked under it.
+  ///
+  /// "AQUARIUS" set over "Pet Shop" is one business name printed as two lines,
+  /// and OCR returns it as two blocks. Left split, the keyword test above picks
+  /// the *smaller* line as the company — `firstWhere(looksLikeCompany)` beats
+  /// the size ranking outright — and the brand word is then left over for
+  /// [_findPerson] to file as a human being. Two wrong facts from one card.
+  ///
+  /// The merge is deliberately narrow, because the same shape appears on cards
+  /// where splitting is correct: "Rahim Uddin" over "Medica Books Ltd" is a
+  /// person above their employer. Four conditions separate the two cases:
+  ///
+  ///  * only the lower line carries a company keyword — merging changes nothing
+  ///    otherwise, and this is exactly the arrangement that misranks;
+  ///  * the card shows no independent evidence of a person, which is the same
+  ///    question [_findPerson] already answers (the caller checks this);
+  ///  * the lower line is set markedly smaller, as a descriptor is and a peer
+  ///    fact is not — see [_subtitleSizeRatio];
+  ///  * the lines are set tight and aligned, as one piece of type is and two
+  ///    separate facts usually are not.
+  ///
+  /// Prominence deliberately does *not* enter into it. The tempting rule — "the
+  /// biggest line is the business" — is wrong on personal cards, where the
+  /// biggest line is the person. Adjacency separates the two; size does not.
+  static List<_NameCandidate> _mergeStackedType(
+    List<OcrBlock> blocks,
+    List<int> indices,
+    bool Function(String) textLooksLikeCompany,
+  ) {
+    final List<int> topDown = indices.toList()
+      ..sort((int a, int b) =>
+          blocks[a].rect.top.compareTo(blocks[b].rect.top));
+
+    final List<_NameCandidate> out = <_NameCandidate>[];
+    for (final int i in topDown) {
+      final OcrBlock block = blocks[i];
+      final String text = block.text.trim();
+      final _NameCandidate? above = out.isEmpty ? null : out.last;
+
+      if (above != null &&
+          textLooksLikeCompany(text) &&
+          !textLooksLikeCompany(above.text) &&
+          _stacksUnder(above, block)) {
+        final String merged = '${above.text} $text';
+        if (merged.length <= _maxNameLength) {
+          out[out.length - 1] = _NameCandidate(
+            indices: <int>[...above.indices, i],
+            text: merged,
+            rect: above.rect.expandToInclude(block.rect),
+            confidence: math.min(above.confidence, _confidenceOf(block)),
+            // The largest of the parts, not anything derived from the combined
+            // box: two stacked lines double its height without making a single
+            // letter any bigger.
+            size: math.max(above.size, _textSize(block)),
+          );
+          continue;
+        }
+      }
+
+      out.add(_NameCandidate.of(i, block));
+    }
+    return out;
+  }
+
+  /// How much smaller a descriptor must be set than the brand above it before
+  /// the two are read as one piece of type.
+  ///
+  /// Provisional. It separates every card in the test deck, but the honest
+  /// number comes from the Phase 0 spike's labelled cards.
+  static const double _subtitleSizeRatio = 0.75;
+
+  /// Whether [block] is a subtitle set under [above] — the smaller descriptor
+  /// line of one logotype, rather than a fact of its own.
+  static bool _stacksUnder(_NameCandidate above, OcrBlock block) {
+    final double size = _textSize(block);
+    if (size <= 0 || above.size <= 0) return false;
+
+    // The descriptor of a logotype is set markedly smaller than the brand word
+    // over it. A person and their employer are peers, set at similar weights —
+    // and that difference is the whole reason "Rahim Uddin" does not get glued
+    // to "Medica Books Ltd" while "AQUARIUS" does get glued to "Pet Shop".
+    if (size > above.size * _subtitleSizeRatio) return false;
+
+    // A slightly negative gap is decorative type whose boxes overlap; a gap
+    // wider than most of a line is a separate piece of information.
+    final double gap = block.rect.top - above.rect.bottom;
+    if (gap > size * 0.8 || gap < -size) return false;
+
+    final double overlap = math.min(above.rect.right, block.rect.right) -
+        math.max(above.rect.left, block.rect.left);
+    final double narrower = math.min(above.rect.width, block.rect.width);
+    return narrower > 0 && overlap > narrower * 0.5;
   }
 
   /// Which leftover line, if any, is a human being.
@@ -455,41 +623,24 @@ abstract final class CardFieldExtractor {
   ///     business, a different line of similar weight is usually the person.
   ///
   /// Absent all three, the card is treated as a business-only card.
-  static int? _findPerson({
-    required List<OcrBlock> blocks,
-    required List<int> candidates,
-    required List<ExtractedField> out,
-    required int companyIndex,
+  static _NameCandidate? _findPerson({
+    required List<_NameCandidate> candidates,
+    required _NameCandidate company,
     required bool companyIsConfident,
-    required bool Function(int) looksLikeCompany,
+    required bool hasDesignation,
+    required bool hasPersonalEmail,
+    required bool Function(_NameCandidate) looksLikeCompany,
   }) {
-    final List<int> others =
-        candidates.where((int i) => i != companyIndex).toList();
-    if (others.isEmpty) return null;
-
-    final bool hasDesignation =
-        out.any((ExtractedField f) => f.fieldKey == FieldKeys.designation);
-
-    final bool hasPersonalEmail = out
-        .where((ExtractedField f) => f.fieldKey == FieldKeys.email)
-        .map((ExtractedField f) => f.normalizedValue)
-        .whereType<String>()
-        .any((String email) {
-      final String local = email.split('@').first;
-      return local.isNotEmpty &&
-          !_genericEmailLocals.contains(local) &&
-          !RegExp(r'^\d+$').hasMatch(local);
-    });
-
     if (!hasDesignation && !hasPersonalEmail && !companyIsConfident) {
       return null;
     }
 
     // Whichever remaining line looks least like a business.
-    for (final int i in others) {
-      if (looksLikeCompany(i)) continue;
-      if (_looksLikeAddress(blocks[i].text)) continue;
-      return i;
+    for (final _NameCandidate c in candidates) {
+      if (identical(c, company)) continue;
+      if (looksLikeCompany(c)) continue;
+      if (_looksLikeAddress(c.text)) continue;
+      return c;
     }
     return null;
   }
@@ -531,7 +682,7 @@ abstract final class CardFieldExtractor {
         regionRect: f.regionRect,
         issue: issue,
         needsReview: true,
-        sourceBlockIndex: f.sourceBlockIndex,
+        sourceBlockIndices: f.sourceBlockIndices,
       );
 
   // --- Helpers -------------------------------------------------------------
@@ -563,9 +714,11 @@ abstract final class CardFieldExtractor {
   static double _confidenceOf(OcrBlock b) =>
       b.hasConfidence ? b.confidence : 0.6;
 
-  static String _rectOf(OcrBlock b) =>
-      '${b.rect.left.round()},${b.rect.top.round()},'
-      '${b.rect.right.round()},${b.rect.bottom.round()}';
+  static String _rectOf(OcrBlock b) => _rectString(b.rect);
+
+  static String _rectString(Rect r) =>
+      '${r.left.round()},${r.top.round()},'
+      '${r.right.round()},${r.bottom.round()}';
 
   /// How large the text in [b] is drawn, independent of orientation.
   ///
