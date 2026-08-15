@@ -10,16 +10,22 @@ import '../../../core/extraction/card_extractor.dart';
 import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../cards/presentation/widgets/card_image_overlay.dart';
+import '../../cards/presentation/widgets/editable_field_list.dart';
 import '../../search/data/search_repository.dart';
 import '../data/card_repository.dart';
 
-/// Opens the camera, reads the card, and lets the user keep it.
+/// Opens the camera, reads the card, and lets the user correct it.
 ///
 /// The order matters more than it looks. The photo is copied into app storage
 /// and a card row is written **before** OCR runs, so a crash, a killed app or a
-/// failing engine leaves a recoverable card rather than nothing. Everything
-/// after that point — recognition, field assignment, the note — is folded into
-/// a row that already exists.
+/// failing engine leaves a recoverable card rather than nothing.
+///
+/// One consequence shapes this whole screen: by the time there is anything to
+/// review, it is already in the database. So the review reads the same stream
+/// the detail screen does rather than holding extraction results in memory,
+/// and a correction made here is saved the moment it is made — consistent with
+/// save-first rather than an exception to it.
 class CaptureScreen extends ConsumerStatefulWidget {
   const CaptureScreen({super.key});
 
@@ -33,11 +39,12 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
   File? _image;
   int? _cardId;
-  CardExtraction? _extraction;
-  List<OcrBlock> _blocks = const <OcrBlock>[];
   bool _loading = false;
   bool _saving = false;
   String? _error;
+
+  /// Region of the field currently being edited, boxed on the image above.
+  String? _highlight;
 
   @override
   void initState() {
@@ -90,8 +97,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     setState(() {
       _image = File(shot!.path);
       _loading = true;
-      _extraction = null;
-      _blocks = const <OcrBlock>[];
+      _highlight = null;
       _error = null;
     });
 
@@ -115,8 +121,6 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
       if (!mounted) return;
       setState(() {
-        _blocks = result.blocks;
-        _extraction = extraction;
         _loading = false;
         _error = result.isTotalFailure
             ? 'No text found on this card. Save it anyway and tell RecallOS '
@@ -142,7 +146,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     final int? cardId = _cardId;
     if (cardId == null) return;
 
-    final bool nothingFound = _extraction?.isUseful != true;
+    final CardDetail? detail = ref.read(cardDetailProvider(cardId)).value;
+    final bool nothingFound = detail == null || detail.fields.isEmpty;
+
     final String? note = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -152,8 +158,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     if (note == null || !mounted) return;
 
     setState(() => _saving = true);
-    final CardRepository repo = ref.read(cardRepositoryProvider);
-    await repo.addNote(cardId: cardId, body: note);
+    await ref.read(cardRepositoryProvider).addNote(cardId: cardId, body: note);
     // Re-index with the note included — it is usually the most valuable text on
     // the record, and the reason need-based search finds anything at all.
     await ref.read(searchRepositoryProvider).reindexCard(cardId);
@@ -174,8 +179,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final CardExtraction? extraction = _extraction;
+    final ThemeData theme = Theme.of(context);
+    final int? cardId = _cardId;
+    final File? image = _image;
 
     return PopScope(
       canPop: false,
@@ -194,64 +200,51 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
             onPressed: _saving ? null : _discardAndLeave,
           ),
         ),
-        body: SafeArea(
-          child: _image == null
-              ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                  padding: const EdgeInsets.all(Gap.md),
+        body: image == null
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _image!,
-                        height: 220,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        // Decode at display size rather than full resolution.
-                        cacheHeight: 660,
+                    // Pinned rather than scrolled away, because the whole point
+                    // of the highlight is being able to check a value against
+                    // the printing while editing it.
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Gap.md,
+                        vertical: Gap.sm,
+                      ),
+                      child: CardImageOverlay(
+                        image: image,
+                        highlight: _highlight,
                       ),
                     ),
-                    if (_loading) ...<Widget>[
-                      const SizedBox(height: Gap.md),
-                      const LinearProgressIndicator(),
-                    ],
-                    if (_error != null) ...<Widget>[
-                      const SizedBox(height: Gap.md),
-                      Text(
-                        _error!,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: theme.colorScheme.error),
+                    if (_loading) const LinearProgressIndicator(),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Gap.md,
+                          vertical: Gap.sm,
+                        ),
+                        child: Text(
+                          _error!,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: theme.colorScheme.error),
+                        ),
                       ),
-                    ],
-                    if (extraction != null &&
-                        extraction.fields.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Gap.lg),
-                      Text('Found on the card',
-                          style: theme.textTheme.titleMedium),
-                      const SizedBox(height: Gap.sm),
-                      for (final ExtractedField f in extraction.fields)
-                        _FieldTile(field: f),
-                    ],
-                    if (extraction != null &&
-                        extraction.unassignedBlockIndices.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Gap.lg),
-                      Text(
-                        'Other text on the card',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: Gap.sm),
-                      Text(
-                        extraction.unassignedBlockIndices
-                            .map((int i) => _blocks[i].text)
-                            .join('\n'),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                    const SizedBox(height: Gap.xl),
+                    Expanded(
+                      child: cardId == null
+                          ? const SizedBox.shrink()
+                          : _ReviewBody(
+                              cardId: cardId,
+                              onRegionChanged: (String? rect) =>
+                                  setState(() => _highlight = rect),
+                            ),
+                    ),
                   ],
                 ),
-        ),
-        bottomNavigationBar: _image == null
+              ),
+        bottomNavigationBar: image == null
             ? null
             : SafeArea(
                 child: Padding(
@@ -274,10 +267,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                         // plus a note beats the paper card the user was about to
                         // lose, so a bad scan must never be a dead end.
                         child: FilledButton.icon(
-                          onPressed:
-                              (_loading || _saving || _cardId == null)
-                                  ? null
-                                  : _save,
+                          onPressed: (_loading || _saving || cardId == null)
+                              ? null
+                              : _save,
                           icon: const Icon(Icons.check),
                           label: Text(_saving ? 'Saving…' : 'Save'),
                         ),
@@ -288,6 +280,56 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
               ),
       ),
     );
+  }
+}
+
+/// What the card yielded, and the means to fix it.
+class _ReviewBody extends ConsumerWidget {
+  const _ReviewBody({required this.cardId, required this.onRegionChanged});
+
+  final int cardId;
+  final ValueChanged<String?> onRegionChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+
+    return ref.watch(cardDetailProvider(cardId)).when(
+          loading: () => const SizedBox.shrink(),
+          error: (Object e, _) => Center(child: Text('Could not read that back.\n$e')),
+          data: (CardDetail? detail) {
+            if (detail == null) return const SizedBox.shrink();
+
+            return ListView(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+              children: <Widget>[
+                Text(
+                  detail.fields.isEmpty
+                      ? 'Nothing read yet'
+                      : 'Found on the card',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: Gap.sm),
+                EditableFieldList(
+                  detail: detail,
+                  onRegionChanged: onRegionChanged,
+                ),
+                if (detail.unassignedText.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: Gap.lg),
+                  Text('Other text on the card',
+                      style: theme.textTheme.titleMedium),
+                  const SizedBox(height: Gap.sm),
+                  Text(
+                    detail.unassignedText.join('\n'),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+                const SizedBox(height: Gap.xl),
+              ],
+            );
+          },
+        );
   }
 }
 
@@ -314,7 +356,7 @@ class _NotePromptState extends State<_NotePrompt> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.only(
         left: Gap.md,
@@ -363,46 +405,4 @@ class _NotePromptState extends State<_NotePrompt> {
       ),
     );
   }
-}
-
-class _FieldTile extends StatelessWidget {
-  const _FieldTile({required this.field});
-
-  final ExtractedField field;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final String? raw = field.rawText;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: Gap.sm),
-      child: ListTile(
-        title: Text(field.value),
-        subtitle: Text(
-          // When we corrected what OCR read, say so rather than quietly
-          // swapping one for the other.
-          raw == null ? _label(field.fieldKey) : '${_label(field.fieldKey)} · card reads "$raw"',
-        ),
-        trailing: field.needsReview
-            ? Icon(
-                Icons.flag_outlined,
-                color: theme.colorScheme.error,
-                size: 20,
-              )
-            : null,
-      ),
-    );
-  }
-
-  static String _label(String key) => switch (key) {
-        FieldKeys.personName => 'Name',
-        FieldKeys.company => 'Company',
-        FieldKeys.designation => 'Designation',
-        FieldKeys.phone => 'Phone',
-        FieldKeys.email => 'Email',
-        FieldKeys.website => 'Website',
-        FieldKeys.address => 'Address',
-        _ => key,
-      };
 }
