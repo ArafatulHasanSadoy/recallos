@@ -336,6 +336,7 @@ class SearchRepository {
     return CardSummary(
       id: card.id,
       imagePath: card.imagePath,
+      thumbPath: card.thumbPath,
       capturedAt: card.capturedAt,
       status: card.extractionStatus,
       title: valueOf('company') ?? valueOf('person_name') ?? valueOf('phone'),

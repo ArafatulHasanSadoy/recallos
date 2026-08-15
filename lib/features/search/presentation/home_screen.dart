@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
+import '../../cards/presentation/widgets/wallet_card.dart';
 import '../data/search_repository.dart';
 
 /// Live list of saved cards, newest first.
@@ -260,7 +260,7 @@ class _SearchResults extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.only(bottom: 88),
       itemCount: hits.length,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.sm),
+      separatorBuilder: (_, _) => const SizedBox(height: Gap.lg),
       itemBuilder: (BuildContext context, int i) => _CardTile(
         card: hits[i].card,
         hit: hits[i],
@@ -283,7 +283,7 @@ class _CardList extends StatelessWidget {
       // Padded so the last row clears the floating action button.
       padding: const EdgeInsets.only(bottom: 88),
       itemCount: cards.length + 1,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.sm),
+      separatorBuilder: (_, _) => const SizedBox(height: Gap.lg),
       itemBuilder: (BuildContext context, int i) {
         if (i == 0) {
           return Padding(
@@ -311,7 +311,6 @@ class _CardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final File image = File(card.imagePath);
     final SearchHit? h = hit;
 
     return Dismissible(
@@ -328,75 +327,47 @@ class _CardTile extends StatelessWidget {
             color: theme.colorScheme.onErrorContainer),
       ),
       onDismissed: (_) => unawaited(onDelete(card)),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: ListTile(
-          onTap: () => context.push(Routes.card(card.id)),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: Gap.sm,
-            vertical: Gap.xs,
-          ),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: image.existsSync()
-                ? Hero(
-                    tag: 'card-${card.id}',
-                    child: Image.file(
-                      image,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                      // Thumbnails must never decode the full-resolution
-                      // bitmap; a list of them would otherwise exhaust memory
-                      // on a cheap phone long before the list got long.
-                      cacheWidth: 168,
-                    ),
-                  )
-                : Container(
-                    width: 56,
-                    height: 56,
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: const Icon(Icons.image_not_supported_outlined),
-                  ),
-          ),
-          title: Text(
-            card.title ?? 'Unread card',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push(Routes.card(card.id)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            WalletCard(
+              imagePath: card.displayPath,
+              needsAttention: card.needsAttention,
+              heroTag: 'card-${card.id}',
+            ),
+            const SizedBox(height: Gap.sm),
+            Text(
+              card.title ?? 'Unread card',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium,
+            ),
+            Text(
+              // The note is what the user will actually recognise the card by,
+              // so it wins over the extracted fields when there is one.
+              card.note ?? card.subtitle ?? 'No details read',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (h != null && h.reasons.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Gap.xs),
               Text(
-                // The note is what the user will actually recognise the card by,
-                // so it wins over the extracted fields when there is one.
-                card.note ?? card.subtitle ?? 'No details read',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                // Derived from the signals that actually ranked this, not
+                // written after the fact by a model.
+                h.matchedOnMeaningOnly
+                    ? 'Similar meaning'
+                    : 'Matched ${h.reasons.join(" · ")}',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.primary),
               ),
-              if (h != null && h.reasons.isNotEmpty) ...<Widget>[
-                const SizedBox(height: Gap.xs),
-                Text(
-                  // Derived from the signals that actually ranked this, not
-                  // written after the fact by a model.
-                  h.matchedOnMeaningOnly
-                      ? 'Similar meaning'
-                      : 'Matched ${h.reasons.join(" · ")}',
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: theme.colorScheme.primary),
-                ),
-              ],
             ],
-          ),
-          isThreeLine: h != null && h.reasons.isNotEmpty,
-          trailing: card.needsAttention
-              ? Icon(
-                  Icons.flag_outlined,
-                  size: 20,
-                  color: theme.colorScheme.error,
-                )
-              : null,
+          ],
         ),
       ),
     );

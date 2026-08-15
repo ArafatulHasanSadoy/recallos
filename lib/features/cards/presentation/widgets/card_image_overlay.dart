@@ -48,6 +48,9 @@ class CardImageOverlay extends StatefulWidget {
 
   final double maxHeight;
 
+  /// Matches WalletCard, so a tile and this header look like one object.
+  static const double _radius = 16;
+
   @override
   State<CardImageOverlay> createState() => _CardImageOverlayState();
 }
@@ -141,23 +144,45 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
 
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: widget.maxHeight),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: size.width / size.height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Image(image: _provider, fit: BoxFit.contain),
-              if (region != null)
-                CustomPaint(
-                  painter: _RegionPainter(
-                    region: region,
-                    imageSize: size,
-                    colour: theme.colorScheme.primary,
+      child: DecoratedBox(
+        // The same radius, hairline and shadow as a list tile's WalletCard, so
+        // the header reads as the same object the user tapped.
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
+          color: theme.colorScheme.surfaceContainerHighest,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
+          child: AspectRatio(
+            // The card's own shape, not the uniform tile shape. Tiles crop to
+            // fill a wallet frame; this one is where fields get checked and
+            // corrected, so the whole card has to be visible and every region
+            // reachable. Since the image is now a cropped card rather than a
+            // photograph of one, following its shape leaves no dead space
+            // anyway.
+            aspectRatio: size.width / size.height,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Image(image: _provider, fit: BoxFit.contain),
+                if (region != null)
+                  CustomPaint(
+                    painter: _RegionPainter(
+                      region: region,
+                      imageSize: size,
+                      colour: theme.colorScheme.primary,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
