@@ -46,6 +46,7 @@ dependencies:
   path: ^1.9.1
   flutter_local_ai: ^0.0.16
   url_launcher: ^6.3.2
+  cunning_document_scanner: ^3.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
