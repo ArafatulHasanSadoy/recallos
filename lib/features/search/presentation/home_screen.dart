@@ -103,20 +103,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     if (!mounted) return;
 
+    Future<void>? restoring;
     final SnackBarClosedReason reason = await ScaffoldMessenger.of(context)
         .showSnackBar(
           SnackBar(
             content: Text('Deleted ${card.title ?? "card"}'),
             action: SnackBarAction(
               label: 'Undo',
-              onPressed: () => unawaited(repo.restore(card.id)),
+              onPressed: () => restoring = repo.restore(card.id),
             ),
             duration: const Duration(seconds: 5),
+            // Without this the bar carrying an action outlives its own
+            // duration and sits over the library until it is swiped away by
+            // hand, which reads as the app being stuck.
+            persist: false,
           ),
         )
         .closed;
 
     if (reason == SnackBarClosedReason.action) {
+      // The row has to be back before results are recomputed, or undo appears
+      // to do nothing while a search is open.
+      await restoring;
       if (_query.isNotEmpty) unawaited(_run(_query));
       return;
     }
@@ -260,7 +268,7 @@ class _SearchResults extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.only(bottom: 88),
       itemCount: hits.length,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.lg),
+      separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
       itemBuilder: (BuildContext context, int i) => _CardTile(
         card: hits[i].card,
         hit: hits[i],
@@ -283,7 +291,7 @@ class _CardList extends StatelessWidget {
       // Padded so the last row clears the floating action button.
       padding: const EdgeInsets.only(bottom: 88),
       itemCount: cards.length + 1,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.lg),
+      separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
       itemBuilder: (BuildContext context, int i) {
         if (i == 0) {
           return Padding(
@@ -308,65 +316,140 @@ class _CardTile extends StatelessWidget {
   final SearchHit? hit;
   final Future<void> Function(CardSummary) onDelete;
 
+  /// [WalletCard]'s own corner. The tile and the delete panel it slides off
+  /// share it so the two edges stay parallel through the whole gesture.
+  static const double _radius = 16;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final SearchHit? h = hit;
 
+    // Behind the tile rather than in `Dismissible.background`, which clips its
+    // background to a hard rectangle at the tile's edge — leaving a square red
+    // corner beside the card's round one, and a wedge of empty page between
+    // them. Uncovered by the tile itself, the seam is the card's own curve.
+    return Stack(
+      children: <Widget>[
+        // Held a hair inside the tile, so the tile's antialiased edge has
+        // page behind it rather than red, and no pink fringe outlines a card
+        // that is sitting still.
+        const Positioned.fill(
+          left: 1,
+          top: 1,
+          right: 1,
+          bottom: 1,
+          child: _DeleteReveal(),
+        ),
+        _dismissible(context, theme, h),
+      ],
+    );
+  }
+
+  Widget _dismissible(BuildContext context, ThemeData theme, SearchHit? h) {
     return Dismissible(
       key: ValueKey<int>(card.id),
       direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: Gap.lg),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(Icons.delete_outline,
-            color: theme.colorScheme.onErrorContainer),
-      ),
       onDismissed: (_) => unawaited(onDelete(card)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push(Routes.card(card.id)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            WalletCard(
-              imagePath: card.displayPath,
-              needsAttention: card.needsAttention,
-              heroTag: 'card-${card.id}',
-            ),
-            const SizedBox(height: Gap.sm),
-            Text(
-              card.title ?? 'Unread card',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium,
-            ),
-            Text(
-              // The note is what the user will actually recognise the card by,
-              // so it wins over the extracted fields when there is one.
-              card.note ?? card.subtitle ?? 'No details read',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            if (h != null && h.reasons.isNotEmpty) ...<Widget>[
-              const SizedBox(height: Gap.xs),
-              Text(
-                // Derived from the signals that actually ranked this, not
-                // written after the fact by a model.
-                h.matchedOnMeaningOnly
-                    ? 'Similar meaning'
-                    : 'Matched ${h.reasons.join(" · ")}',
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.primary),
+      child: Material(
+        // Opaque, and rounded to the same corner as the reveal behind it. A
+        // transparent tile lets the red show through the lines under the card
+        // while it slides, so the thing being swiped stops reading as a card
+        // and starts reading as a rectangle.
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(_radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(_radius),
+          onTap: () => context.push(Routes.card(card.id)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              WalletCard(
+                imagePath: card.displayPath,
+                needsAttention: card.needsAttention,
+                heroTag: 'card-${card.id}',
+              ),
+              const SizedBox(height: Gap.sm),
+              Padding(
+                // The reveal runs the full height of the tile, so the lines
+                // under the card need the same inset as the card's own corner
+                // to sit inside it rather than on its edge.
+                padding: const EdgeInsets.fromLTRB(Gap.xs, 0, Gap.xs, Gap.sm),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      card.title ?? 'Unread card',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    Text(
+                      // The note is what the user will actually recognise the
+                      // card by, so it wins over the extracted fields when
+                      // there is one.
+                      card.note ?? card.subtitle ?? 'No details read',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    if (h != null && h.reasons.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: Gap.xs),
+                      Text(
+                        // Derived from the signals that actually ranked this,
+                        // not written after the fact by a model.
+                        h.matchedOnMeaningOnly
+                            ? 'Similar meaning'
+                            : 'Matched ${h.reasons.join(" · ")}',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.primary),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What a swipe uncovers: a panel the exact shape of the tile leaving it.
+///
+/// Drawn under every row at rest and hidden by the opaque tile on top, so that
+/// the shape uncovering it is the tile's own rounded edge.
+class _DeleteReveal extends StatelessWidget {
+  const _DeleteReveal();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ExcludeSemantics(
+      child: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(_CardTile._radius),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.delete_outline,
+              color: theme.colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: Gap.sm),
+            Text(
+              'Delete',
+              style: theme.textTheme.labelLarge
+                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
+            ),
           ],
         ),
       ),

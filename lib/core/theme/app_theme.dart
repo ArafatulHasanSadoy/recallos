@@ -42,6 +42,16 @@ abstract final class AppTheme {
           side: BorderSide(color: scheme.outlineVariant),
         ),
       ),
+      // Floating rather than fixed: a bar welded to the bottom edge covers the
+      // scan button and squares off a screen whose every other surface is
+      // rounded.
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.all(Gap.md),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
     );
   }
 }
