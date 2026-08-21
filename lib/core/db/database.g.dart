@@ -3,7 +3,7 @@
 part of 'database.dart';
 
 // ignore_for_file: type=lint
-class $PeopleTable extends People with TableInfo<$PeopleTable, PeopleData> {
+class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -123,7 +123,7 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, PeopleData> {
   static const String $name = 'people';
   @override
   VerificationContext validateIntegrity(
-    Insertable<PeopleData> instance, {
+    Insertable<Person> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -187,9 +187,9 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, PeopleData> {
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  PeopleData map(Map<String, dynamic> data, {String? tablePrefix}) {
+  Person map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return PeopleData(
+    return Person(
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -231,7 +231,7 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, PeopleData> {
   }
 }
 
-class PeopleData extends DataClass implements Insertable<PeopleData> {
+class Person extends DataClass implements Insertable<Person> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -244,7 +244,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
 
   /// Private, per-user, learned from feedback. 0.0–1.0, 0.5 = no signal.
   final double trustScore;
-  const PeopleData({
+  const Person({
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -293,12 +293,12 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
     );
   }
 
-  factory PeopleData.fromJson(
+  factory Person.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return PeopleData(
+    return Person(
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -324,7 +324,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
     };
   }
 
-  PeopleData copyWith({
+  Person copyWith({
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -333,7 +333,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
     Value<String?> photoPath = const Value.absent(),
     Value<String?> relationship = const Value.absent(),
     double? trustScore,
-  }) => PeopleData(
+  }) => Person(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -343,8 +343,8 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
     relationship: relationship.present ? relationship.value : this.relationship,
     trustScore: trustScore ?? this.trustScore,
   );
-  PeopleData copyWithCompanion(PeopleCompanion data) {
-    return PeopleData(
+  Person copyWithCompanion(PeopleCompanion data) {
+    return Person(
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -364,7 +364,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
 
   @override
   String toString() {
-    return (StringBuffer('PeopleData(')
+    return (StringBuffer('Person(')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -391,7 +391,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is PeopleData &&
+      (other is Person &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -402,7 +402,7 @@ class PeopleData extends DataClass implements Insertable<PeopleData> {
           other.trustScore == this.trustScore);
 }
 
-class PeopleCompanion extends UpdateCompanion<PeopleData> {
+class PeopleCompanion extends UpdateCompanion<Person> {
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -431,7 +431,7 @@ class PeopleCompanion extends UpdateCompanion<PeopleData> {
     this.relationship = const Value.absent(),
     this.trustScore = const Value.absent(),
   }) : displayName = Value(displayName);
-  static Insertable<PeopleData> custom({
+  static Insertable<Person> custom({
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
@@ -1035,7 +1035,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
 }
 
 class $OrgBranchesTable extends OrgBranches
-    with TableInfo<$OrgBranchesTable, OrgBranche> {
+    with TableInfo<$OrgBranchesTable, OrgBranch> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
@@ -1173,7 +1173,7 @@ class $OrgBranchesTable extends OrgBranches
   static const String $name = 'org_branches';
   @override
   VerificationContext validateIntegrity(
-    Insertable<OrgBranche> instance, {
+    Insertable<OrgBranch> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -1243,9 +1243,9 @@ class $OrgBranchesTable extends OrgBranches
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  OrgBranche map(Map<String, dynamic> data, {String? tablePrefix}) {
+  OrgBranch map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return OrgBranche(
+    return OrgBranch(
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1295,7 +1295,7 @@ class $OrgBranchesTable extends OrgBranches
   }
 }
 
-class OrgBranche extends DataClass implements Insertable<OrgBranche> {
+class OrgBranch extends DataClass implements Insertable<OrgBranch> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -1306,7 +1306,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
   final double? lng;
   final String? phone;
   final bool isPrimary;
-  const OrgBranche({
+  const OrgBranch({
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -1365,12 +1365,12 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
     );
   }
 
-  factory OrgBranche.fromJson(
+  factory OrgBranch.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return OrgBranche(
+    return OrgBranch(
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -1400,7 +1400,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
     };
   }
 
-  OrgBranche copyWith({
+  OrgBranch copyWith({
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -1411,7 +1411,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
     Value<double?> lng = const Value.absent(),
     Value<String?> phone = const Value.absent(),
     bool? isPrimary,
-  }) => OrgBranche(
+  }) => OrgBranch(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -1423,8 +1423,8 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
     phone: phone.present ? phone.value : this.phone,
     isPrimary: isPrimary ?? this.isPrimary,
   );
-  OrgBranche copyWithCompanion(OrgBranchesCompanion data) {
-    return OrgBranche(
+  OrgBranch copyWithCompanion(OrgBranchesCompanion data) {
+    return OrgBranch(
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -1440,7 +1440,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
 
   @override
   String toString() {
-    return (StringBuffer('OrgBranche(')
+    return (StringBuffer('OrgBranch(')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -1471,7 +1471,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is OrgBranche &&
+      (other is OrgBranch &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -1484,7 +1484,7 @@ class OrgBranche extends DataClass implements Insertable<OrgBranche> {
           other.isPrimary == this.isPrimary);
 }
 
-class OrgBranchesCompanion extends UpdateCompanion<OrgBranche> {
+class OrgBranchesCompanion extends UpdateCompanion<OrgBranch> {
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -1519,7 +1519,7 @@ class OrgBranchesCompanion extends UpdateCompanion<OrgBranche> {
     this.phone = const Value.absent(),
     this.isPrimary = const Value.absent(),
   }) : orgId = Value(orgId);
-  static Insertable<OrgBranche> custom({
+  static Insertable<OrgBranch> custom({
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
@@ -4124,6 +4124,20 @@ class $ContactPointsTable extends ContactPoints
       'REFERENCES roles (id)',
     ),
   );
+  static const VerificationMeta _sourceCardIdMeta = const VerificationMeta(
+    'sourceCardId',
+  );
+  @override
+  late final GeneratedColumn<int> sourceCardId = GeneratedColumn<int>(
+    'source_card_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES cards (id) ON DELETE CASCADE',
+    ),
+  );
   @override
   late final GeneratedColumnWithTypeConverter<FactSource, String> source =
       GeneratedColumn<String>(
@@ -4161,6 +4175,7 @@ class $ContactPointsTable extends ContactPoints
     normalizedValue,
     label,
     roleId,
+    sourceCardId,
     source,
     isActive,
   ];
@@ -4242,6 +4257,15 @@ class $ContactPointsTable extends ContactPoints
         roleId.isAcceptableOrUnknown(data['role_id']!, _roleIdMeta),
       );
     }
+    if (data.containsKey('source_card_id')) {
+      context.handle(
+        _sourceCardIdMeta,
+        sourceCardId.isAcceptableOrUnknown(
+          data['source_card_id']!,
+          _sourceCardIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('is_active')) {
       context.handle(
         _isActiveMeta,
@@ -4303,6 +4327,10 @@ class $ContactPointsTable extends ContactPoints
         DriftSqlType.int,
         data['${effectivePrefix}role_id'],
       ),
+      sourceCardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_card_id'],
+      ),
       source: $ContactPointsTable.$convertersource.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -4348,6 +4376,18 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
 
   /// Which role this endpoint belongs to, when the person has several jobs.
   final int? roleId;
+
+  /// The card this endpoint was read off, or null when the user typed it in
+  /// directly.
+  ///
+  /// One row per card that asserts an endpoint, rather than one row per
+  /// distinct number: promotion can then refresh a single card's contribution
+  /// by deleting and rewriting its own rows, without reasoning about what
+  /// every other card still claims. Reads group by [normalizedValue] to
+  /// collapse the duplicates. It also keeps provenance — *which card* this
+  /// number came off — which is the same principle [CardFields.source]
+  /// follows. The cascade is what makes a purge complete.
+  final int? sourceCardId;
   final FactSource source;
   final bool isActive;
   const ContactPoint({
@@ -4362,6 +4402,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
     this.normalizedValue,
     this.label,
     this.roleId,
+    this.sourceCardId,
     required this.source,
     required this.isActive,
   });
@@ -4390,6 +4431,9 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
     }
     if (!nullToAbsent || roleId != null) {
       map['role_id'] = Variable<int>(roleId);
+    }
+    if (!nullToAbsent || sourceCardId != null) {
+      map['source_card_id'] = Variable<int>(sourceCardId);
     }
     {
       map['source'] = Variable<String>(
@@ -4421,6 +4465,9 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
       roleId: roleId == null && nullToAbsent
           ? const Value.absent()
           : Value(roleId),
+      sourceCardId: sourceCardId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceCardId),
       source: Value(source),
       isActive: Value(isActive),
     );
@@ -4445,6 +4492,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
       normalizedValue: serializer.fromJson<String?>(json['normalizedValue']),
       label: serializer.fromJson<String?>(json['label']),
       roleId: serializer.fromJson<int?>(json['roleId']),
+      sourceCardId: serializer.fromJson<int?>(json['sourceCardId']),
       source: $ContactPointsTable.$convertersource.fromJson(
         serializer.fromJson<String>(json['source']),
       ),
@@ -4468,6 +4516,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
       'normalizedValue': serializer.toJson<String?>(normalizedValue),
       'label': serializer.toJson<String?>(label),
       'roleId': serializer.toJson<int?>(roleId),
+      'sourceCardId': serializer.toJson<int?>(sourceCardId),
       'source': serializer.toJson<String>(
         $ContactPointsTable.$convertersource.toJson(source),
       ),
@@ -4487,6 +4536,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
     Value<String?> normalizedValue = const Value.absent(),
     Value<String?> label = const Value.absent(),
     Value<int?> roleId = const Value.absent(),
+    Value<int?> sourceCardId = const Value.absent(),
     FactSource? source,
     bool? isActive,
   }) => ContactPoint(
@@ -4503,6 +4553,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
         : this.normalizedValue,
     label: label.present ? label.value : this.label,
     roleId: roleId.present ? roleId.value : this.roleId,
+    sourceCardId: sourceCardId.present ? sourceCardId.value : this.sourceCardId,
     source: source ?? this.source,
     isActive: isActive ?? this.isActive,
   );
@@ -4521,6 +4572,9 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
           : this.normalizedValue,
       label: data.label.present ? data.label.value : this.label,
       roleId: data.roleId.present ? data.roleId.value : this.roleId,
+      sourceCardId: data.sourceCardId.present
+          ? data.sourceCardId.value
+          : this.sourceCardId,
       source: data.source.present ? data.source.value : this.source,
       isActive: data.isActive.present ? data.isActive.value : this.isActive,
     );
@@ -4540,6 +4594,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
           ..write('normalizedValue: $normalizedValue, ')
           ..write('label: $label, ')
           ..write('roleId: $roleId, ')
+          ..write('sourceCardId: $sourceCardId, ')
           ..write('source: $source, ')
           ..write('isActive: $isActive')
           ..write(')'))
@@ -4559,6 +4614,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
     normalizedValue,
     label,
     roleId,
+    sourceCardId,
     source,
     isActive,
   );
@@ -4577,6 +4633,7 @@ class ContactPoint extends DataClass implements Insertable<ContactPoint> {
           other.normalizedValue == this.normalizedValue &&
           other.label == this.label &&
           other.roleId == this.roleId &&
+          other.sourceCardId == this.sourceCardId &&
           other.source == this.source &&
           other.isActive == this.isActive);
 }
@@ -4593,6 +4650,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
   final Value<String?> normalizedValue;
   final Value<String?> label;
   final Value<int?> roleId;
+  final Value<int?> sourceCardId;
   final Value<FactSource> source;
   final Value<bool> isActive;
   const ContactPointsCompanion({
@@ -4607,6 +4665,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
     this.normalizedValue = const Value.absent(),
     this.label = const Value.absent(),
     this.roleId = const Value.absent(),
+    this.sourceCardId = const Value.absent(),
     this.source = const Value.absent(),
     this.isActive = const Value.absent(),
   });
@@ -4622,6 +4681,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
     this.normalizedValue = const Value.absent(),
     this.label = const Value.absent(),
     this.roleId = const Value.absent(),
+    this.sourceCardId = const Value.absent(),
     required FactSource source,
     this.isActive = const Value.absent(),
   }) : ownerType = Value(ownerType),
@@ -4641,6 +4701,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
     Expression<String>? normalizedValue,
     Expression<String>? label,
     Expression<int>? roleId,
+    Expression<int>? sourceCardId,
     Expression<String>? source,
     Expression<bool>? isActive,
   }) {
@@ -4656,6 +4717,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
       if (normalizedValue != null) 'normalized_value': normalizedValue,
       if (label != null) 'label': label,
       if (roleId != null) 'role_id': roleId,
+      if (sourceCardId != null) 'source_card_id': sourceCardId,
       if (source != null) 'source': source,
       if (isActive != null) 'is_active': isActive,
     });
@@ -4673,6 +4735,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
     Value<String?>? normalizedValue,
     Value<String?>? label,
     Value<int?>? roleId,
+    Value<int?>? sourceCardId,
     Value<FactSource>? source,
     Value<bool>? isActive,
   }) {
@@ -4688,6 +4751,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
       normalizedValue: normalizedValue ?? this.normalizedValue,
       label: label ?? this.label,
       roleId: roleId ?? this.roleId,
+      sourceCardId: sourceCardId ?? this.sourceCardId,
       source: source ?? this.source,
       isActive: isActive ?? this.isActive,
     );
@@ -4731,6 +4795,9 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
     if (roleId.present) {
       map['role_id'] = Variable<int>(roleId.value);
     }
+    if (sourceCardId.present) {
+      map['source_card_id'] = Variable<int>(sourceCardId.value);
+    }
     if (source.present) {
       map['source'] = Variable<String>(
         $ContactPointsTable.$convertersource.toSql(source.value),
@@ -4756,6 +4823,7 @@ class ContactPointsCompanion extends UpdateCompanion<ContactPoint> {
           ..write('normalizedValue: $normalizedValue, ')
           ..write('label: $label, ')
           ..write('roleId: $roleId, ')
+          ..write('sourceCardId: $sourceCardId, ')
           ..write('source: $source, ')
           ..write('isActive: $isActive')
           ..write(')'))
@@ -11004,6 +11072,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         'cards',
         limitUpdateKind: UpdateKind.delete,
       ),
+      result: [TableUpdate('contact_points', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'cards',
+        limitUpdateKind: UpdateKind.delete,
+      ),
       result: [TableUpdate('ocr_blocks', kind: UpdateKind.delete)],
     ),
     WritePropagation(
@@ -11061,7 +11136,7 @@ typedef $$PeopleTableUpdateCompanionBuilder =
     });
 
 final class $$PeopleTableReferences
-    extends BaseReferences<_$AppDatabase, $PeopleTable, PeopleData> {
+    extends BaseReferences<_$AppDatabase, $PeopleTable, Person> {
   $$PeopleTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$RolesTable, List<Role>> _rolesRefsTable(
@@ -11348,14 +11423,14 @@ class $$PeopleTableTableManager
         RootTableManager<
           _$AppDatabase,
           $PeopleTable,
-          PeopleData,
+          Person,
           $$PeopleTableFilterComposer,
           $$PeopleTableOrderingComposer,
           $$PeopleTableAnnotationComposer,
           $$PeopleTableCreateCompanionBuilder,
           $$PeopleTableUpdateCompanionBuilder,
-          (PeopleData, $$PeopleTableReferences),
-          PeopleData,
+          (Person, $$PeopleTableReferences),
+          Person,
           PrefetchHooks Function({bool rolesRefs, bool cardsRefs})
         > {
   $$PeopleTableTableManager(_$AppDatabase db, $PeopleTable table)
@@ -11426,7 +11501,7 @@ class $$PeopleTableTableManager
               getPrefetchedDataCallback: (items) async {
                 return [
                   if (rolesRefs)
-                    await $_getPrefetchedData<PeopleData, $PeopleTable, Role>(
+                    await $_getPrefetchedData<Person, $PeopleTable, Role>(
                       currentTable: table,
                       referencedTable: $$PeopleTableReferences._rolesRefsTable(
                         db,
@@ -11438,11 +11513,7 @@ class $$PeopleTableTableManager
                       typedResults: items,
                     ),
                   if (cardsRefs)
-                    await $_getPrefetchedData<
-                      PeopleData,
-                      $PeopleTable,
-                      CardRow
-                    >(
+                    await $_getPrefetchedData<Person, $PeopleTable, CardRow>(
                       currentTable: table,
                       referencedTable: $$PeopleTableReferences._cardsRefsTable(
                         db,
@@ -11465,14 +11536,14 @@ typedef $$PeopleTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
       $PeopleTable,
-      PeopleData,
+      Person,
       $$PeopleTableFilterComposer,
       $$PeopleTableOrderingComposer,
       $$PeopleTableAnnotationComposer,
       $$PeopleTableCreateCompanionBuilder,
       $$PeopleTableUpdateCompanionBuilder,
-      (PeopleData, $$PeopleTableReferences),
-      PeopleData,
+      (Person, $$PeopleTableReferences),
+      Person,
       PrefetchHooks Function({bool rolesRefs, bool cardsRefs})
     >;
 typedef $$OrganizationsTableCreateCompanionBuilder =
@@ -11506,7 +11577,7 @@ final class $$OrganizationsTableReferences
     super.$_typedResult,
   );
 
-  static MultiTypedResultKey<$OrgBranchesTable, List<OrgBranche>>
+  static MultiTypedResultKey<$OrgBranchesTable, List<OrgBranch>>
   _orgBranchesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.orgBranches,
     aliasName: 'organizations__id__org_branches__org_id',
@@ -11947,7 +12018,7 @@ class $$OrganizationsTableTableManager
                         await $_getPrefetchedData<
                           Organization,
                           $OrganizationsTable,
-                          OrgBranche
+                          OrgBranch
                         >(
                           currentTable: table,
                           referencedTable: $$OrganizationsTableReferences
@@ -12060,7 +12131,7 @@ typedef $$OrgBranchesTableUpdateCompanionBuilder =
     });
 
 final class $$OrgBranchesTableReferences
-    extends BaseReferences<_$AppDatabase, $OrgBranchesTable, OrgBranche> {
+    extends BaseReferences<_$AppDatabase, $OrgBranchesTable, OrgBranch> {
   $$OrgBranchesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $OrganizationsTable _orgIdTable(_$AppDatabase db) =>
@@ -12302,14 +12373,14 @@ class $$OrgBranchesTableTableManager
         RootTableManager<
           _$AppDatabase,
           $OrgBranchesTable,
-          OrgBranche,
+          OrgBranch,
           $$OrgBranchesTableFilterComposer,
           $$OrgBranchesTableOrderingComposer,
           $$OrgBranchesTableAnnotationComposer,
           $$OrgBranchesTableCreateCompanionBuilder,
           $$OrgBranchesTableUpdateCompanionBuilder,
-          (OrgBranche, $$OrgBranchesTableReferences),
-          OrgBranche,
+          (OrgBranch, $$OrgBranchesTableReferences),
+          OrgBranch,
           PrefetchHooks Function({bool orgId})
         > {
   $$OrgBranchesTableTableManager(_$AppDatabase db, $OrgBranchesTable table)
@@ -12428,14 +12499,14 @@ typedef $$OrgBranchesTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
       $OrgBranchesTable,
-      OrgBranche,
+      OrgBranch,
       $$OrgBranchesTableFilterComposer,
       $$OrgBranchesTableOrderingComposer,
       $$OrgBranchesTableAnnotationComposer,
       $$OrgBranchesTableCreateCompanionBuilder,
       $$OrgBranchesTableUpdateCompanionBuilder,
-      (OrgBranche, $$OrgBranchesTableReferences),
-      OrgBranche,
+      (OrgBranch, $$OrgBranchesTableReferences),
+      OrgBranch,
       PrefetchHooks Function({bool orgId})
     >;
 typedef $$RolesTableCreateCompanionBuilder =
@@ -13230,6 +13301,24 @@ final class $$CardsTableReferences
     );
   }
 
+  static MultiTypedResultKey<$ContactPointsTable, List<ContactPoint>>
+  _contactPointsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.contactPoints,
+    aliasName: 'cards__id__contact_points__source_card_id',
+  );
+
+  $$ContactPointsTableProcessedTableManager get contactPointsRefs {
+    final manager = $$ContactPointsTableTableManager(
+      $_db,
+      $_db.contactPoints,
+    ).filter((f) => f.sourceCardId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_contactPointsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
   static MultiTypedResultKey<$OcrBlocksTable, List<OcrBlockRow>>
   _ocrBlocksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.ocrBlocks,
@@ -13430,6 +13519,31 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
           }) => $$CardFieldsTableFilterComposer(
             $db: $db,
             $table: $db.cardFields,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> contactPointsRefs(
+    Expression<bool> Function($$ContactPointsTableFilterComposer f) f,
+  ) {
+    final $$ContactPointsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactPoints,
+      getReferencedColumn: (t) => t.sourceCardId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactPointsTableFilterComposer(
+            $db: $db,
+            $table: $db.contactPoints,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -13787,6 +13901,31 @@ class $$CardsTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> contactPointsRefs<T extends Object>(
+    Expression<T> Function($$ContactPointsTableAnnotationComposer a) f,
+  ) {
+    final $$ContactPointsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.contactPoints,
+      getReferencedColumn: (t) => t.sourceCardId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ContactPointsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.contactPoints,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
   Expression<T> ocrBlocksRefs<T extends Object>(
     Expression<T> Function($$OcrBlocksTableAnnotationComposer a) f,
   ) {
@@ -13857,6 +13996,7 @@ class $$CardsTableTableManager
             bool orgId,
             bool roleId,
             bool cardFieldsRefs,
+            bool contactPointsRefs,
             bool ocrBlocksRefs,
             bool extractionAttemptsRefs,
           })
@@ -13956,6 +14096,7 @@ class $$CardsTableTableManager
                 orgId = false,
                 roleId = false,
                 cardFieldsRefs = false,
+                contactPointsRefs = false,
                 ocrBlocksRefs = false,
                 extractionAttemptsRefs = false,
               }) {
@@ -13963,6 +14104,7 @@ class $$CardsTableTableManager
                   db: db,
                   explicitlyWatchedTables: [
                     if (cardFieldsRefs) db.cardFields,
+                    if (contactPointsRefs) db.contactPoints,
                     if (ocrBlocksRefs) db.ocrBlocks,
                     if (extractionAttemptsRefs) db.extractionAttempts,
                   ],
@@ -14047,6 +14189,27 @@ class $$CardsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (contactPointsRefs)
+                        await $_getPrefetchedData<
+                          CardRow,
+                          $CardsTable,
+                          ContactPoint
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CardsTableReferences
+                              ._contactPointsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CardsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).contactPointsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.sourceCardId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                       if (ocrBlocksRefs)
                         await $_getPrefetchedData<
                           CardRow,
@@ -14114,6 +14277,7 @@ typedef $$CardsTableProcessedTableManager =
         bool orgId,
         bool roleId,
         bool cardFieldsRefs,
+        bool contactPointsRefs,
         bool ocrBlocksRefs,
         bool extractionAttemptsRefs,
       })
@@ -14713,6 +14877,7 @@ typedef $$ContactPointsTableCreateCompanionBuilder =
       Value<String?> normalizedValue,
       Value<String?> label,
       Value<int?> roleId,
+      Value<int?> sourceCardId,
       required FactSource source,
       Value<bool> isActive,
     });
@@ -14729,6 +14894,7 @@ typedef $$ContactPointsTableUpdateCompanionBuilder =
       Value<String?> normalizedValue,
       Value<String?> label,
       Value<int?> roleId,
+      Value<int?> sourceCardId,
       Value<FactSource> source,
       Value<bool> isActive,
     });
@@ -14752,6 +14918,23 @@ final class $$ContactPointsTableReferences
       $_db.roles,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_roleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $CardsTable _sourceCardIdTable(_$AppDatabase db) =>
+      db.cards.createAlias('contact_points__source_card_id__cards__id');
+
+  $$CardsTableProcessedTableManager? get sourceCardId {
+    final $_column = $_itemColumn<int>('source_card_id');
+    if ($_column == null) return null;
+    final manager = $$CardsTableTableManager(
+      $_db,
+      $_db.cards,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_sourceCardIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -14844,6 +15027,29 @@ class $$ContactPointsTableFilterComposer
           }) => $$RolesTableFilterComposer(
             $db: $db,
             $table: $db.roles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$CardsTableFilterComposer get sourceCardId {
+    final $$CardsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sourceCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableFilterComposer(
+            $db: $db,
+            $table: $db.cards,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -14945,6 +15151,29 @@ class $$ContactPointsTableOrderingComposer
     );
     return composer;
   }
+
+  $$CardsTableOrderingComposer get sourceCardId {
+    final $$CardsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sourceCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableOrderingComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ContactPointsTableAnnotationComposer
@@ -15016,6 +15245,29 @@ class $$ContactPointsTableAnnotationComposer
     );
     return composer;
   }
+
+  $$CardsTableAnnotationComposer get sourceCardId {
+    final $$CardsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.sourceCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ContactPointsTableTableManager
@@ -15031,7 +15283,7 @@ class $$ContactPointsTableTableManager
           $$ContactPointsTableUpdateCompanionBuilder,
           (ContactPoint, $$ContactPointsTableReferences),
           ContactPoint,
-          PrefetchHooks Function({bool roleId})
+          PrefetchHooks Function({bool roleId, bool sourceCardId})
         > {
   $$ContactPointsTableTableManager(_$AppDatabase db, $ContactPointsTable table)
     : super(
@@ -15057,6 +15309,7 @@ class $$ContactPointsTableTableManager
                 Value<String?> normalizedValue = const Value.absent(),
                 Value<String?> label = const Value.absent(),
                 Value<int?> roleId = const Value.absent(),
+                Value<int?> sourceCardId = const Value.absent(),
                 Value<FactSource> source = const Value.absent(),
                 Value<bool> isActive = const Value.absent(),
               }) => ContactPointsCompanion(
@@ -15071,6 +15324,7 @@ class $$ContactPointsTableTableManager
                 normalizedValue: normalizedValue,
                 label: label,
                 roleId: roleId,
+                sourceCardId: sourceCardId,
                 source: source,
                 isActive: isActive,
               ),
@@ -15087,6 +15341,7 @@ class $$ContactPointsTableTableManager
                 Value<String?> normalizedValue = const Value.absent(),
                 Value<String?> label = const Value.absent(),
                 Value<int?> roleId = const Value.absent(),
+                Value<int?> sourceCardId = const Value.absent(),
                 required FactSource source,
                 Value<bool> isActive = const Value.absent(),
               }) => ContactPointsCompanion.insert(
@@ -15101,6 +15356,7 @@ class $$ContactPointsTableTableManager
                 normalizedValue: normalizedValue,
                 label: label,
                 roleId: roleId,
+                sourceCardId: sourceCardId,
                 source: source,
                 isActive: isActive,
               ),
@@ -15112,7 +15368,7 @@ class $$ContactPointsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({roleId = false}) {
+          prefetchHooksCallback: ({roleId = false, sourceCardId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -15145,6 +15401,19 @@ class $$ContactPointsTableTableManager
                               )
                               as T;
                     }
+                    if (sourceCardId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.sourceCardId,
+                                referencedTable: $$ContactPointsTableReferences
+                                    ._sourceCardIdTable(db),
+                                referencedColumn: $$ContactPointsTableReferences
+                                    ._sourceCardIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
 
                     return state;
                   },
@@ -15169,7 +15438,7 @@ typedef $$ContactPointsTableProcessedTableManager =
       $$ContactPointsTableUpdateCompanionBuilder,
       (ContactPoint, $$ContactPointsTableReferences),
       ContactPoint,
-      PrefetchHooks Function({bool roleId})
+      PrefetchHooks Function({bool roleId, bool sourceCardId})
     >;
 typedef $$OcrBlocksTableCreateCompanionBuilder =
     OcrBlocksCompanion Function({

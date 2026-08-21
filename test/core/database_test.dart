@@ -15,7 +15,8 @@ void main() {
   tearDown(() async => db.close());
 
   group('migration', () {
-    test('a v1 database gains field_id without losing what is in it', () async {
+    test('a v1 database gains every later column without losing rows',
+        () async {
       // Wind a current database back to the v1 shape, then reopen it and let
       // the migration run for real. Worth testing rather than assuming:
       // SQLite refuses `ADD COLUMN` with a REFERENCES clause unless the column
@@ -53,6 +54,20 @@ void main() {
       await before.customStatement(
         'ALTER TABLE ocr_blocks DROP COLUMN field_id',
       );
+      // v3's column has to go too, or this is not a v1 database and the
+      // upgrade that adds it fails on a name that is already there. Its
+      // indexes go first: SQLite refuses to drop a column one still mentions.
+      for (final String index in <String>[
+        'idx_contact_points_lookup',
+        'idx_contact_points_owner',
+        'idx_contact_points_card',
+        'idx_organizations_domain',
+      ]) {
+        await before.customStatement('DROP INDEX IF EXISTS $index');
+      }
+      await before.customStatement(
+        'ALTER TABLE contact_points DROP COLUMN source_card_id',
+      );
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 
@@ -65,6 +80,27 @@ void main() {
       // Existing blocks belong to no field until the user says otherwise.
       expect(blocks.single.fieldId, isNull);
       expect(await after.select(after.cards).get(), hasLength(1));
+
+      // v3: the identity graph can be written into the upgraded database, and
+      // the cascade that a purge depends on is actually in force.
+      final int personId = await after.into(after.people).insert(
+            PeopleCompanion.insert(displayName: 'Migrated Person'),
+          );
+      await after.into(after.contactPoints).insert(
+            ContactPointsCompanion.insert(
+              ownerType: 'person',
+              ownerId: personId,
+              kind: ContactKind.phone,
+              value: '01711363991',
+              sourceCardId: Value<int?>(cardId),
+              source: FactSource.printed,
+            ),
+          );
+      await (after.delete(after.cards)
+            ..where(($CardsTable c) => c.id.equals(cardId)))
+          .go();
+      expect(await after.select(after.contactPoints).get(), isEmpty,
+          reason: 'the source-card cascade must survive the upgrade');
     });
 
     test('creates every table and seeds ranking weights', () async {

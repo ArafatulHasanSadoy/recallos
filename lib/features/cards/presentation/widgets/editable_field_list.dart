@@ -6,6 +6,7 @@ import '../../../../core/db/enums.dart';
 import '../../../../core/extraction/card_extractor.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../capture/data/card_repository.dart';
+import '../../../contacts/data/identity_repository.dart';
 import '../../../search/data/search_repository.dart';
 
 /// Human name for a field key.
@@ -77,6 +78,12 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
     await ref
         .read(searchRepositoryProvider)
         .reindexCard(widget.detail.card.id);
+    // A corrected phone number is a different person to link against, so the
+    // graph is rebuilt from the same edit rather than left pointing at the
+    // value that was wrong.
+    await ref
+        .read(identityRepositoryProvider)
+        .promote(widget.detail.card.id);
     if (mounted) _collapse();
   }
 

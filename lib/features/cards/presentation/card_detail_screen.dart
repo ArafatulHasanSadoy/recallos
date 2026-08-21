@@ -11,6 +11,7 @@ import '../../../core/extraction/card_extractor.dart';
 import '../../../core/extraction/phone.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../capture/data/card_repository.dart';
+import '../../contacts/data/identity_repository.dart';
 import 'widgets/card_image_overlay.dart';
 import 'widgets/editable_field_list.dart';
 
@@ -93,6 +94,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     );
     if (confirmed != true || !context.mounted) return;
 
+    await ref.read(identityRepositoryProvider).detach(widget.cardId);
     await ref.read(cardRepositoryProvider).purge(widget.cardId);
     if (context.mounted) context.pop();
   }

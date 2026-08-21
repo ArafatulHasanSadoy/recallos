@@ -53,13 +53,14 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'recallos'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (Migrator m) async {
           await m.createAll();
           await customStatement(_createSearchIndex);
+          await _createIdentityIndexes();
           await _seedRankingWeights();
         },
         onUpgrade: (Migrator m, int from, int to) async {
@@ -69,6 +70,13 @@ class AppDatabase extends _$AppDatabase {
           if (from < 2) {
             await m.addColumn(ocrBlocks, ocrBlocks.fieldId);
           }
+          // v3 — the identity graph started being written. `source_card_id`
+          // is what lets one card's contribution be refreshed on its own; the
+          // indexes are the blocking keys resolution matches on.
+          if (from < 3) {
+            await m.addColumn(contactPoints, contactPoints.sourceCardId);
+            await _createIdentityIndexes();
+          }
         },
         beforeOpen: (OpeningDetails details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -77,6 +85,30 @@ class AppDatabase extends _$AppDatabase {
           await customStatement(_createSearchIndex);
         },
       );
+
+  /// Blocking keys for identity resolution.
+  ///
+  /// Every promotion looks a card's phones and emails up against
+  /// `contact_points`, and its domain up against `organizations`. Without
+  /// these that is a full scan per field per scan.
+  Future<void> _createIdentityIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_contact_points_lookup '
+      'ON contact_points(normalized_value, kind)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_contact_points_owner '
+      'ON contact_points(owner_type, owner_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_contact_points_card '
+      'ON contact_points(source_card_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_organizations_domain '
+      'ON organizations(website_domain)',
+    );
+  }
 
   /// Starting weights for the utility score.
   ///

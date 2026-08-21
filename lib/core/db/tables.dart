@@ -21,6 +21,7 @@ mixin _Timestamps on Table {
 // not.
 // ---------------------------------------------------------------------------
 
+@DataClassName('Person')
 class People extends Table with _Timestamps {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get displayName => text().withLength(min: 1, max: 200)();
@@ -43,6 +44,7 @@ class Organizations extends Table with _Timestamps {
   TextColumn get websiteDomain => text().nullable()();
 }
 
+@DataClassName('OrgBranch')
 class OrgBranches extends Table with _Timestamps {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get orgId => integer().references(Organizations, #id)();
@@ -158,6 +160,19 @@ class ContactPoints extends Table with _Timestamps {
 
   /// Which role this endpoint belongs to, when the person has several jobs.
   IntColumn get roleId => integer().nullable().references(Roles, #id)();
+
+  /// The card this endpoint was read off, or null when the user typed it in
+  /// directly.
+  ///
+  /// One row per card that asserts an endpoint, rather than one row per
+  /// distinct number: promotion can then refresh a single card's contribution
+  /// by deleting and rewriting its own rows, without reasoning about what
+  /// every other card still claims. Reads group by [normalizedValue] to
+  /// collapse the duplicates. It also keeps provenance — *which card* this
+  /// number came off — which is the same principle [CardFields.source]
+  /// follows. The cascade is what makes a purge complete.
+  IntColumn get sourceCardId =>
+      integer().nullable().references(Cards, #id, onDelete: KeyAction.cascade)();
 
   TextColumn get source => textEnum<FactSource>()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();

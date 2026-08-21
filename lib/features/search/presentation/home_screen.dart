@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
 import '../../cards/presentation/widgets/wallet_card.dart';
+import '../../contacts/data/identity_repository.dart';
 import '../data/search_repository.dart';
 
 /// Live list of saved cards, newest first.
@@ -129,7 +130,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     // Undo window closed untouched — now it really goes, image and index rows
-    // included.
+    // included. The graph is torn down first, while the card's links still
+    // resolve — afterwards there is nothing left to find the person by.
+    await ref.read(identityRepositoryProvider).detach(card.id);
     await repo.purge(card.id);
   }
 
@@ -141,6 +144,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: <Widget>[
+          IconButton(
+            tooltip: 'Contacts',
+            onPressed: () => context.push(Routes.contacts),
+            icon: const Icon(Icons.people_outline),
+          ),
           // Phase 0 scaffolding — remove with the spike screen itself.
           IconButton(
             tooltip: 'OCR spike',

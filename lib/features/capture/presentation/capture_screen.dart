@@ -14,6 +14,7 @@ import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../cards/presentation/widgets/card_image_overlay.dart';
 import '../../cards/presentation/widgets/editable_field_list.dart';
+import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
 import '../data/card_repository.dart';
 
@@ -136,6 +137,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       // Index straight away so a card is findable even if the user backs out
       // before writing a note.
       await ref.read(searchRepositoryProvider).reindexCard(pending.id);
+      // The fields just written are also what the person and company behind
+      // this card are built from.
+      await ref.read(identityRepositoryProvider).promote(pending.id);
 
       if (!mounted) return;
       setState(() {
