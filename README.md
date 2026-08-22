@@ -15,10 +15,10 @@ Background research: `ChatGPT-CSE499A Senior Project Guide.md`.
 
 ## Status
 
-Phase 0 complete, plus the embedding layer. Scaffold, database, extraction,
-OCR, embeddings and hybrid ranking are in place; both platforms build release.
-131 tests pass. **The Phase 0 OCR gate has not been run against real cards yet**
-— that is the next step.
+Phase 0 complete, plus the embedding layer and the identity graph. Scaffold,
+database, extraction, OCR, embeddings, hybrid ranking and contacts are in
+place; both platforms build release. 260 tests pass. **The Phase 0 OCR gate has
+not been run against real cards yet** — that is the next step.
 
 Scope is **Latin script only**. Bangla and Banglish are deferred; see
 [Language scope](#language-scope).
@@ -105,7 +105,7 @@ lib/
     extraction/    Deterministic field extraction, validators, metrics
     theme/
   features/
-    capture/ cards/ search/ warranty/ settings/
+    capture/ cards/ contacts/ search/
 tool/spike/        Offline scorer for the Phase 0 gate
 ```
 
@@ -180,9 +180,26 @@ implementations over the same dataset and report the difference.
 
 ## Deliberate constraints
 
-- **No `INTERNET` permission on Android.** Zero-egress becomes something the OS
-  enforces rather than something a privacy policy claims. It returns in Stage 2,
-  when sync arrives.
+- **No `INTERNET` permission in the Android release build.** Zero-egress is
+  something the OS enforces rather than something a privacy policy claims.
+  Check it, do not take it on trust:
+
+  ```bash
+  aapt dump permissions build/app/outputs/flutter-apk/app-release.apk
+  ```
+
+  Omitting the permission from `AndroidManifest.xml` was not enough on its own,
+  and for several months this file claimed something the shipped APK did not
+  do. ML Kit pulls in Google's telemetry transport, which declares `INTERNET`
+  and merges it in; the permission is now explicitly removed with
+  `tools:node="remove"`. **Debug builds keep it** — the Dart VM service needs it
+  for hot reload — so the guarantee is a property of release builds, which is
+  what ships.
+
+  Two honest limits. The permission constrains *this app's process*: the ML Kit
+  document scanner runs inside Google Play Services, so what that component
+  does with a card image is governed by Play Services, not by this manifest.
+  And it returns in Stage 2, when sync arrives.
 - **Deterministic extraction, not an LLM, for phone/email/URL/name.** Small
   on-device models are markedly worse than a regex at this, and far slower.
   Benchmarks put 1B-model structured extraction around 10% flawless.
@@ -203,7 +220,14 @@ flutter test
 flutter analyze
 ```
 
-207 tests. The valuable ones are in `test/core/`: phone normalisation against
+260 tests. **Run the OCR gate against a release build, not a debug one.**
+Minification is not cosmetic here: R8 renamed ML Kit's component registrars,
+which are looked up reflectively by name, and OCR returned zero blocks in
+release while working perfectly in debug — silently, with no error surfaced to
+the app. `proguard-rules.pro` keeps them now. A green debug run says nothing
+about the artifact you hand someone.
+
+The valuable ones are in `test/core/`: phone normalisation against
 the BTRC numbering plan, Bengali-Latin digit confusables (kept — Bengali
 numerals still appear on Latin-script cards), cross-field sanity checks, the
 identity-graph case of one person holding three roles with a different number

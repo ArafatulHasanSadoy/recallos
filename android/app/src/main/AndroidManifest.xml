@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -6,7 +7,24 @@
     <!-- Deliberately absent: INTERNET.
          Stage 1 does all OCR, inference and search on-device. Leaving the
          permission out makes zero-egress a property the OS enforces, not a
-         promise in a privacy policy. It returns in Stage 2, when sync arrives. -->
+         promise in a privacy policy. It returns in Stage 2, when sync arrives.
+
+         Simply omitting it was not enough, and for a long time this file
+         claimed something the shipped APK did not do. ML Kit pulls in
+         `com.google.android.datatransport:transport-backend-cct`, Google's
+         telemetry transport, which declares INTERNET and a
+         TransportBackendDiscovery service of its own; the merged manifest
+         granted all three permissions below. These removals are what make the
+         claim true. Verify against the *merged* manifest after adding any
+         dependency, never against this file:
+
+           aapt dump permissions build/app/outputs/flutter-apk/app-release.apk
+
+         Text recognition is unaffected: `com.google.mlkit:text-recognition`
+         bundles its model into the APK and never reaches the network. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove"/>
 
     <application
         android:label="RecallOS"
@@ -17,6 +35,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
+            android:screenOrientation="portrait"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
