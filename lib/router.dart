@@ -6,6 +6,7 @@ import 'features/capture/presentation/spike_screen.dart';
 import 'features/cards/presentation/card_detail_screen.dart';
 import 'features/cards/presentation/needs_attention_screen.dart';
 import 'features/contacts/presentation/contacts_screen.dart';
+import 'features/contacts/presentation/duplicates_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
 import 'features/search/presentation/home_screen.dart';
@@ -15,6 +16,7 @@ abstract final class Routes {
   static const String home = '/';
   static const String capture = '/capture';
   static const String contacts = '/contacts';
+  static const String duplicates = '/duplicates';
   static const String needsAttention = '/needs-attention';
   static const String settings = '/settings';
 
@@ -55,6 +57,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.needsAttention,
         builder: (_, _) => const NeedsAttentionScreen(),
+      ),
+      GoRoute(
+        path: Routes.duplicates,
+        builder: (_, _) => const DuplicatesScreen(),
       ),
       GoRoute(
         path: '/person/:id',

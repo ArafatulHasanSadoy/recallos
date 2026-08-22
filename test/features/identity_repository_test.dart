@@ -269,6 +269,95 @@ void main() {
     });
   });
 
+  group('merging', () {
+    Future<(int, int)> twoRahmans() async {
+      await scan(name: 'Md. Rahman', company: 'Rahman Traders', phone: '01711363991');
+      await scan(name: 'Rahman', company: 'Rahman Motors', phone: '01712000000');
+      final List<Person> both = await people();
+      expect(both, hasLength(2));
+      return (both.first.id, both.last.id);
+    }
+
+    test('a merged person stops being a separate contact', () async {
+      final (int a, int b) = await twoRahmans();
+
+      await identity.merge(survivor: a, loser: b);
+
+      final List<PersonSummary> listed = await identity.watchPeople().first;
+      expect(listed.map((PersonSummary p) => p.id), <int>[a]);
+      // The row survives so the merge can be undone.
+      expect(await people(), hasLength(2));
+    });
+
+    test('the survivor gains the other one\'s businesses and numbers',
+        () async {
+      final (int a, int b) = await twoRahmans();
+      await identity.merge(survivor: a, loser: b);
+
+      final PersonDetail? detail = await identity.watchPerson(a).first;
+      expect(detail!.roles, hasLength(2),
+          reason: 'both businesses belong to the one man now');
+      expect(
+        detail.roles.expand((RoleDetail r) => r.contacts).length,
+        2,
+        reason: 'and both numbers are reachable under him',
+      );
+    });
+
+    test('un-merging puts them back exactly as they were', () async {
+      final (int a, int b) = await twoRahmans();
+      final PersonDetail? beforeA = await identity.watchPerson(a).first;
+      final PersonDetail? beforeB = await identity.watchPerson(b).first;
+
+      await identity.merge(survivor: a, loser: b);
+      await identity.unmerge(b);
+
+      final PersonDetail? afterA = await identity.watchPerson(a).first;
+      final PersonDetail? afterB = await identity.watchPerson(b).first;
+
+      // Nothing moved during the merge, so nothing has to be guessed on the
+      // way back — which is the whole reason it is a pointer.
+      expect(afterA!.roles.length, beforeA!.roles.length);
+      expect(afterB!.roles.length, beforeB!.roles.length);
+      expect(afterA.roles.single.orgName, beforeA.roles.single.orgName);
+      expect(afterB.roles.single.orgName, beforeB.roles.single.orgName);
+      expect(await identity.watchPeople().first, hasLength(2));
+    });
+
+    test('a new card matching the merged-away row joins the survivor',
+        () async {
+      final (int a, int b) = await twoRahmans();
+      await identity.merge(survivor: a, loser: b);
+
+      // The same number as the row that was merged away.
+      await scan(name: 'Rahman', company: 'Rahman Motors', phone: '01712000000');
+
+      expect(await identity.watchPeople().first, hasLength(1),
+          reason: 'a merged-away row must not come back to life');
+    });
+
+    test('keeping them separate settles the question for good', () async {
+      final (int a, int b) = await twoRahmans();
+      expect(await identity.watchDuplicates().first, hasLength(1));
+
+      await identity.keepSeparate(a: a, b: b);
+
+      expect(await identity.watchDuplicates().first, isEmpty);
+      // And re-promoting must not raise it again.
+      await identity.backfill();
+      expect(await identity.watchDuplicates().first, isEmpty);
+    });
+
+    test('the pair explains itself', () async {
+      await twoRahmans();
+      final DuplicatePair pair =
+          (await identity.watchDuplicates().first).single;
+
+      expect(pair.signals, contains('same name'));
+      expect(pair.score, lessThan(MatchVerdict.linkThreshold));
+    });
+  });
+
   group('backfill', () {
     test('re-promotes a card left behind by a tightened rule', () async {
       final int cardId = await scan(name: 'Stale', phone: '01819104376');

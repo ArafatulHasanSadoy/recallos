@@ -20,15 +20,24 @@ abstract final class AppTheme {
       colorScheme: scheme,
       useMaterial3: true,
       visualDensity: VisualDensity.standard,
+      // A 52pt floor on height, and Material's usual 64 on width.
+      //
+      // Not `Size.fromHeight(52)`, which is `Size(infinity, 52)` — an infinite
+      // *minimum* width. Inside anything that measures a child against
+      // unbounded width, a Row most of all, that is an unsatisfiable
+      // constraint: the button demands infinite width, layout fails, and
+      // every sibling in the surrounding list silently fails to paint with
+      // it. The screens that use these buttons full-width get their width
+      // from an `Expanded` or a stretching `Column`, never from here.
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
+          minimumSize: const Size(64, 52),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
+          minimumSize: const Size(64, 52),
         ),
       ),
       inputDecorationTheme: const InputDecorationTheme(

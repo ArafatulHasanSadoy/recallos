@@ -29,6 +29,11 @@ final organizationDetailProvider =
   return ref.watch(identityRepositoryProvider).watchOrganization(id);
 });
 
+/// Pairs the graph thinks might be the same person, still awaiting a verdict.
+final duplicateCandidatesProvider = StreamProvider<List<DuplicatePair>>(
+  (Ref ref) => ref.watch(identityRepositoryProvider).watchDuplicates(),
+);
+
 /// One person and everything hanging off them.
 final personDetailProvider =
     StreamProvider.family<PersonDetail?, int>((Ref ref, int id) {
@@ -111,6 +116,26 @@ class PersonDetail {
   final List<ContactPoint> looseContacts;
 
   final List<int> cardIds;
+}
+
+/// Two people the graph could not tell apart, and why it thinks so.
+class DuplicatePair {
+  const DuplicatePair({
+    required this.id,
+    required this.a,
+    required this.b,
+    required this.score,
+    required this.signals,
+  });
+
+  final int id;
+  final PersonSummary a;
+  final PersonSummary b;
+  final double score;
+
+  /// The signals that fired, so the prompt explains itself rather than
+  /// asserting. "Same name" is a very different claim from "same phone".
+  final List<String> signals;
 }
 
 class OrgDetail {
@@ -326,7 +351,10 @@ class IdentityRepository {
       ).get();
 
       if (hits.isNotEmpty) {
-        final int personId = hits.first.read<int>('id');
+        // Through the pointer: a card matching somebody who has since been
+        // merged belongs to whoever they were merged into, not to a row that
+        // no longer stands for anyone.
+        final int personId = await _survivorOf(hits.first.read<int>('id'));
         // More than one existing person shares this card's endpoints. That is
         // a real merge question, not something to answer silently.
         for (final QueryRow other in hits.skip(1)) {
@@ -456,6 +484,139 @@ class IdentityRepository {
   }
 
   // -------------------------------------------------------------------------
+  // Duplicate review
+  // -------------------------------------------------------------------------
+
+  /// The pairs still waiting on a human.
+  Stream<List<DuplicatePair>> watchDuplicates() {
+    return _db
+        .customSelect(
+          'SELECT id, a_id, b_id, score, signals_json FROM duplicate_candidates '
+          r"WHERE subject_type = 'person' AND status = 'pending' "
+          'ORDER BY score DESC, id ASC',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            _db.duplicateCandidates,
+            _db.people,
+            _db.cards,
+          },
+        )
+        .watch()
+        .asyncMap((List<QueryRow> rows) async {
+          final List<DuplicatePair> out = <DuplicatePair>[];
+          for (final QueryRow r in rows) {
+            final PersonSummary? a = await _summaryOf(r.read<int>('a_id'));
+            final PersonSummary? b = await _summaryOf(r.read<int>('b_id'));
+            // A pair whose halves no longer both exist is not a question any
+            // more; garbage collection clears the row.
+            if (a == null || b == null) continue;
+
+            final String? raw = r.read<String?>('signals_json');
+            out.add(DuplicatePair(
+              id: r.read<int>('id'),
+              a: a,
+              b: b,
+              score: r.read<double>('score'),
+              signals: raw == null
+                  ? const <String>[]
+                  : (jsonDecode(raw) as List<dynamic>).cast<String>(),
+            ));
+          }
+          return out;
+        });
+  }
+
+  Future<PersonSummary?> _summaryOf(int personId) async {
+    final Person? p = await (_db.select(_db.people)
+          ..where(($PeopleTable t) =>
+              t.id.equals(personId) & t.mergedIntoId.isNull()))
+        .getSingleOrNull();
+    if (p == null) return null;
+
+    final List<QueryRow> count = await _db.customSelect(
+      'SELECT COUNT(*) AS n FROM cards '
+      'WHERE person_id = ? AND deleted_at IS NULL',
+      variables: <Variable<Object>>[Variable<int>(personId)],
+    ).get();
+
+    return PersonSummary(
+      id: p.id,
+      displayName: p.displayName,
+      cardCount: count.isEmpty ? 0 : count.first.read<int>('n'),
+      subtitle: await _subtitleFor(personId),
+    );
+  }
+
+  /// Records that two rows are one person.
+  ///
+  /// Nothing moves. [loser] keeps its roles, endpoints and cards and gains a
+  /// pointer at [survivor]; every read follows it. That is what makes this
+  /// undoable — a merge that relocated rows could not know afterwards which of
+  /// them had been whose, so [unmerge] would be guessing.
+  Future<void> merge({required int survivor, required int loser}) async {
+    if (survivor == loser) return;
+    await _db.transaction(() async {
+      await (_db.update(_db.people)
+            ..where(($PeopleTable t) => t.id.equals(loser)))
+          .write(PeopleCompanion(
+        mergedIntoId: Value<int?>(survivor),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ));
+      // Anything that pointed at the loser now points at the survivor, so a
+      // chain never grows past one hop.
+      await (_db.update(_db.people)
+            ..where(($PeopleTable t) => t.mergedIntoId.equals(loser)))
+          .write(PeopleCompanion(mergedIntoId: Value<int?>(survivor)));
+
+      await _settle(survivor, loser, 'linked');
+    });
+  }
+
+  /// Separates a person merged into another.
+  Future<void> unmerge(int personId) async {
+    await (_db.update(_db.people)
+          ..where(($PeopleTable t) => t.id.equals(personId)))
+        .write(const PeopleCompanion(mergedIntoId: Value<int?>(null)));
+  }
+
+  /// Records that two rows are two different people, permanently.
+  Future<void> keepSeparate({required int a, required int b}) =>
+      _settle(a, b, 'rejected');
+
+  Future<void> _settle(int a, int b, String status) async {
+    final int lo = a < b ? a : b;
+    final int hi = a < b ? b : a;
+    await (_db.update(_db.duplicateCandidates)
+          ..where(($DuplicateCandidatesTable d) =>
+              d.subjectType.equals('person') &
+              d.aId.equals(lo) &
+              d.bId.equals(hi)))
+        .write(DuplicateCandidatesCompanion(
+      status: Value<String>(status),
+      updatedAt: Value<DateTime>(DateTime.now()),
+    ));
+  }
+
+  /// Follows a merge pointer to the row that stands for this person.
+  Future<int> _survivorOf(int personId) async {
+    final Person? p = await (_db.select(_db.people)
+          ..where(($PeopleTable t) => t.id.equals(personId)))
+        .getSingleOrNull();
+    return p?.mergedIntoId ?? personId;
+  }
+
+  /// Every row that stands for this person, the survivor included.
+  Future<List<int>> _identitiesOf(int personId) async {
+    final List<QueryRow> merged = await _db.customSelect(
+      'SELECT id FROM people WHERE merged_into_id = ?',
+      variables: <Variable<Object>>[Variable<int>(personId)],
+    ).get();
+    return <int>[
+      personId,
+      for (final QueryRow r in merged) r.read<int>('id'),
+    ];
+  }
+
+  // -------------------------------------------------------------------------
   // Teardown
   // -------------------------------------------------------------------------
 
@@ -490,7 +651,11 @@ class IdentityRepository {
       'DELETE FROM people WHERE id NOT IN '
       '(SELECT person_id FROM cards WHERE person_id IS NOT NULL) '
       'AND id NOT IN '
-      "(SELECT owner_id FROM contact_points WHERE owner_type = 'person')",
+      "(SELECT owner_id FROM contact_points WHERE owner_type = 'person') "
+      // A survivor still pointed at by a merged row has to outlive it, or
+      // the merge could never be undone.
+      'AND id NOT IN '
+      '(SELECT merged_into_id FROM people WHERE merged_into_id IS NOT NULL)',
     );
     await _db.customStatement(
       'DELETE FROM organizations WHERE id NOT IN '
@@ -517,6 +682,10 @@ class IdentityRepository {
           'MAX(c.captured_at) AS last_seen '
           'FROM people p '
           'LEFT JOIN cards c ON c.person_id = p.id AND c.deleted_at IS NULL '
+          // A person merged into somebody else is not a separate contact any
+          // more. The row stays so the merge can be undone; it just stops
+          // being listed.
+          'WHERE p.merged_into_id IS NULL '
           'GROUP BY p.id ORDER BY last_seen DESC, p.id DESC',
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             _db.people,
@@ -574,11 +743,13 @@ class IdentityRepository {
 
   /// What to show under a name: their job if we know it, otherwise a number.
   Future<String?> _subtitleFor(int personId) async {
+    final List<int> ids = await _identitiesOf(personId);
     final List<QueryRow> roles = await _db.customSelect(
       'SELECT r.title AS title, o.name AS org FROM roles r '
       'JOIN organizations o ON o.id = r.org_id '
-      'WHERE r.person_id = ? ORDER BY r.is_current DESC, r.id ASC',
-      variables: <Variable<Object>>[Variable<int>(personId)],
+      'WHERE r.person_id IN (${List<String>.filled(ids.length, '?').join(',')}) '
+      'ORDER BY r.is_current DESC, r.id ASC',
+      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
     ).get();
 
     if (roles.isNotEmpty) {
@@ -624,16 +795,22 @@ class IdentityRepository {
         .getSingleOrNull();
     if (person == null) return null;
 
+    // Everything belonging to any row merged into this one. A merge moves no
+    // data, so this is where the two halves come back together.
+    final List<int> ids = await _identitiesOf(personId);
+    final String placeholders = List<String>.filled(ids.length, '?').join(',');
+
     final List<ContactPoint> all = await (_db.select(_db.contactPoints)
           ..where(($ContactPointsTable c) =>
-              c.ownerType.equals('person') & c.ownerId.equals(personId)))
+              c.ownerType.equals('person') & c.ownerId.isIn(ids)))
         .get();
 
     final List<QueryRow> roleRows = await _db.customSelect(
       'SELECT r.id AS id, r.title AS title, o.id AS org_id, o.name AS org '
       'FROM roles r JOIN organizations o ON o.id = r.org_id '
-      'WHERE r.person_id = ? ORDER BY r.is_current DESC, r.id ASC',
-      variables: <Variable<Object>>[Variable<int>(personId)],
+      'WHERE r.person_id IN ($placeholders) '
+      'ORDER BY r.is_current DESC, r.id ASC',
+      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
     ).get();
 
     final List<RoleDetail> roles = <RoleDetail>[
@@ -648,9 +825,9 @@ class IdentityRepository {
     ];
 
     final List<QueryRow> cardRows = await _db.customSelect(
-      'SELECT id FROM cards WHERE person_id = ? AND deleted_at IS NULL '
-      'ORDER BY captured_at DESC',
-      variables: <Variable<Object>>[Variable<int>(personId)],
+      'SELECT id FROM cards WHERE person_id IN ($placeholders) '
+      'AND deleted_at IS NULL ORDER BY captured_at DESC',
+      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
     ).get();
 
     return PersonDetail(

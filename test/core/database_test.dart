@@ -68,6 +68,9 @@ void main() {
       await before.customStatement(
         'ALTER TABLE contact_points DROP COLUMN source_card_id',
       );
+      await before.customStatement(
+        'ALTER TABLE people DROP COLUMN merged_into_id',
+      );
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 
@@ -101,6 +104,12 @@ void main() {
           .go();
       expect(await after.select(after.contactPoints).get(), isEmpty,
           reason: 'the source-card cascade must survive the upgrade');
+
+      // v4: the merge pointer exists and is null on a row that predates it.
+      final Person migrated = await (after.select(after.people)
+            ..where(($PeopleTable t) => t.id.equals(personId)))
+          .getSingle();
+      expect(migrated.mergedIntoId, isNull);
     });
 
     test('creates every table and seeds ranking weights', () async {

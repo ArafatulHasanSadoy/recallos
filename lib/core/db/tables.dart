@@ -32,6 +32,19 @@ class People extends Table with _Timestamps {
 
   /// Private, per-user, learned from feedback. 0.0–1.0, 0.5 = no signal.
   RealColumn get trustScore => real().withDefault(const Constant(0.5))();
+
+  /// Set when the user says this row is really somebody already in the graph.
+  ///
+  /// A pointer rather than a data move, which is what makes a merge
+  /// reversible. Moving this person's roles, endpoints and cards onto the
+  /// survivor would lose which of them were whose, so undoing it later could
+  /// only guess. Left where they are and resolved on read, un-merging is one
+  /// column back to null.
+  ///
+  /// The app never sets this on its own — see the note at the top of
+  /// `resolution.dart`. Only a person can answer whether two Md. Rahmans are
+  /// one man.
+  IntColumn get mergedIntoId => integer().nullable()();
 }
 
 class Organizations extends Table with _Timestamps {

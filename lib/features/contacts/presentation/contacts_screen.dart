@@ -74,6 +74,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         ),
                 ),
               ),
+              const _DuplicateBanner(),
               const SizedBox(height: Gap.md),
               Expanded(
                 child: people.when(
@@ -151,6 +152,54 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Offers the review list, and only when it has something in it.
+class _DuplicateBanner extends ConsumerWidget {
+  const _DuplicateBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final int waiting =
+        ref.watch(duplicateCandidatesProvider).value?.length ?? 0;
+    if (waiting == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.md),
+      child: Material(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => context.push(Routes.duplicates),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: Gap.md, vertical: Gap.sm),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.people_alt_outlined,
+                    color: theme.colorScheme.onSecondaryContainer),
+                const SizedBox(width: Gap.sm),
+                Expanded(
+                  child: Text(
+                    waiting == 1
+                        ? '1 pair may be the same person'
+                        : '$waiting pairs may be the same person',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: theme.colorScheme.onSecondaryContainer),
+              ],
+            ),
           ),
         ),
       ),

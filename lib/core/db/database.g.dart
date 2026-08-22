@@ -105,6 +105,17 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0.5),
   );
+  static const VerificationMeta _mergedIntoIdMeta = const VerificationMeta(
+    'mergedIntoId',
+  );
+  @override
+  late final GeneratedColumn<int> mergedIntoId = GeneratedColumn<int>(
+    'merged_into_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     createdAt,
@@ -115,6 +126,7 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     photoPath,
     relationship,
     trustScore,
+    mergedIntoId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -181,6 +193,15 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         trustScore.isAcceptableOrUnknown(data['trust_score']!, _trustScoreMeta),
       );
     }
+    if (data.containsKey('merged_into_id')) {
+      context.handle(
+        _mergedIntoIdMeta,
+        mergedIntoId.isAcceptableOrUnknown(
+          data['merged_into_id']!,
+          _mergedIntoIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -222,6 +243,10 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         DriftSqlType.double,
         data['${effectivePrefix}trust_score'],
       )!,
+      mergedIntoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}merged_into_id'],
+      ),
     );
   }
 
@@ -244,6 +269,19 @@ class Person extends DataClass implements Insertable<Person> {
 
   /// Private, per-user, learned from feedback. 0.0–1.0, 0.5 = no signal.
   final double trustScore;
+
+  /// Set when the user says this row is really somebody already in the graph.
+  ///
+  /// A pointer rather than a data move, which is what makes a merge
+  /// reversible. Moving this person's roles, endpoints and cards onto the
+  /// survivor would lose which of them were whose, so undoing it later could
+  /// only guess. Left where they are and resolved on read, un-merging is one
+  /// column back to null.
+  ///
+  /// The app never sets this on its own — see the note at the top of
+  /// `resolution.dart`. Only a person can answer whether two Md. Rahmans are
+  /// one man.
+  final int? mergedIntoId;
   const Person({
     required this.createdAt,
     required this.updatedAt,
@@ -253,6 +291,7 @@ class Person extends DataClass implements Insertable<Person> {
     this.photoPath,
     this.relationship,
     required this.trustScore,
+    this.mergedIntoId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -271,6 +310,9 @@ class Person extends DataClass implements Insertable<Person> {
       map['relationship'] = Variable<String>(relationship);
     }
     map['trust_score'] = Variable<double>(trustScore);
+    if (!nullToAbsent || mergedIntoId != null) {
+      map['merged_into_id'] = Variable<int>(mergedIntoId);
+    }
     return map;
   }
 
@@ -290,6 +332,9 @@ class Person extends DataClass implements Insertable<Person> {
           ? const Value.absent()
           : Value(relationship),
       trustScore: Value(trustScore),
+      mergedIntoId: mergedIntoId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mergedIntoId),
     );
   }
 
@@ -307,6 +352,7 @@ class Person extends DataClass implements Insertable<Person> {
       photoPath: serializer.fromJson<String?>(json['photoPath']),
       relationship: serializer.fromJson<String?>(json['relationship']),
       trustScore: serializer.fromJson<double>(json['trustScore']),
+      mergedIntoId: serializer.fromJson<int?>(json['mergedIntoId']),
     );
   }
   @override
@@ -321,6 +367,7 @@ class Person extends DataClass implements Insertable<Person> {
       'photoPath': serializer.toJson<String?>(photoPath),
       'relationship': serializer.toJson<String?>(relationship),
       'trustScore': serializer.toJson<double>(trustScore),
+      'mergedIntoId': serializer.toJson<int?>(mergedIntoId),
     };
   }
 
@@ -333,6 +380,7 @@ class Person extends DataClass implements Insertable<Person> {
     Value<String?> photoPath = const Value.absent(),
     Value<String?> relationship = const Value.absent(),
     double? trustScore,
+    Value<int?> mergedIntoId = const Value.absent(),
   }) => Person(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -342,6 +390,7 @@ class Person extends DataClass implements Insertable<Person> {
     photoPath: photoPath.present ? photoPath.value : this.photoPath,
     relationship: relationship.present ? relationship.value : this.relationship,
     trustScore: trustScore ?? this.trustScore,
+    mergedIntoId: mergedIntoId.present ? mergedIntoId.value : this.mergedIntoId,
   );
   Person copyWithCompanion(PeopleCompanion data) {
     return Person(
@@ -359,6 +408,9 @@ class Person extends DataClass implements Insertable<Person> {
       trustScore: data.trustScore.present
           ? data.trustScore.value
           : this.trustScore,
+      mergedIntoId: data.mergedIntoId.present
+          ? data.mergedIntoId.value
+          : this.mergedIntoId,
     );
   }
 
@@ -372,7 +424,8 @@ class Person extends DataClass implements Insertable<Person> {
           ..write('displayName: $displayName, ')
           ..write('photoPath: $photoPath, ')
           ..write('relationship: $relationship, ')
-          ..write('trustScore: $trustScore')
+          ..write('trustScore: $trustScore, ')
+          ..write('mergedIntoId: $mergedIntoId')
           ..write(')'))
         .toString();
   }
@@ -387,6 +440,7 @@ class Person extends DataClass implements Insertable<Person> {
     photoPath,
     relationship,
     trustScore,
+    mergedIntoId,
   );
   @override
   bool operator ==(Object other) =>
@@ -399,7 +453,8 @@ class Person extends DataClass implements Insertable<Person> {
           other.displayName == this.displayName &&
           other.photoPath == this.photoPath &&
           other.relationship == this.relationship &&
-          other.trustScore == this.trustScore);
+          other.trustScore == this.trustScore &&
+          other.mergedIntoId == this.mergedIntoId);
 }
 
 class PeopleCompanion extends UpdateCompanion<Person> {
@@ -411,6 +466,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
   final Value<String?> photoPath;
   final Value<String?> relationship;
   final Value<double> trustScore;
+  final Value<int?> mergedIntoId;
   const PeopleCompanion({
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -420,6 +476,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.photoPath = const Value.absent(),
     this.relationship = const Value.absent(),
     this.trustScore = const Value.absent(),
+    this.mergedIntoId = const Value.absent(),
   });
   PeopleCompanion.insert({
     this.createdAt = const Value.absent(),
@@ -430,6 +487,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.photoPath = const Value.absent(),
     this.relationship = const Value.absent(),
     this.trustScore = const Value.absent(),
+    this.mergedIntoId = const Value.absent(),
   }) : displayName = Value(displayName);
   static Insertable<Person> custom({
     Expression<DateTime>? createdAt,
@@ -440,6 +498,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Expression<String>? photoPath,
     Expression<String>? relationship,
     Expression<double>? trustScore,
+    Expression<int>? mergedIntoId,
   }) {
     return RawValuesInsertable({
       if (createdAt != null) 'created_at': createdAt,
@@ -450,6 +509,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       if (photoPath != null) 'photo_path': photoPath,
       if (relationship != null) 'relationship': relationship,
       if (trustScore != null) 'trust_score': trustScore,
+      if (mergedIntoId != null) 'merged_into_id': mergedIntoId,
     });
   }
 
@@ -462,6 +522,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Value<String?>? photoPath,
     Value<String?>? relationship,
     Value<double>? trustScore,
+    Value<int?>? mergedIntoId,
   }) {
     return PeopleCompanion(
       createdAt: createdAt ?? this.createdAt,
@@ -472,6 +533,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       photoPath: photoPath ?? this.photoPath,
       relationship: relationship ?? this.relationship,
       trustScore: trustScore ?? this.trustScore,
+      mergedIntoId: mergedIntoId ?? this.mergedIntoId,
     );
   }
 
@@ -502,6 +564,9 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     if (trustScore.present) {
       map['trust_score'] = Variable<double>(trustScore.value);
     }
+    if (mergedIntoId.present) {
+      map['merged_into_id'] = Variable<int>(mergedIntoId.value);
+    }
     return map;
   }
 
@@ -515,7 +580,8 @@ class PeopleCompanion extends UpdateCompanion<Person> {
           ..write('displayName: $displayName, ')
           ..write('photoPath: $photoPath, ')
           ..write('relationship: $relationship, ')
-          ..write('trustScore: $trustScore')
+          ..write('trustScore: $trustScore, ')
+          ..write('mergedIntoId: $mergedIntoId')
           ..write(')'))
         .toString();
   }
@@ -11122,6 +11188,7 @@ typedef $$PeopleTableCreateCompanionBuilder =
       Value<String?> photoPath,
       Value<String?> relationship,
       Value<double> trustScore,
+      Value<int?> mergedIntoId,
     });
 typedef $$PeopleTableUpdateCompanionBuilder =
     PeopleCompanion Function({
@@ -11133,6 +11200,7 @@ typedef $$PeopleTableUpdateCompanionBuilder =
       Value<String?> photoPath,
       Value<String?> relationship,
       Value<double> trustScore,
+      Value<int?> mergedIntoId,
     });
 
 final class $$PeopleTableReferences
@@ -11224,6 +11292,11 @@ class $$PeopleTableFilterComposer
 
   ColumnFilters<double> get trustScore => $composableBuilder(
     column: $table.trustScore,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11326,6 +11399,11 @@ class $$PeopleTableOrderingComposer
     column: $table.trustScore,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PeopleTableAnnotationComposer
@@ -11364,6 +11442,11 @@ class $$PeopleTableAnnotationComposer
 
   GeneratedColumn<double> get trustScore => $composableBuilder(
     column: $table.trustScore,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
     builder: (column) => column,
   );
 
@@ -11454,6 +11537,7 @@ class $$PeopleTableTableManager
                 Value<String?> photoPath = const Value.absent(),
                 Value<String?> relationship = const Value.absent(),
                 Value<double> trustScore = const Value.absent(),
+                Value<int?> mergedIntoId = const Value.absent(),
               }) => PeopleCompanion(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -11463,6 +11547,7 @@ class $$PeopleTableTableManager
                 photoPath: photoPath,
                 relationship: relationship,
                 trustScore: trustScore,
+                mergedIntoId: mergedIntoId,
               ),
           createCompanionCallback:
               ({
@@ -11474,6 +11559,7 @@ class $$PeopleTableTableManager
                 Value<String?> photoPath = const Value.absent(),
                 Value<String?> relationship = const Value.absent(),
                 Value<double> trustScore = const Value.absent(),
+                Value<int?> mergedIntoId = const Value.absent(),
               }) => PeopleCompanion.insert(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -11483,6 +11569,7 @@ class $$PeopleTableTableManager
                 photoPath: photoPath,
                 relationship: relationship,
                 trustScore: trustScore,
+                mergedIntoId: mergedIntoId,
               ),
           withReferenceMapper: (p0) => p0
               .map(

@@ -53,7 +53,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'recallos'));
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -76,6 +76,11 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await m.addColumn(contactPoints, contactPoints.sourceCardId);
             await _createIdentityIndexes();
+          }
+          // v4 — duplicate review. Merging is a pointer, so that it can be
+          // undone; see the column's own comment.
+          if (from < 4) {
+            await m.addColumn(people, people.mergedIntoId);
           }
         },
         beforeOpen: (OpeningDetails details) async {
