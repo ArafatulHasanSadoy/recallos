@@ -49,7 +49,20 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     final AsyncValue<List<OrgSummary>> orgs = ref.watch(organizationsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Contacts')),
+      appBar: AppBar(
+        title: const Text('Contacts'),
+        actions: <Widget>[
+          // The banner below advertises the review list when it has something
+          // in it. This is how you reach it on the days it does not — without
+          // a permanent way in, a feature that only appears when the app has
+          // something to say is indistinguishable from one that is missing.
+          IconButton(
+            tooltip: 'Possible duplicates',
+            icon: const Icon(Icons.people_alt_outlined),
+            onPressed: () => context.push(Routes.duplicates),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(Gap.md),

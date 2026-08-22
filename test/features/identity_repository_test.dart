@@ -135,11 +135,45 @@ void main() {
     });
 
     test('a good number on the same card still promotes', () async {
-      await scan(
-        name: 'Mixed Card',
-        phone: '01819104376',
-      );
+      await scan(name: 'Mixed Card', phone: '01819104376');
       expect(await points(), hasLength(1));
+    });
+
+    test('a repaired number is still a way to reach somebody', () async {
+      // `digit_restored` and `ocr_repaired` are notes on a value that came out
+      // fine — the number was reformatted, or a digit inferred — and both
+      // carry a good E.164. An earlier filter keyed on the issue rather than
+      // the canonical form and discarded every one of them, which on a real
+      // card is most of the numbers on it.
+      final int cardId = await db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: '/tmp/cards/repaired.jpg',
+              capturedAt: DateTime(2026, 8, 22),
+            ),
+          );
+      await db.into(db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: FieldKeys.personName,
+              value: 'Repaired Number',
+              source: FactSource.printed,
+            ),
+          );
+      await db.into(db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: FieldKeys.phone,
+              value: '01819 10 4376',
+              normalizedValue: const Value<String?>('+8801819104376'),
+              validationIssue: const Value<String?>('digit_restored'),
+              source: FactSource.printed,
+            ),
+          );
+      await identity.promote(cardId);
+
+      expect(await points(), hasLength(1),
+          reason: 'a reformatted number is not a rejected one');
+      expect((await points()).single.normalizedValue, '+8801819104376');
     });
   });
 
@@ -334,6 +368,55 @@ void main() {
 
       expect(await identity.watchPeople().first, hasLength(1),
           reason: 'a merged-away row must not come back to life');
+    });
+
+    test('the survivor can say who was merged into it', () async {
+      final (int a, int b) = await twoRahmans();
+      await identity.merge(survivor: a, loser: b);
+
+      final PersonDetail? detail = await identity.watchPerson(a).first;
+      // Without this the screen cannot offer a way back, and the prompt that
+      // promised one would be lying.
+      expect(detail!.mergedFrom.map((PersonSummary p) => p.id), <int>[b]);
+
+      await identity.unmerge(b);
+      final PersonDetail? after = await identity.watchPerson(a).first;
+      expect(after!.mergedFrom, isEmpty);
+    });
+
+    test('a merge survives re-promotion', () async {
+      // The loser's card has no *usable* endpoint — its number is three
+      // digits short, so it is withheld. That is the case that broke: with
+      // nothing to match on, re-promotion fell through to the name, landed on
+      // a brand-new row, and the pair came back as a fresh duplicate of the
+      // person the user had just finished combining. A card with a good
+      // number of its own would have re-matched by endpoint and hidden it.
+      await scan(name: 'Md. Rahman', company: 'Rahman Traders', phone: '01711363991');
+      await scan(name: 'Rahman', company: 'Rahman Motors', phone: '017098227');
+      final List<Person> both = await people();
+      expect(both, hasLength(2));
+      final int a = both.first.id;
+      final int b = both.last.id;
+
+      await identity.merge(survivor: a, loser: b);
+
+      // Backfill re-promotes, which used to re-derive identity from scratch:
+      // the merged-away row lost its cards to the survivor, garbage
+      // collection then removed the row and its business, and the pair came
+      // back as a fresh duplicate. Everything the user decided was undone by
+      // opening the contacts screen.
+      await identity.backfill();
+
+      expect(await identity.watchPeople().first, hasLength(1),
+          reason: 'the merge must not come apart on its own');
+
+      final PersonDetail? detail = await identity.watchPerson(a).first;
+      expect(detail!.roles, hasLength(2),
+          reason: 'neither business may be collected away');
+      expect(detail.mergedFrom, hasLength(1),
+          reason: 'and the way back has to survive too');
+      expect(await identity.watchDuplicates().first, isEmpty,
+          reason: 'a settled pair does not come back as a new question');
     });
 
     test('keeping them separate settles the question for good', () async {

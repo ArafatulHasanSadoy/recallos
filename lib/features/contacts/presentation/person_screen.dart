@@ -109,7 +109,55 @@ class _Body extends StatelessWidget {
           ),
           const SizedBox(height: Gap.sm),
           CardStrip(cardIds: detail.cardIds),
+          const SizedBox(height: Gap.lg),
         ],
+
+        if (detail.mergedFrom.isNotEmpty) _Combined(detail: detail),
+      ],
+    );
+  }
+}
+
+/// The rows the user combined into this one, and the way back out.
+///
+/// The prompt that offers to combine two contacts says they can be separated
+/// again later. This is where "later" happens; without it that sentence would
+/// be false, and a merge nobody could undo is exactly what the graph refuses
+/// to do on its own.
+class _Combined extends ConsumerWidget {
+  const _Combined({required this.detail});
+
+  final PersonDetail detail;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('Combined', style: theme.textTheme.titleMedium),
+        const SizedBox(height: Gap.xs),
+        Text(
+          detail.mergedFrom.length == 1
+              ? 'You said one other contact was really this person.'
+              : 'You said ${detail.mergedFrom.length} other contacts were '
+                  'really this person.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        for (final PersonSummary other in detail.mergedFrom)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.merge_type),
+            title: Text(other.displayName),
+            subtitle: other.subtitle == null ? null : Text(other.subtitle!),
+            trailing: TextButton(
+              onPressed: () =>
+                  ref.read(identityRepositoryProvider).unmerge(other.id),
+              child: const Text('Separate'),
+            ),
+          ),
       ],
     );
   }

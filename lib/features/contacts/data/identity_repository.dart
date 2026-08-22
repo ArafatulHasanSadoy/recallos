@@ -107,6 +107,7 @@ class PersonDetail {
     required this.roles,
     required this.looseContacts,
     required this.cardIds,
+    this.mergedFrom = const <PersonSummary>[],
   });
 
   final Person person;
@@ -116,6 +117,13 @@ class PersonDetail {
   final List<ContactPoint> looseContacts;
 
   final List<int> cardIds;
+
+  /// Rows the user said were really this person.
+  ///
+  /// Surfaced so that a merge can be undone. The screen that offers to combine
+  /// two contacts promises they can be separated again, and a promise with
+  /// nowhere to act on it is worse than not making it.
+  final List<PersonSummary> mergedFrom;
 }
 
 /// Two people the graph could not tell apart, and why it thinks so.
@@ -373,6 +381,18 @@ class IdentityRepository {
         return personId;
       }
     }
+
+    // No endpoint matched, but this card already belongs to somebody — keep
+    // them. Re-promotion happens on every correction and every rules change,
+    // and re-deriving identity from scratch each time would quietly undo the
+    // user's own decisions: a card the user merged into another contact would
+    // resolve back out by name, land on a fresh row, and reappear as a new
+    // duplicate of the person they had just finished combining.
+    final CardRow? row = await (_db.select(_db.cards)
+          ..where(($CardsTable c) => c.id.equals(cardId)))
+        .getSingleOrNull();
+    final int? already = row?.personId;
+    if (already != null) return _survivorOf(already);
 
     if (name == null || name.isEmpty) return null;
 
@@ -641,7 +661,13 @@ class IdentityRepository {
       'DELETE FROM roles WHERE id NOT IN '
       '(SELECT role_id FROM cards WHERE role_id IS NOT NULL) '
       'AND id NOT IN '
-      '(SELECT role_id FROM contact_points WHERE role_id IS NOT NULL)',
+      '(SELECT role_id FROM contact_points WHERE role_id IS NOT NULL) '
+      // A role on a row the user merged away is one of the businesses the
+      // combined contact is *made of*. Its card now points at the survivor,
+      // so nothing else holds it up — and collecting it deletes a business
+      // the merge was supposed to preserve.
+      'AND person_id NOT IN '
+      '(SELECT id FROM people WHERE merged_into_id IS NOT NULL)',
     );
     await _db.customStatement(
       'DELETE FROM org_branches WHERE org_id NOT IN '
@@ -655,7 +681,12 @@ class IdentityRepository {
       // A survivor still pointed at by a merged row has to outlive it, or
       // the merge could never be undone.
       'AND id NOT IN '
-      '(SELECT merged_into_id FROM people WHERE merged_into_id IS NOT NULL)',
+      '(SELECT merged_into_id FROM people WHERE merged_into_id IS NOT NULL) '
+      // And the merged-away row is the record of the decision itself. Once
+      // its cards move to the survivor nothing else references it, so without
+      // this the tombstone is collected, the merge becomes invisible, and the
+      // promise that it can be separated again quietly stops being true.
+      'AND merged_into_id IS NULL',
     );
     await _db.customStatement(
       'DELETE FROM organizations WHERE id NOT IN '
@@ -830,11 +861,27 @@ class IdentityRepository {
       variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
     ).get();
 
+    final List<PersonSummary> mergedFrom = <PersonSummary>[];
+    for (final int id in ids) {
+      if (id == personId) continue;
+      final Person? other = await (_db.select(_db.people)
+            ..where(($PeopleTable t) => t.id.equals(id)))
+          .getSingleOrNull();
+      if (other == null) continue;
+      mergedFrom.add(PersonSummary(
+        id: other.id,
+        displayName: other.displayName,
+        cardCount: 0,
+        subtitle: await _roleNameOf(other.id),
+      ));
+    }
+
     return PersonDetail(
       person: person,
       roles: roles,
       looseContacts: _dedupe(all.where((ContactPoint c) => c.roleId == null)),
       cardIds: <int>[for (final QueryRow r in cardRows) r.read<int>('id')],
+      mergedFrom: mergedFrom,
     );
   }
 
@@ -909,6 +956,17 @@ class IdentityRepository {
     );
   }
 
+  /// The company a merged-away row came in under, to tell two of them apart.
+  Future<String?> _roleNameOf(int personId) async {
+    final List<QueryRow> rows = await _db.customSelect(
+      'SELECT o.name AS org FROM roles r '
+      'JOIN organizations o ON o.id = r.org_id '
+      'WHERE r.person_id = ? ORDER BY r.id ASC LIMIT 1',
+      variables: <Variable<Object>>[Variable<int>(personId)],
+    ).get();
+    return rows.isEmpty ? null : rows.first.read<String>('org');
+  }
+
   Future<String?> _roleTitleAt(int personId, int orgId) async {
     final Role? role = await (_db.select(_db.roles)
           ..where(($RolesTable r) =>
@@ -970,14 +1028,21 @@ class IdentityRepository {
       contacts: <ContactFact>[
         for (final CardField f in fields)
           if (f.valueKind == FieldValueKind.text)
-            // A value the validator objected to does not become an endpoint.
-            // `017098227` is a real read of a real card — three digits short,
-            // no canonical form — and promoting it produces a contact point
-            // that cannot be dialled, cannot match anything, and gets exported
-            // into the user's address book as if it were a phone number. The
-            // field stays on the card, flagged and repairable; it just is not
+            // An endpoint with no canonical form does not go in the graph.
+            // `017098227` is a real read off a real card — three digits short
+            // — and promoting it produces a contact point that cannot be
+            // dialled, cannot match anything, and gets exported into the
+            // user's address book as though it were a phone number. The field
+            // stays on the card, flagged and repairable; it is just not
             // treated as a way to reach anybody until it is fixed.
-            if (f.validationIssue == null)
+            //
+            // The test is the canonical form, deliberately, and not
+            // `validationIssue == null`. Most issues are *notes on a value
+            // that is fine*: `digit_restored` means the number was reformatted
+            // for display, `ocr_repaired` that a digit was inferred. Both
+            // carry a good E.164. Filtering on the issue instead threw away
+            // every repaired number on the card — which is most of them.
+            if (f.normalizedValue != null)
               if (_kindOf(f.fieldKey) case final ContactKind kind)
                 ContactFact(
                   kind: kind,
