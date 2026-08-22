@@ -401,11 +401,38 @@ class CardRepository {
   /// Driven by an explicit [readsFrom] rather than `select(cards).watch()`, for
   /// the reason spelled out on [watchCard]: the title of a row comes out of
   /// `card_fields`, so a stream watching only `cards` never notices it change.
-  Stream<List<CardSummary>> watchCards() {
+  Stream<List<CardSummary>> watchCards() => _watchSummaries(
+        'SELECT id FROM cards WHERE deleted_at IS NULL '
+        'ORDER BY captured_at DESC',
+      );
+
+  /// Cards whose extraction went badly, and which the user can still repair.
+  ///
+  /// Oldest first, deliberately. A failure that has been sitting there for a
+  /// week is the one most likely to be forgotten, and a queue that puts the
+  /// newest on top buries exactly the rows it exists to surface.
+  Stream<List<CardSummary>> watchNeedsAttention() => _watchSummaries(
+        'SELECT id FROM cards WHERE deleted_at IS NULL '
+        r"AND extraction_status IN ('failed', 'partial') "
+        'ORDER BY captured_at ASC',
+      );
+
+  /// Cards deleted but not yet destroyed.
+  ///
+  /// The undo window lives in a snackbar, so a card whose window was
+  /// interrupted — app killed, phone out of battery — stays soft-deleted with
+  /// nothing left pointing at it. Without this it is unreachable forever while
+  /// still occupying the disk. Newest first: recovering something is almost
+  /// always about the thing you just lost.
+  Stream<List<CardSummary>> watchDeleted() => _watchSummaries(
+        'SELECT id FROM cards WHERE deleted_at IS NOT NULL '
+        'ORDER BY deleted_at DESC',
+      );
+
+  Stream<List<CardSummary>> _watchSummaries(String sql) {
     return _db
         .customSelect(
-          'SELECT id FROM cards WHERE deleted_at IS NULL '
-          'ORDER BY captured_at DESC',
+          sql,
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             _db.cards,
             _db.cardFields,

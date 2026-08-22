@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
+import '../../cards/presentation/needs_attention_screen.dart';
 import '../../cards/presentation/widgets/wallet_card.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../data/search_repository.dart';
@@ -149,11 +150,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => context.push(Routes.contacts),
             icon: const Icon(Icons.people_outline),
           ),
-          // Phase 0 scaffolding — remove with the spike screen itself.
-          IconButton(
-            tooltip: 'OCR spike',
-            onPressed: () => context.push(Routes.spike),
-            icon: const Icon(Icons.science_outlined),
+          // The repair queue announces itself with a banner when it has
+          // something in it, but "Recently deleted" lives there too and has to
+          // be reachable on the day nothing is wrong — which is exactly the
+          // day someone deletes a card by mistake.
+          PopupMenuButton<String>(
+            onSelected: (String route) => context.push(route),
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: Routes.needsAttention,
+                child: ListTile(
+                  leading: Icon(Icons.rule_outlined),
+                  title: Text('Needs attention'),
+                ),
+              ),
+              // Phase 0 scaffolding — remove with the spike screen itself.
+              const PopupMenuItem<String>(
+                value: Routes.spike,
+                child: ListTile(
+                  leading: Icon(Icons.science_outlined),
+                  title: Text('OCR spike'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -189,6 +208,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                 ),
               ),
+              // Only while browsing the library. During a search the user is
+              // answering a question, and a queue of unrelated repairs is an
+              // interruption rather than a prompt.
+              if (_query.isEmpty) const _AttentionBanner(),
               const SizedBox(height: Gap.lg),
               Expanded(
                 child: _query.isNotEmpty
@@ -459,6 +482,59 @@ class _DeleteReveal extends StatelessWidget {
                   ?.copyWith(color: theme.colorScheme.onErrorContainer),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Surfaces the repair queue, and only when there is something in it.
+///
+/// A failed scan looks exactly like a good one in the library — same tile,
+/// same size — so without this the cards that went wrong are invisible unless
+/// somebody thinks to go looking. Permanent chrome would be worse: a button
+/// that says "nothing is wrong" on most days trains people to ignore it.
+class _AttentionBanner extends ConsumerWidget {
+  const _AttentionBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final int waiting =
+        ref.watch(needsAttentionProvider).value?.length ?? 0;
+    if (waiting == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.md),
+      child: Material(
+        color: theme.colorScheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => context.push(Routes.needsAttention),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: Gap.md, vertical: Gap.sm),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.error_outline,
+                    color: theme.colorScheme.onTertiaryContainer),
+                const SizedBox(width: Gap.sm),
+                Expanded(
+                  child: Text(
+                    waiting == 1
+                        ? '1 card needs attention'
+                        : '$waiting cards need attention',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: theme.colorScheme.onTertiaryContainer),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'features/capture/presentation/capture_screen.dart';
 import 'features/capture/presentation/spike_screen.dart';
 import 'features/cards/presentation/card_detail_screen.dart';
+import 'features/cards/presentation/needs_attention_screen.dart';
 import 'features/contacts/presentation/contacts_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
@@ -50,6 +51,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.contacts,
         builder: (_, _) => const ContactsScreen(),
+      ),
+      GoRoute(
+        path: Routes.needsAttention,
+        builder: (_, _) => const NeedsAttentionScreen(),
       ),
       GoRoute(
         path: '/person/:id',
