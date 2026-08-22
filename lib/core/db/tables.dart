@@ -55,6 +55,13 @@ class Organizations extends Table with _Timestamps {
 
   /// Normalised registrable domain, used as a strong duplicate signal.
   TextColumn get websiteDomain => text().nullable()();
+
+  /// Set when the user says this company is one already in the graph.
+  ///
+  /// Same pointer-not-a-move design as [People.mergedIntoId], for the same
+  /// reason: two scans of one shop sign produce two rows, and combining them
+  /// has to be reversible.
+  IntColumn get mergedIntoId => integer().nullable()();
 }
 
 @DataClassName('OrgBranch')
@@ -342,6 +349,21 @@ class Interactions extends Table {
   TextColumn get detail => text().nullable()();
   DateTimeColumn get occurredAt =>
       dateTime().withDefault(currentDateAndTime)();
+}
+
+/// A tiny key/value store for things the app needs to remember about itself.
+///
+/// Exists so that a change to the *rules* — how names are matched, what counts
+/// as an endpoint — can be noticed and acted on without a schema migration
+/// each time. The identity graph is derived data; when the derivation changes,
+/// what is already stored has to be rebuilt, and that needs somewhere to
+/// record which version produced it.
+class Settings extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {key};
 }
 
 class Tags extends Table with _Timestamps {

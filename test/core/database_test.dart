@@ -71,6 +71,9 @@ void main() {
       await before.customStatement(
         'ALTER TABLE people DROP COLUMN merged_into_id',
       );
+      await before.customStatement(
+        'ALTER TABLE organizations DROP COLUMN merged_into_id',
+      );
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 
@@ -83,6 +86,13 @@ void main() {
       // Existing blocks belong to no field until the user says otherwise.
       expect(blocks.single.fieldId, isNull);
       expect(await after.select(after.cards).get(), hasLength(1));
+
+      // The v6 step unhooks cards from their organizations so the new
+      // matching rules get a chance at a library that already exists.
+      final CardRow rehomed = await (after.select(after.cards)
+            ..where(($CardsTable c) => c.id.equals(cardId)))
+          .getSingle();
+      expect(rehomed.orgId, isNull);
 
       // v3: the identity graph can be written into the upgraded database, and
       // the cascade that a purge depends on is actually in force.
@@ -105,11 +115,20 @@ void main() {
       expect(await after.select(after.contactPoints).get(), isEmpty,
           reason: 'the source-card cascade must survive the upgrade');
 
-      // v4: the merge pointer exists and is null on a row that predates it.
+      // v4/v5: both merge pointers exist and are null on rows that predate
+      // them.
       final Person migrated = await (after.select(after.people)
             ..where(($PeopleTable t) => t.id.equals(personId)))
           .getSingle();
       expect(migrated.mergedIntoId, isNull);
+
+      final int orgId = await after.into(after.organizations).insert(
+            OrganizationsCompanion.insert(name: 'Migrated Company'),
+          );
+      final Organization org = await (after.select(after.organizations)
+            ..where(($OrganizationsTable t) => t.id.equals(orgId)))
+          .getSingle();
+      expect(org.mergedIntoId, isNull);
     });
 
     test('creates every table and seeds ranking weights', () async {

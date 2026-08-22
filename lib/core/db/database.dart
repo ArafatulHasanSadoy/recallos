@@ -46,6 +46,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
     SearchFeedback,
     RankingWeights,
     DuplicateCandidates,
+    Settings,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -53,7 +54,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? driftDatabase(name: 'recallos'));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -81,6 +82,33 @@ class AppDatabase extends _$AppDatabase {
           // undone; see the column's own comment.
           if (from < 4) {
             await m.addColumn(people, people.mergedIntoId);
+          }
+          // v5 — companies can be duplicates too, and two scans of one shop
+          // sign is the commonest way it happens.
+          if (from < 5) {
+            await m.addColumn(organizations, organizations.mergedIntoId);
+          }
+          // v6 — the rules for matching companies changed: similar names and
+          // shared addresses now count, where before only exact agreement did.
+          // Those rules only run during promotion, so without this the new
+          // matching would apply to cards scanned afterwards and never to the
+          // library that already exists — which is exactly where the
+          // duplicates people actually have are sitting.
+          //
+          // Unhooking the cards is enough. `IdentityRepository.backfill`
+          // re-promotes anything carrying a company and no organization, and
+          // garbage collection clears what is left behind. People are
+          // untouched, so no merge anybody made is disturbed.
+          if (from < 6) {
+            await customStatement(
+              'UPDATE cards SET org_id = NULL, role_id = NULL',
+            );
+          }
+          // v7 — somewhere to record which version of the matching rules
+          // produced the graph, so the next change to them rebuilds what is
+          // already stored without needing a migration of its own.
+          if (from < 7) {
+            await m.createTable(settings);
           }
         },
         beforeOpen: (OpeningDetails details) async {

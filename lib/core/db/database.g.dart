@@ -687,6 +687,17 @@ class $OrganizationsTable extends Organizations
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _mergedIntoIdMeta = const VerificationMeta(
+    'mergedIntoId',
+  );
+  @override
+  late final GeneratedColumn<int> mergedIntoId = GeneratedColumn<int>(
+    'merged_into_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     createdAt,
@@ -697,6 +708,7 @@ class $OrganizationsTable extends Organizations
     category,
     website,
     websiteDomain,
+    mergedIntoId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -760,6 +772,15 @@ class $OrganizationsTable extends Organizations
         ),
       );
     }
+    if (data.containsKey('merged_into_id')) {
+      context.handle(
+        _mergedIntoIdMeta,
+        mergedIntoId.isAcceptableOrUnknown(
+          data['merged_into_id']!,
+          _mergedIntoIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -801,6 +822,10 @@ class $OrganizationsTable extends Organizations
         DriftSqlType.string,
         data['${effectivePrefix}website_domain'],
       ),
+      mergedIntoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}merged_into_id'],
+      ),
     );
   }
 
@@ -821,6 +846,13 @@ class Organization extends DataClass implements Insertable<Organization> {
 
   /// Normalised registrable domain, used as a strong duplicate signal.
   final String? websiteDomain;
+
+  /// Set when the user says this company is one already in the graph.
+  ///
+  /// Same pointer-not-a-move design as [People.mergedIntoId], for the same
+  /// reason: two scans of one shop sign produce two rows, and combining them
+  /// has to be reversible.
+  final int? mergedIntoId;
   const Organization({
     required this.createdAt,
     required this.updatedAt,
@@ -830,6 +862,7 @@ class Organization extends DataClass implements Insertable<Organization> {
     this.category,
     this.website,
     this.websiteDomain,
+    this.mergedIntoId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -849,6 +882,9 @@ class Organization extends DataClass implements Insertable<Organization> {
     }
     if (!nullToAbsent || websiteDomain != null) {
       map['website_domain'] = Variable<String>(websiteDomain);
+    }
+    if (!nullToAbsent || mergedIntoId != null) {
+      map['merged_into_id'] = Variable<int>(mergedIntoId);
     }
     return map;
   }
@@ -871,6 +907,9 @@ class Organization extends DataClass implements Insertable<Organization> {
       websiteDomain: websiteDomain == null && nullToAbsent
           ? const Value.absent()
           : Value(websiteDomain),
+      mergedIntoId: mergedIntoId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mergedIntoId),
     );
   }
 
@@ -888,6 +927,7 @@ class Organization extends DataClass implements Insertable<Organization> {
       category: serializer.fromJson<String?>(json['category']),
       website: serializer.fromJson<String?>(json['website']),
       websiteDomain: serializer.fromJson<String?>(json['websiteDomain']),
+      mergedIntoId: serializer.fromJson<int?>(json['mergedIntoId']),
     );
   }
   @override
@@ -902,6 +942,7 @@ class Organization extends DataClass implements Insertable<Organization> {
       'category': serializer.toJson<String?>(category),
       'website': serializer.toJson<String?>(website),
       'websiteDomain': serializer.toJson<String?>(websiteDomain),
+      'mergedIntoId': serializer.toJson<int?>(mergedIntoId),
     };
   }
 
@@ -914,6 +955,7 @@ class Organization extends DataClass implements Insertable<Organization> {
     Value<String?> category = const Value.absent(),
     Value<String?> website = const Value.absent(),
     Value<String?> websiteDomain = const Value.absent(),
+    Value<int?> mergedIntoId = const Value.absent(),
   }) => Organization(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -925,6 +967,7 @@ class Organization extends DataClass implements Insertable<Organization> {
     websiteDomain: websiteDomain.present
         ? websiteDomain.value
         : this.websiteDomain,
+    mergedIntoId: mergedIntoId.present ? mergedIntoId.value : this.mergedIntoId,
   );
   Organization copyWithCompanion(OrganizationsCompanion data) {
     return Organization(
@@ -938,6 +981,9 @@ class Organization extends DataClass implements Insertable<Organization> {
       websiteDomain: data.websiteDomain.present
           ? data.websiteDomain.value
           : this.websiteDomain,
+      mergedIntoId: data.mergedIntoId.present
+          ? data.mergedIntoId.value
+          : this.mergedIntoId,
     );
   }
 
@@ -951,7 +997,8 @@ class Organization extends DataClass implements Insertable<Organization> {
           ..write('name: $name, ')
           ..write('category: $category, ')
           ..write('website: $website, ')
-          ..write('websiteDomain: $websiteDomain')
+          ..write('websiteDomain: $websiteDomain, ')
+          ..write('mergedIntoId: $mergedIntoId')
           ..write(')'))
         .toString();
   }
@@ -966,6 +1013,7 @@ class Organization extends DataClass implements Insertable<Organization> {
     category,
     website,
     websiteDomain,
+    mergedIntoId,
   );
   @override
   bool operator ==(Object other) =>
@@ -978,7 +1026,8 @@ class Organization extends DataClass implements Insertable<Organization> {
           other.name == this.name &&
           other.category == this.category &&
           other.website == this.website &&
-          other.websiteDomain == this.websiteDomain);
+          other.websiteDomain == this.websiteDomain &&
+          other.mergedIntoId == this.mergedIntoId);
 }
 
 class OrganizationsCompanion extends UpdateCompanion<Organization> {
@@ -990,6 +1039,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
   final Value<String?> category;
   final Value<String?> website;
   final Value<String?> websiteDomain;
+  final Value<int?> mergedIntoId;
   const OrganizationsCompanion({
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -999,6 +1049,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
     this.category = const Value.absent(),
     this.website = const Value.absent(),
     this.websiteDomain = const Value.absent(),
+    this.mergedIntoId = const Value.absent(),
   });
   OrganizationsCompanion.insert({
     this.createdAt = const Value.absent(),
@@ -1009,6 +1060,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
     this.category = const Value.absent(),
     this.website = const Value.absent(),
     this.websiteDomain = const Value.absent(),
+    this.mergedIntoId = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Organization> custom({
     Expression<DateTime>? createdAt,
@@ -1019,6 +1071,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
     Expression<String>? category,
     Expression<String>? website,
     Expression<String>? websiteDomain,
+    Expression<int>? mergedIntoId,
   }) {
     return RawValuesInsertable({
       if (createdAt != null) 'created_at': createdAt,
@@ -1029,6 +1082,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
       if (category != null) 'category': category,
       if (website != null) 'website': website,
       if (websiteDomain != null) 'website_domain': websiteDomain,
+      if (mergedIntoId != null) 'merged_into_id': mergedIntoId,
     });
   }
 
@@ -1041,6 +1095,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
     Value<String?>? category,
     Value<String?>? website,
     Value<String?>? websiteDomain,
+    Value<int?>? mergedIntoId,
   }) {
     return OrganizationsCompanion(
       createdAt: createdAt ?? this.createdAt,
@@ -1051,6 +1106,7 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
       category: category ?? this.category,
       website: website ?? this.website,
       websiteDomain: websiteDomain ?? this.websiteDomain,
+      mergedIntoId: mergedIntoId ?? this.mergedIntoId,
     );
   }
 
@@ -1081,6 +1137,9 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
     if (websiteDomain.present) {
       map['website_domain'] = Variable<String>(websiteDomain.value);
     }
+    if (mergedIntoId.present) {
+      map['merged_into_id'] = Variable<int>(mergedIntoId.value);
+    }
     return map;
   }
 
@@ -1094,7 +1153,8 @@ class OrganizationsCompanion extends UpdateCompanion<Organization> {
           ..write('name: $name, ')
           ..write('category: $category, ')
           ..write('website: $website, ')
-          ..write('websiteDomain: $websiteDomain')
+          ..write('websiteDomain: $websiteDomain, ')
+          ..write('mergedIntoId: $mergedIntoId')
           ..write(')'))
         .toString();
   }
@@ -11072,6 +11132,211 @@ class DuplicateCandidatesCompanion extends UpdateCompanion<DuplicateCandidate> {
   }
 }
 
+class $SettingsTable extends Settings with TableInfo<$SettingsTable, Setting> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SettingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'settings';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Setting> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  Setting map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Setting(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+    );
+  }
+
+  @override
+  $SettingsTable createAlias(String alias) {
+    return $SettingsTable(attachedDatabase, alias);
+  }
+}
+
+class Setting extends DataClass implements Insertable<Setting> {
+  final String key;
+  final String value;
+  const Setting({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  SettingsCompanion toCompanion(bool nullToAbsent) {
+    return SettingsCompanion(key: Value(key), value: Value(value));
+  }
+
+  factory Setting.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Setting(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  Setting copyWith({String? key, String? value}) =>
+      Setting(key: key ?? this.key, value: value ?? this.value);
+  Setting copyWithCompanion(SettingsCompanion data) {
+    return Setting(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Setting(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Setting && other.key == this.key && other.value == this.value);
+}
+
+class SettingsCompanion extends UpdateCompanion<Setting> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const SettingsCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SettingsCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       value = Value(value);
+  static Insertable<Setting> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SettingsCompanion copyWith({
+    Value<String>? key,
+    Value<String>? value,
+    Value<int>? rowid,
+  }) {
+    return SettingsCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SettingsCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -11098,6 +11363,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $RankingWeightsTable rankingWeights = $RankingWeightsTable(this);
   late final $DuplicateCandidatesTable duplicateCandidates =
       $DuplicateCandidatesTable(this);
+  late final $SettingsTable settings = $SettingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -11123,6 +11389,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     searchFeedback,
     rankingWeights,
     duplicateCandidates,
+    settings,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -11643,6 +11910,7 @@ typedef $$OrganizationsTableCreateCompanionBuilder =
       Value<String?> category,
       Value<String?> website,
       Value<String?> websiteDomain,
+      Value<int?> mergedIntoId,
     });
 typedef $$OrganizationsTableUpdateCompanionBuilder =
     OrganizationsCompanion Function({
@@ -11654,6 +11922,7 @@ typedef $$OrganizationsTableUpdateCompanionBuilder =
       Value<String?> category,
       Value<String?> website,
       Value<String?> websiteDomain,
+      Value<int?> mergedIntoId,
     });
 
 final class $$OrganizationsTableReferences
@@ -11767,6 +12036,11 @@ class $$OrganizationsTableFilterComposer
 
   ColumnFilters<String> get websiteDomain => $composableBuilder(
     column: $table.websiteDomain,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11894,6 +12168,11 @@ class $$OrganizationsTableOrderingComposer
     column: $table.websiteDomain,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OrganizationsTableAnnotationComposer
@@ -11928,6 +12207,11 @@ class $$OrganizationsTableAnnotationComposer
 
   GeneratedColumn<String> get websiteDomain => $composableBuilder(
     column: $table.websiteDomain,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get mergedIntoId => $composableBuilder(
+    column: $table.mergedIntoId,
     builder: (column) => column,
   );
 
@@ -12047,6 +12331,7 @@ class $$OrganizationsTableTableManager
                 Value<String?> category = const Value.absent(),
                 Value<String?> website = const Value.absent(),
                 Value<String?> websiteDomain = const Value.absent(),
+                Value<int?> mergedIntoId = const Value.absent(),
               }) => OrganizationsCompanion(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -12056,6 +12341,7 @@ class $$OrganizationsTableTableManager
                 category: category,
                 website: website,
                 websiteDomain: websiteDomain,
+                mergedIntoId: mergedIntoId,
               ),
           createCompanionCallback:
               ({
@@ -12067,6 +12353,7 @@ class $$OrganizationsTableTableManager
                 Value<String?> category = const Value.absent(),
                 Value<String?> website = const Value.absent(),
                 Value<String?> websiteDomain = const Value.absent(),
+                Value<int?> mergedIntoId = const Value.absent(),
               }) => OrganizationsCompanion.insert(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -12076,6 +12363,7 @@ class $$OrganizationsTableTableManager
                 category: category,
                 website: website,
                 websiteDomain: websiteDomain,
+                mergedIntoId: mergedIntoId,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -19471,6 +19759,139 @@ typedef $$DuplicateCandidatesTableProcessedTableManager =
       DuplicateCandidate,
       PrefetchHooks Function()
     >;
+typedef $$SettingsTableCreateCompanionBuilder =
+    SettingsCompanion Function({
+      required String key,
+      required String value,
+      Value<int> rowid,
+    });
+typedef $$SettingsTableUpdateCompanionBuilder =
+    SettingsCompanion Function({
+      Value<String> key,
+      Value<String> value,
+      Value<int> rowid,
+    });
+
+class $$SettingsTableFilterComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SettingsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SettingsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$SettingsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SettingsTable,
+          Setting,
+          $$SettingsTableFilterComposer,
+          $$SettingsTableOrderingComposer,
+          $$SettingsTableAnnotationComposer,
+          $$SettingsTableCreateCompanionBuilder,
+          $$SettingsTableUpdateCompanionBuilder,
+          (Setting, BaseReferences<_$AppDatabase, $SettingsTable, Setting>),
+          Setting,
+          PrefetchHooks Function()
+        > {
+  $$SettingsTableTableManager(_$AppDatabase db, $SettingsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SettingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SettingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SettingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion(key: key, value: value, rowid: rowid),
+          createCompanionCallback:
+              ({
+                required String key,
+                required String value,
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion.insert(
+                key: key,
+                value: value,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SettingsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SettingsTable,
+      Setting,
+      $$SettingsTableFilterComposer,
+      $$SettingsTableOrderingComposer,
+      $$SettingsTableAnnotationComposer,
+      $$SettingsTableCreateCompanionBuilder,
+      $$SettingsTableUpdateCompanionBuilder,
+      (Setting, BaseReferences<_$AppDatabase, $SettingsTable, Setting>),
+      Setting,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -19514,4 +19935,6 @@ class $AppDatabaseManager {
       $$RankingWeightsTableTableManager(_db, _db.rankingWeights);
   $$DuplicateCandidatesTableTableManager get duplicateCandidates =>
       $$DuplicateCandidatesTableTableManager(_db, _db.duplicateCandidates);
+  $$SettingsTableTableManager get settings =>
+      $$SettingsTableTableManager(_db, _db.settings);
 }

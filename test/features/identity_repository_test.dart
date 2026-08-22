@@ -1,5 +1,7 @@
 // `isNull`/`isNotNull` are exported by both drift and matcher; the matcher
 // ones are meant.
+import 'dart:async';
+
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +10,7 @@ import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
 import 'package:recallos/core/extraction/field_validator.dart';
 import 'package:recallos/core/identity/resolution.dart';
+import 'package:recallos/features/capture/data/card_repository.dart';
 import 'package:recallos/features/contacts/data/identity_repository.dart';
 
 /// Exercises promotion against a real database.
@@ -19,10 +22,12 @@ import 'package:recallos/features/contacts/data/identity_repository.dart';
 void main() {
   late AppDatabase db;
   late IdentityRepository identity;
+  late CardRepository repo;
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
     identity = IdentityRepository(db);
+    repo = CardRepository(db);
   });
   tearDown(() async => db.close());
 
@@ -303,6 +308,353 @@ void main() {
     });
   });
 
+  group('correcting a mislabelled field', () {
+    test('re-labelling a job title as the designation removes the contact',
+        () async {
+      // Exactly what happens on the review screen: extraction reads the job
+      // title as the person, and the user re-labels it before saving.
+      final int cardId = await scan(
+        name: 'Operations and Sales Manager',
+        company: 'Aquarius Pet Shop',
+        phone: '01711363991',
+      );
+      expect(await people(), hasLength(1));
+
+      final CardField wrong = (await (db.select(db.cardFields)
+                ..where(($CardFieldsTable f) =>
+                    f.fieldKey.equals(FieldKeys.personName)))
+              .get())
+          .single;
+      await repo.updateField(
+        fieldId: wrong.id,
+        fieldKey: FieldKeys.designation,
+      );
+      await identity.promote(cardId);
+
+      expect(await people(), isEmpty,
+          reason: 'a job title is not a person');
+    });
+
+    test('correcting the value renames the contact', () async {
+      // The other way to fix it on the review screen: leave the label alone
+      // and type the right name over the wrong one.
+      final int cardId = await scan(
+        name: 'Operations and Sales Manager',
+        company: 'Aquarius Pet Shop',
+        phone: '01711363991',
+      );
+      expect((await people()).single.displayName,
+          'Operations and Sales Manager');
+
+      final CardField wrong = (await (db.select(db.cardFields)
+                ..where(($CardFieldsTable f) =>
+                    f.fieldKey.equals(FieldKeys.personName)))
+              .get())
+          .single;
+      await repo.updateField(fieldId: wrong.id, value: 'Asif Ahmed Peal');
+      await identity.promote(cardId);
+
+      expect((await people()).single.displayName, 'Asif Ahmed Peal',
+          reason: 'the contact has to follow the card it was made from');
+    });
+
+    test('the live contacts list sees the correction', () async {
+      final int cardId = await scan(
+        name: 'Operations and Sales Manager',
+        company: 'Aquarius Pet Shop',
+        phone: '01711363991',
+      );
+
+      final List<List<PersonSummary>> seen = <List<PersonSummary>>[];
+      final StreamSubscription<List<PersonSummary>> sub =
+          identity.watchPeople().listen(seen.add);
+      await pumpEventQueue();
+      expect(seen.last, hasLength(1));
+
+      final CardField wrong = (await (db.select(db.cardFields)
+                ..where(($CardFieldsTable f) =>
+                    f.fieldKey.equals(FieldKeys.personName)))
+              .get())
+          .single;
+      await repo.updateField(
+        fieldId: wrong.id,
+        fieldKey: FieldKeys.designation,
+      );
+      await identity.promote(cardId);
+      await pumpEventQueue();
+
+      expect(seen.last, isEmpty,
+          reason: 'the correction has to reach the screen, not just the rows');
+      await sub.cancel();
+    });
+  });
+
+  group('removing the person from a card', () {
+    test('clearing the name detaches the contact', () async {
+      final int cardId = await scan(
+        name: 'Wrongly Read Name',
+        company: 'Target Center',
+        phone: '01747157741',
+      );
+      expect(await people(), hasLength(1));
+
+      // What the user does: open the card, clear the name, save. The card
+      // keeps its numbers.
+      await (db.delete(db.cardFields)
+            ..where(($CardFieldsTable f) =>
+                f.cardId.equals(cardId) &
+                f.fieldKey.equals(FieldKeys.personName)))
+          .go();
+      await identity.promote(cardId);
+
+      expect(await people(), isEmpty,
+          reason: 'a card with no name is not about anybody');
+      // The numbers are still reachable — they belong to the company now.
+      expect(await points(), isNotEmpty);
+      expect(
+        (await points()).every((ContactPoint c) => c.ownerType == 'organization'),
+        isTrue,
+      );
+    });
+
+    test('adding the name back re-links it', () async {
+      final int cardId = await scan(company: 'Target Center', phone: '01747157741');
+      expect(await people(), isEmpty);
+
+      final FieldValidation check =
+          validateField(FieldKeys.personName, 'A Real Name');
+      await db.into(db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: FieldKeys.personName,
+              value: 'A Real Name',
+              normalizedValue: Value<String?>(check.normalized),
+              source: FactSource.user,
+            ),
+          );
+      await identity.promote(cardId);
+
+      expect(await people(), hasLength(1));
+    });
+  });
+
+  group('deleting a card', () {
+    test('leaves no contact or company behind', () async {
+      final int cardId = await scan(
+        name: 'Only Card',
+        company: 'Only Company',
+        phone: '01711363991',
+        address: 'Somewhere',
+      );
+      expect(await people(), hasLength(1));
+      expect(await db.select(db.organizations).get(), hasLength(1));
+
+      await identity.detach(cardId);
+
+      expect(await people(), isEmpty);
+      expect(await db.select(db.organizations).get(), isEmpty);
+      expect(await db.select(db.roles).get(), isEmpty);
+      expect(await db.select(db.orgBranches).get(), isEmpty);
+      expect(await points(), isEmpty);
+    });
+
+    test('a combined company does not outlive its cards', () async {
+      // The residue that survived everything: two scans of one shop sign,
+      // combined, then both cards deleted. Protecting the tombstone so the
+      // merge could be undone also made the pair immortal — the company sat
+      // in the list forever with nothing behind it.
+      final int first = await scan(company: 'TARGET, CENTER,');
+      final int second = await scan(company: 'CTARGEI. CENTER');
+      final List<Organization> both = await db.select(db.organizations).get();
+      expect(both, hasLength(2));
+      await identity.mergeOrganizations(
+          survivor: both.first.id, loser: both.last.id);
+      expect(await identity.watchOrganizations().first, hasLength(1));
+
+      await identity.detach(first);
+      await identity.detach(second);
+
+      expect(await db.select(db.organizations).get(), isEmpty,
+          reason: 'neither half of a merged pair may outlive its cards');
+    });
+
+    test('a merged pair still standing on one card survives', () async {
+      await scan(company: 'TARGET, CENTER,');
+      final int second = await scan(company: 'CTARGEI. CENTER');
+      final List<Organization> both = await db.select(db.organizations).get();
+      await identity.mergeOrganizations(
+          survivor: both.first.id, loser: both.last.id);
+
+      await identity.detach(second);
+
+      // One card left, so the combined company stays — and so does the record
+      // of the merge, or it could never be separated again.
+      expect(await identity.watchOrganizations().first, hasLength(1));
+      expect(await db.select(db.organizations).get(), hasLength(2));
+
+    });
+  });
+
+  group('implausible names', () {
+    test('a stray line does not become a contact', () async {
+      // Off the email row of a shop card whose text ran together — extraction
+      // files it as a name because it is the best candidate on the card.
+      await scan(
+        name: 'OE-mgil: targetbrand2015@gm',
+        company: 'Target Center',
+        phone: '01747157741',
+      );
+
+      expect(await people(), isEmpty,
+          reason: 'an email is not somebody to put in an address book');
+      // The company on the same card is unaffected.
+      expect(await db.select(db.organizations).get(), hasLength(1));
+    });
+
+    test('one made before the rule existed is cleared on backfill', () async {
+      // After the scan, or promotion's garbage collection removes the row
+      // before the card can point at it.
+      final int cardId = await scan(company: 'Target Center');
+      final int personId = await db.into(db.people).insert(
+            PeopleCompanion.insert(displayName: 'OE-mgil: targetbrand2015@gm'),
+          );
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(CardsCompanion(personId: Value<int?>(personId)));
+
+      await identity.backfill();
+
+      expect(await people(), isEmpty);
+    });
+  });
+
+  group('duplicate companies', () {
+    test('two scans of one shop sign become one company', () async {
+      // The pair that started this: one card photographed twice, read
+      // differently each time. Exact-equality matching finds nothing here and
+      // the library ends up with two companies. A similar name *and* the same
+      // address is strong enough to join without asking — two shops do not
+      // share a door.
+      await scan(company: 'TARGET, CENTER,', address: 'Shop No:300, Dhaka New Market');
+      await scan(company: 'CTARGEI. CENTER', address: 'O Shop No:300, Dhaka New Markel');
+
+      expect(await identity.watchOrganizations().first, hasLength(1));
+    });
+
+    test('a similar name with no shared address is proposed, not merged',
+        () async {
+      // Without the address there is nothing to corroborate the name, and a
+      // similar name on its own could as easily be a second branch or a rival.
+      await scan(company: 'TARGET, CENTER,');
+      await scan(company: 'CTARGEI. CENTER');
+
+      expect(await db.select(db.organizations).get(), hasLength(2),
+          reason: 'nothing may be joined on a name alone');
+
+      final List<DuplicatePair> orgs = (await identity.watchDuplicates().first)
+          .where((DuplicatePair p) => p.kind == DuplicateKind.organization)
+          .toList();
+      expect(orgs, hasLength(1));
+      expect(orgs.single.signals, contains('a similar name'));
+    });
+
+    test('two genuinely different companies are left alone', () async {
+      await scan(company: 'Rahman Traders', address: 'New Market, Dhaka');
+      await scan(company: 'Olympus Hospital', address: 'West Panthapath');
+
+      final List<DuplicatePair> pending =
+          await identity.watchDuplicates().first;
+      expect(
+        pending.where((DuplicatePair p) => p.kind == DuplicateKind.organization),
+        isEmpty,
+      );
+    });
+
+    test('combining two companies gathers their cards under one', () async {
+      await scan(company: 'TARGET, CENTER,');
+      await scan(company: 'CTARGEI. CENTER');
+      final List<Organization> before =
+          await db.select(db.organizations).get();
+      expect(before, hasLength(2));
+
+      await identity.mergeOrganizations(
+          survivor: before.first.id, loser: before.last.id);
+
+      final List<OrgSummary> listed =
+          await identity.watchOrganizations().first;
+      expect(listed, hasLength(1));
+
+      final OrgDetail? detail =
+          await identity.watchOrganization(before.first.id).first;
+      expect(detail!.cardIds, hasLength(2),
+          reason: 'both scans belong to the one company now');
+    });
+  });
+
+  group('duplicate cards', () {
+    test('the same card scanned twice is proposed', () async {
+      // Every number on both, and the same company: this is one piece of
+      // paper, not two people at one firm.
+      await scan(
+        company: 'Target Center',
+        phone: '01747157741',
+        email: 'targetbrand2015@gmail.com',
+      );
+      await scan(
+        company: 'Target Center',
+        phone: '01747157741',
+        email: 'targetbrand2015@gmail.com',
+      );
+
+      final List<DuplicatePair> cards = (await identity.watchDuplicates().first)
+          .where((DuplicatePair p) => p.kind == DuplicateKind.card)
+          .toList();
+      expect(cards, hasLength(1));
+    });
+
+    test('two colleagues sharing one office line are not a duplicate card',
+        () async {
+      // The office number is on both cards, but each person has a mobile the
+      // other does not. Only *every* endpoint matching means one card.
+      await scan(
+        name: 'First Colleague',
+        company: 'Olympus Hospital',
+        phone: '01819104376',
+      );
+      await scan(
+        name: 'Second Colleague',
+        company: 'Olympus Hospital',
+        phone: '01819104376',
+        email: 'second@example.com',
+      );
+
+      final List<DuplicatePair> cards = (await identity.watchDuplicates().first)
+          .where((DuplicatePair p) => p.kind == DuplicateKind.card)
+          .toList();
+      expect(cards, isEmpty);
+    });
+
+    test('discarding the newer scan is a soft delete, not a destruction',
+        () async {
+      final int first = await scan(
+          company: 'Target Center', phone: '01747157741');
+      final int second = await scan(
+          company: 'Target Center', phone: '01747157741');
+
+      await identity.discardDuplicateCard(keep: first, discard: second);
+
+      final CardRow gone = await (db.select(db.cards)
+            ..where(($CardsTable c) => c.id.equals(second)))
+          .getSingle();
+      expect(gone.deletedAt, isNotNull,
+          reason: 'it must be recoverable from Recently deleted');
+      // And it stops holding up anything in the graph.
+      expect(
+        (await points()).where((ContactPoint c) => c.sourceCardId == second),
+        isEmpty,
+      );
+    });
+  });
+
   group('merging', () {
     Future<(int, int)> twoRahmans() async {
       await scan(name: 'Md. Rahman', company: 'Rahman Traders', phone: '01711363991');
@@ -438,6 +790,156 @@ void main() {
 
       expect(pair.signals, contains('same name'));
       expect(pair.score, lessThan(MatchVerdict.linkThreshold));
+    });
+  });
+
+  group('soft-deleted cards', () {
+    test('one in Recently deleted does not stop the graph being maintained',
+        () async {
+      // The card that broke everything on the device: soft-deleted long ago,
+      // still holding foreign keys to a person and a company. Collecting them
+      // failed on a constraint, and because that runs at the top of backfill,
+      // nothing after it ran — no re-promotion, no cleanup, for any card.
+      final int stranded = await scan(
+        name: 'Stranded Person',
+        company: 'Stranded Company',
+        phone: '01711363991',
+      );
+      await (db.update(db.cards)
+            ..where(($CardsTable c) => c.id.equals(stranded)))
+          .write(CardsCompanion(deletedAt: Value<DateTime?>(DateTime.now())));
+
+      // Its endpoints would otherwise keep the entities alive, so clear them
+      // the way a delete does — leaving exactly the dangling links.
+      await (db.delete(db.contactPoints)
+            ..where(($ContactPointsTable c) =>
+                c.sourceCardId.equals(stranded)))
+          .go();
+
+      await identity.backfill();
+
+      expect(await people(), isEmpty);
+      expect(await db.select(db.organizations).get(), isEmpty);
+      // And the card itself survives, still recoverable.
+      final CardRow still = await (db.select(db.cards)
+            ..where(($CardsTable c) => c.id.equals(stranded)))
+          .getSingle();
+      expect(still.deletedAt, isNotNull);
+      expect(still.personId, isNull);
+    });
+  });
+
+  group('a card deleted but not yet purged', () {
+    test('stops holding its company in the contacts list', () async {
+      // The residue the user actually saw: two cards in the library, three
+      // companies beside them. Deleting soft-deletes at once but only tears
+      // the graph down when the undo window closes, so a card deleted while
+      // the app was closing kept its endpoints — and those kept its company.
+      final int cardId = await scan(
+        company: 'Deleted Company',
+        phone: '01711363991',
+      );
+      expect(await db.select(db.organizations).get(), hasLength(1));
+
+      // Soft-deleted and nothing else: the state the app is left in mid-undo.
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(CardsCompanion(deletedAt: Value<DateTime?>(DateTime.now())));
+
+      await identity.backfill();
+
+      expect(await db.select(db.organizations).get(), isEmpty);
+      expect(await points(), isEmpty);
+    });
+
+    test('restoring it brings the company back', () async {
+      final int cardId = await scan(
+        company: 'Restored Company',
+        phone: '01711363991',
+      );
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(CardsCompanion(deletedAt: Value<DateTime?>(DateTime.now())));
+      await identity.backfill();
+      expect(await db.select(db.organizations).get(), isEmpty);
+
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(const CardsCompanion(deletedAt: Value<DateTime?>(null)));
+      await identity.promote(cardId);
+
+      expect(await db.select(db.organizations).get(), hasLength(1));
+      expect(await points(), isNotEmpty);
+    });
+  });
+
+  group('the screens see the change', () {
+    test('collecting a company updates the live list', () async {
+      // Garbage collection is raw SQL, which Drift does not observe. Without
+      // being told, the rows go and every stream on them keeps serving what
+      // it last read — the database correct, the contacts list still showing
+      // a company that is no longer in it, and the cleanup looking broken
+      // when it has already run.
+      final int cardId = await scan(
+        company: 'Vanishing Company',
+        phone: '01711363991',
+      );
+
+      final List<List<OrgSummary>> seen = <List<OrgSummary>>[];
+      final StreamSubscription<List<OrgSummary>> sub =
+          identity.watchOrganizations().listen(seen.add);
+      await pumpEventQueue();
+      expect(seen.last, hasLength(1));
+
+      await identity.detach(cardId);
+      await pumpEventQueue();
+
+      expect(seen.last, isEmpty,
+          reason: 'the list has to hear about it, not just the database');
+      await sub.cancel();
+    });
+  });
+
+  group('rules version', () {
+    test('a graph built by older rules is rebuilt', () async {
+      final int cardId = await scan(
+        company: 'Target Center',
+        phone: '01747157741',
+      );
+      // The shape an older rule left: a person on a card that names nobody.
+      final int personId = await db.into(db.people).insert(
+            PeopleCompanion.insert(displayName: 'Left Over'),
+          );
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(CardsCompanion(personId: Value<int?>(personId)));
+      await db.into(db.settings).insertOnConflictUpdate(
+            SettingsCompanion.insert(
+              key: 'identity_rules_version',
+              value: '0',
+            ),
+          );
+
+      await identity.backfill();
+
+      expect(await people(), isEmpty,
+          reason: 'the whole graph is rebuilt under the current rules');
+      // And it records what built it, so the next run is cheap.
+      final Setting stored = await (db.select(db.settings)
+            ..where(($SettingsTable t) =>
+                t.key.equals('identity_rules_version')))
+          .getSingle();
+      expect(stored.value, IdentityRepository.rulesVersion.toString());
+    });
+
+    test('a graph already current is left alone', () async {
+      await scan(name: 'Kept Person', phone: '01711363991');
+      await db.into(db.settings).insertOnConflictUpdate(
+            SettingsCompanion.insert(
+              key: 'identity_rules_version',
+              value: IdentityRepository.rulesVersion.toString(),
+            ),
+          );
+
+      await identity.backfill();
+
+      expect(await people(), hasLength(1));
     });
   });
 

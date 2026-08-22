@@ -96,6 +96,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _delete(CardSummary card) async {
     final CardRepository repo = ref.read(cardRepositoryProvider);
     await repo.softDelete(card.id);
+    // Straight away, not once the undo window closes. A card deleted and
+    // never purged — because the app closed inside those five seconds — used
+    // to leave its contacts and its company behind permanently.
+    await ref.read(identityRepositoryProvider).detach(card.id);
 
     // Drop it from the visible results too, or a deleted card lingers on screen
     // until the next keystroke.
@@ -112,7 +116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             content: Text('Deleted ${card.title ?? "card"}'),
             action: SnackBarAction(
               label: 'Undo',
-              onPressed: () => restoring = repo.restore(card.id),
+              onPressed: () => restoring = _restore(repo, card.id),
             ),
             duration: const Duration(seconds: 5),
             // Without this the bar carrying an action outlives its own
@@ -131,10 +135,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     // Undo window closed untouched — now it really goes, image and index rows
-    // included. The graph is torn down first, while the card's links still
-    // resolve — afterwards there is nothing left to find the person by.
-    await ref.read(identityRepositoryProvider).detach(card.id);
+    // included. The graph came down with the soft delete above.
     await repo.purge(card.id);
+  }
+
+  /// Puts a card back, and the person and company behind it with it.
+  Future<void> _restore(CardRepository repo, int cardId) async {
+    await repo.restore(cardId);
+    await ref.read(identityRepositoryProvider).promote(cardId);
   }
 
   @override

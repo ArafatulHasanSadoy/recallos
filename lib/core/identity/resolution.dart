@@ -14,6 +14,7 @@
 library;
 
 import '../db/enums.dart';
+import 'similarity.dart';
 
 
 
@@ -116,6 +117,39 @@ final RegExp _spaces = RegExp(r'\s+');
 /// read "Mr." and nothing else.
 String? normalizePersonName(String? raw) => _reduce(raw, drop: _honorifics);
 
+/// Whether a string is plausibly somebody's name.
+///
+/// Extraction assigns the best candidate it has, and on a card with no legible
+/// person that is sometimes a stray line: `OE-mgil: targetbrand2015@gm` is a
+/// real read, taken off the email row of a shop card whose text ran together.
+/// Promoted, it becomes a contact in the address book named after an email
+/// address, which looks exactly like the app inventing people.
+///
+/// Deliberately a check on *shape*, not a guess at real names. Bangladeshi
+/// names on business cards carry honorifics, initials and inconsistent
+/// spacing, and anything cleverer would start rejecting the genuine article.
+/// It only catches the two things a name never is: an address, and a label
+/// that leaked in with its colon attached.
+bool looksLikePersonName(String? raw) {
+  final String name = (raw ?? '').trim();
+  if (name.length < 2) return false;
+
+  // An email or a URL is never a name, however confidently it was assigned.
+  if (name.contains('@')) return false;
+  if (name.contains('://')) return false;
+
+  // A colon means a field label came along with the value — "E-mail:",
+  // "Cell:" — and what follows it is that field, not a person.
+  if (name.contains(':')) return false;
+
+  final int letters = name.replaceAll(RegExp(r'[^A-Za-z]'), '').length;
+  final int digits = name.replaceAll(RegExp(r'[^0-9]'), '').length;
+  if (letters < 2) return false;
+  // Names are mostly letters. A string that is mostly digits is a number, a
+  // registration, or a house address that landed in the wrong field.
+  return letters > digits;
+}
+
 /// A company name reduced to what two cards would have to agree on.
 ///
 /// Unlike people, exact agreement here is safe enough to link on. Business
@@ -179,10 +213,13 @@ MatchVerdict scorePerson({
     score = 1.0;
   }
 
-  final String? a = normalizePersonName(cardName);
-  final String? b = normalizePersonName(candidateName);
-  if (a != null && a == b) {
-    signals.add('same name');
+  final double alike =
+      nameSimilarity(normalizePersonName(cardName), normalizePersonName(candidateName));
+  if (alike >= proposeSimilarity) {
+    // "Same name" covers an OCR variant as well as an exact match — the two
+    // are indistinguishable to the person looking at the prompt, and both are
+    // equally weak evidence on their own.
+    signals.add(alike == 1 ? 'same name' : 'a similar name');
     // On its own this stays under the link threshold on purpose.
     score = score > 0 ? score : 0.6;
   }
@@ -193,11 +230,17 @@ MatchVerdict scorePerson({
 }
 
 /// Whether a card's facts describe an existing organization.
+///
+/// [cardAddress] and [candidateAddress] are normalised addresses where both
+/// are known. A shared address is what turns "these names look alike" into
+/// something worth linking without asking: two shops do not share a door.
 MatchVerdict scoreOrganization({
   required String? cardDomain,
   required String? candidateDomain,
   required String? cardName,
   required String? candidateName,
+  String? cardAddress,
+  String? candidateAddress,
 }) {
   if (cardDomain != null && cardDomain == candidateDomain) {
     return const MatchVerdict(score: 1.0, signals: <String>['same domain']);
@@ -205,8 +248,32 @@ MatchVerdict scoreOrganization({
 
   final String? a = normalizeOrgName(cardName);
   final String? b = normalizeOrgName(candidateName);
+  final double alike = nameSimilarity(a, b);
+
+  final bool sameAddress = cardAddress != null &&
+      candidateAddress != null &&
+      nameSimilarity(cardAddress, candidateAddress) >= proposeSimilarity;
+
   if (a != null && a == b) {
     return const MatchVerdict(score: 0.92, signals: <String>['same name']);
+  }
+  // A similar name *and* the same address is two scans of one shop sign. The
+  // name alone is not enough: OCR damage and a genuinely different branch of
+  // the same chain look identical from here.
+  if (alike >= proposeSimilarity && sameAddress) {
+    return const MatchVerdict(
+      score: 0.95,
+      signals: <String>['a similar name', 'the same address'],
+    );
+  }
+  if (alike >= proposeSimilarity) {
+    return const MatchVerdict(score: 0.6, signals: <String>['a similar name']);
+  }
+  if (sameAddress) {
+    return const MatchVerdict(
+      score: 0.55,
+      signals: <String>['the same address'],
+    );
   }
   return const MatchVerdict.none();
 }
