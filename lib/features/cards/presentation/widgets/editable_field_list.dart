@@ -280,11 +280,84 @@ class _FieldEditorState extends State<_FieldEditor> {
       TextEditingController(text: widget.initialValue);
   late String _key = widget.initialKey;
   late final Set<int> _selected = widget.initialBlockIds.toSet();
+  final FocusNode _focus = FocusNode();
+
+  /// Whether the user has actually been typing in this editor.
+  ///
+  /// Re-labelling rebuilds the text field, which closes the keyboard, and
+  /// whether that should be undone depends on what the user was doing.
+  /// Someone mid-edit wants the keyboard straight back; someone who only
+  /// opened a row to correct its label does not want one thrown at them.
+  ///
+  /// Checking `hasFocus` at the moment the chip is tapped does not answer it —
+  /// tapping the chip has already taken focus away by then. Adding a field
+  /// starts focused, so that counts as typing from the outset.
+  late bool _touchedValue = widget.initialValue.isEmpty;
 
   @override
   void dispose() {
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
+  }
+
+  /// The keyboard this kind of value is typed on.
+  ///
+  /// A number pad for a number, and letters for everything else. Getting this
+  /// wrong is not cosmetic: an email cannot be typed at all on a keypad with
+  /// no `@`.
+  TextInputType get _keyboard => switch (_key) {
+        FieldKeys.phone => TextInputType.phone,
+        FieldKeys.email => TextInputType.emailAddress,
+        FieldKeys.website => TextInputType.url,
+        FieldKeys.address => TextInputType.streetAddress,
+        _ => TextInputType.text,
+      };
+
+  /// Names, companies and job titles are capitalised; addresses too. An email
+  /// or a website is not — a leading capital there is a correction to undo.
+  TextCapitalization get _capitalization => switch (_key) {
+        FieldKeys.personName ||
+        FieldKeys.company ||
+        FieldKeys.designation ||
+        FieldKeys.address =>
+          TextCapitalization.words,
+        _ => TextCapitalization.none,
+      };
+
+  /// Re-labels the field being edited, and gets the right keyboard with it.
+  ///
+  /// Changing `keyboardType` on a focused `TextField` does not change the
+  /// keyboard: the input connection is negotiated when the field attaches and
+  /// is not renegotiated on rebuild. Since adding a field starts on Phone —
+  /// the commonest thing a card is missing — switching to Email left the user
+  /// looking at a number pad with no `@` on it, which is unusable rather than
+  /// merely untidy.
+  ///
+  /// Keying the field on its keyboard type is what fixes it: a different type
+  /// is a different widget, so the old connection is torn down and a new one
+  /// opened. Focus is restored afterwards, or re-labelling would dismiss the
+  /// keyboard the user is in the middle of using.
+  void _relabel(String key) {
+    if (key == _key) return;
+    setState(() => _key = key);
+    if (!_touchedValue) return;
+
+    // A round trip through unfocused, not a bare `requestFocus`.
+    //
+    // Rebuilding the field tears down the platform input connection but
+    // leaves the node holding focus, so asking for focus again is a no-op:
+    // Flutter opens a keyboard on a focus *transition*, and from its point of
+    // view nothing transitioned. The visible result is a text field drawn
+    // focused, cursor and all, with no keyboard under it — which is worse
+    // than the bug this is fixing, because the field looks ready to type in.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focus.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focus.requestFocus();
+      });
+    });
   }
 
   /// Blocks in reading order — the order they were laid out on the card, which
@@ -344,24 +417,30 @@ class _FieldEditorState extends State<_FieldEditor> {
               ChoiceChip(
                 label: Text(fieldLabel(key)),
                 selected: _key == key,
-                onSelected: (_) => setState(() => _key = key),
+                onSelected: (_) => _relabel(key),
               ),
           ],
         ),
         const SizedBox(height: Gap.md),
         TextField(
+          // See [_relabel]: the key is what makes the keyboard follow the
+          // label instead of being fixed at whatever the field opened as.
+          key: ValueKey<TextInputType>(_keyboard),
           controller: _controller,
+          focusNode: _focus,
           autofocus: widget.initialValue.isEmpty,
-          keyboardType: _key == FieldKeys.phone
-              ? TextInputType.phone
-              : _key == FieldKeys.email
-                  ? TextInputType.emailAddress
-                  : TextInputType.text,
+          keyboardType: _keyboard,
+          textCapitalization: _capitalization,
+          autocorrect: _capitalization == TextCapitalization.words,
           decoration: const InputDecoration(
             labelText: 'Value',
             border: OutlineInputBorder(),
           ),
-          onChanged: (_) => setState(() {}),
+          onTap: () => _touchedValue = true,
+          onChanged: (_) {
+            _touchedValue = true;
+            setState(() {});
+          },
         ),
         if (offerable.isNotEmpty) ...<Widget>[
           const SizedBox(height: Gap.md),
