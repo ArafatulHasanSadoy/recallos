@@ -10,6 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../router.dart';
 import '../../../capture/data/card_repository.dart';
 import '../../../cards/presentation/widgets/wallet_card.dart';
+import '../../data/contact_export.dart';
 
 /// The endpoints on a person or a company, each with the one action that
 /// actually reaches it.
@@ -162,4 +163,28 @@ String contactInitials(String name) {
   if (use.isEmpty) return '?';
   if (use.length == 1) return use.first.characters.first.toUpperCase();
   return (use.first.characters.first + use.last.characters.first).toUpperCase();
+}
+
+/// Runs an export and says what happened.
+///
+/// The failure worth reporting is a phone with nothing that imports vCards —
+/// rare, but silent otherwise: the file is written, no app opens, and the user
+/// is left looking at a screen that did nothing.
+Future<void> exportContact(
+  BuildContext context,
+  Future<ContactExportResult> Function() run,
+) async {
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  final ContactExportResult result = await run();
+
+  final String? message = switch (result) {
+    ContactExportResult.opened => null,
+    ContactExportResult.shared => null,
+    ContactExportResult.noHandler =>
+      'No app on this phone can import a contact file.',
+    ContactExportResult.gone => 'This contact is no longer here.',
+  };
+  if (message != null) {
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
 }

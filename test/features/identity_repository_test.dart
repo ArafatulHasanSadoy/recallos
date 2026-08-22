@@ -55,6 +55,9 @@ void main() {
               fieldKey: key,
               value: value,
               normalizedValue: Value<String?>(check.normalized),
+              // Carried through exactly as `attachExtraction` does, or these
+              // tests would be exercising a row shape production never writes.
+              validationIssue: Value<String?>(check.issue),
               source: source,
             ),
           );
@@ -115,6 +118,28 @@ void main() {
 
       expect(await people(), hasLength(1),
           reason: 'the normalised email is the same endpoint');
+    });
+  });
+
+  group('rejected values', () {
+    test('a number the validator refused does not become an endpoint',
+        () async {
+      // Three digits short — a real read off a real card. It cannot be
+      // dialled and it cannot match anything, so it must not end up in the
+      // graph or in an exported contact.
+      await scan(name: 'Truncated Number', phone: '017098227');
+
+      expect(await points(), isEmpty);
+      // The person still exists; only the bad endpoint is withheld.
+      expect(await people(), hasLength(1));
+    });
+
+    test('a good number on the same card still promotes', () async {
+      await scan(
+        name: 'Mixed Card',
+        phone: '01819104376',
+      );
+      expect(await points(), hasLength(1));
     });
   });
 
@@ -245,6 +270,30 @@ void main() {
   });
 
   group('backfill', () {
+    test('re-promotes a card left behind by a tightened rule', () async {
+      final int cardId = await scan(name: 'Stale', phone: '01819104376');
+      // The shape an older, looser rule left behind: an endpoint with no
+      // canonical form, which today's rules would never create.
+      await db.into(db.contactPoints).insert(
+            ContactPointsCompanion.insert(
+              ownerType: 'person',
+              ownerId: (await people()).single.id,
+              kind: ContactKind.phone,
+              value: '017098227',
+              sourceCardId: Value<int?>(cardId),
+              source: FactSource.printed,
+            ),
+          );
+      expect(await points(), hasLength(2));
+
+      await identity.backfill();
+
+      final List<ContactPoint> after = await points();
+      expect(after, hasLength(1),
+          reason: 'the stale endpoint should not survive a backfill');
+      expect(after.single.value, '01819104376');
+    });
+
     test('promotes cards saved before the graph existed', () async {
       // Written straight to the tables, the way a pre-existing row looks.
       final int cardId = await db.into(db.cards).insert(

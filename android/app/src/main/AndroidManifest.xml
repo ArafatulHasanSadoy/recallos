@@ -23,6 +23,18 @@
          Text recognition is unaffected: `com.google.mlkit:text-recognition`
          bundles its model into the APK and never reaches the network. -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove"/>
+
+    <!-- open_filex declares the storage and media permissions it would need to
+         open a file from shared storage. RecallOS only ever hands it a vCard
+         it just wrote into its own cache directory, which needs no permission
+         at all — the FileProvider grants the receiving app a one-shot read on
+         that single URI. Reading the user's photos, video and audio to pass
+         along a contact file would be a worse trade than the contacts
+         permission this whole approach exists to avoid. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove"/>
 

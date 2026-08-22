@@ -241,9 +241,19 @@ class IdentityRepository {
     await _collectGarbage();
 
     final List<QueryRow> rows = await _db.customSelect(
-      'SELECT id FROM cards '
-      'WHERE deleted_at IS NULL AND person_id IS NULL AND org_id IS NULL '
-      'ORDER BY captured_at DESC',
+      'SELECT id FROM cards WHERE deleted_at IS NULL AND ('
+      // Never promoted.
+      '  (person_id IS NULL AND org_id IS NULL)'
+      // Or promoted under rules that have since changed. The graph is a
+      // derived projection of card fields, so a rule that tightens what
+      // becomes an endpoint leaves rows behind that the current rules could
+      // not produce — an endpoint with no canonical form is one such, since
+      // validated values always have one. Re-promoting those cards is what
+      // stops a tightened rule applying only to cards scanned after it.
+      '  OR id IN (SELECT source_card_id FROM contact_points '
+      '            WHERE source_card_id IS NOT NULL '
+      '            AND normalized_value IS NULL)'
+      ') ORDER BY captured_at DESC',
     ).get();
 
     for (final QueryRow row in rows) {
@@ -783,13 +793,21 @@ class IdentityRepository {
       contacts: <ContactFact>[
         for (final CardField f in fields)
           if (f.valueKind == FieldValueKind.text)
-            if (_kindOf(f.fieldKey) case final ContactKind kind)
-              ContactFact(
-                kind: kind,
-                value: f.value.trim(),
-                normalized: f.normalizedValue,
-                source: f.source,
-              ),
+            // A value the validator objected to does not become an endpoint.
+            // `017098227` is a real read of a real card — three digits short,
+            // no canonical form — and promoting it produces a contact point
+            // that cannot be dialled, cannot match anything, and gets exported
+            // into the user's address book as if it were a phone number. The
+            // field stays on the card, flagged and repairable; it just is not
+            // treated as a way to reach anybody until it is fixed.
+            if (f.validationIssue == null)
+              if (_kindOf(f.fieldKey) case final ContactKind kind)
+                ContactFact(
+                  kind: kind,
+                  value: f.value.trim(),
+                  normalized: f.normalizedValue,
+                  source: f.source,
+                ),
       ],
     );
   }

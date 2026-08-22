@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/db/database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../router.dart';
+import '../data/contact_export.dart';
 import '../data/identity_repository.dart';
 import 'widgets/contact_widgets.dart';
 
@@ -31,6 +32,26 @@ class OrganizationScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Save to contacts',
+            icon: const Icon(Icons.person_add_alt),
+            onPressed: () => exportContact(
+              context,
+              () => ref.read(contactExportProvider).saveOrganization(orgId),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Share',
+            icon: const Icon(Icons.share_outlined),
+            onPressed: () => exportContact(
+              context,
+              () => ref
+                  .read(contactExportProvider)
+                  .saveOrganization(orgId, share: true),
+            ),
+          ),
+        ],
       ),
       body: detail.when(
         loading: () => const Center(child: CircularProgressIndicator()),
