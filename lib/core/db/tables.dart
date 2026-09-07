@@ -5,10 +5,8 @@ import 'enums.dart';
 /// Timestamps every mutable row carries. `deletedAt` gives us tombstones now so
 /// that sync in Stage 2 does not need a migration.
 mixin _Timestamps on Table {
-  DateTimeColumn get createdAt =>
-      dateTime().withDefault(currentDateAndTime)();
-  DateTimeColumn get updatedAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get deletedAt => dateTime().nullable()();
 }
 
@@ -94,8 +92,8 @@ class Roles extends Table with _Timestamps {
 @DataClassName('CardRow')
 class Cards extends Table with _Timestamps {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get type => textEnum<CardType>()
-      .withDefault(Constant(CardType.unknown.name))();
+  TextColumn get type =>
+      textEnum<CardType>().withDefault(Constant(CardType.unknown.name))();
 
   /// Full-resolution capture. Re-running OCR later needs the pixels, so this is
   /// kept until the user chooses otherwise.
@@ -103,22 +101,30 @@ class Cards extends Table with _Timestamps {
   TextColumn get backImagePath => text().nullable()();
   TextColumn get thumbPath => text().nullable()();
 
-  /// Everything the engines read, joined. Feeds keyword search and gives the
-  /// user something to read themselves when field assignment failed.
+  /// Everything the engines read off the **front**, joined. Feeds keyword
+  /// search and gives the user something to read themselves when field
+  /// assignment failed.
   TextColumn get rawOcrText => text().nullable()();
+
+  /// The same, for the back.
+  ///
+  /// A second column rather than more text in [rawOcrText], because each side
+  /// is re-read on its own: retaking the front must not throw away what was
+  /// read from the back, and one column cannot be rewritten by half.
+  TextColumn get backOcrText => text().nullable()();
 
   /// Engine or routing strategy that produced the current fields.
   TextColumn get ocrEngine => text().nullable()();
   RealColumn get ocrConfidence => real().nullable()();
 
-  TextColumn get extractionStatus => textEnum<ExtractionStatus>()
-      .withDefault(Constant(ExtractionStatus.pending.name))();
+  TextColumn get extractionStatus => textEnum<ExtractionStatus>().withDefault(
+    Constant(ExtractionStatus.pending.name),
+  )();
 
   DateTimeColumn get capturedAt => dateTime()();
 
   IntColumn get personId => integer().nullable().references(People, #id)();
-  IntColumn get orgId =>
-      integer().nullable().references(Organizations, #id)();
+  IntColumn get orgId => integer().nullable().references(Organizations, #id)();
   IntColumn get roleId => integer().nullable().references(Roles, #id)();
 }
 
@@ -154,11 +160,20 @@ class CardFields extends Table with _Timestamps {
   /// "mobile", an email with no plausible TLD. Flagged, never silently kept.
   TextColumn get validationIssue => text().nullable()();
 
-  TextColumn get valueKind => textEnum<FieldValueKind>()
-      .withDefault(Constant(FieldValueKind.text.name))();
+  TextColumn get valueKind => textEnum<FieldValueKind>().withDefault(
+    Constant(FieldValueKind.text.name),
+  )();
 
   /// "left,top,right,bottom" in the source image's coordinate space.
   TextColumn get regionRect => text().nullable()();
+
+  /// Which face [regionRect] is measured against, and which photo this value
+  /// was printed on.
+  ///
+  /// Defaults to front, which is correct for every row written before the back
+  /// was read: until then the front was the only side anything came off.
+  TextColumn get side =>
+      textEnum<CardSide>().withDefault(Constant(CardSide.front.name))();
 }
 
 class ContactPoints extends Table with _Timestamps {
@@ -191,8 +206,11 @@ class ContactPoints extends Table with _Timestamps {
   /// collapse the duplicates. It also keeps provenance — *which card* this
   /// number came off — which is the same principle [CardFields.source]
   /// follows. The cascade is what makes a purge complete.
-  IntColumn get sourceCardId =>
-      integer().nullable().references(Cards, #id, onDelete: KeyAction.cascade)();
+  IntColumn get sourceCardId => integer().nullable().references(
+    Cards,
+    #id,
+    onDelete: KeyAction.cascade,
+  )();
 
   TextColumn get source => textEnum<FactSource>()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
@@ -245,11 +263,20 @@ class OcrBlocks extends Table {
   /// not tell which blocks to release. Without that, a block the user moved
   /// away from a field would stay marked as used and its text would vanish
   /// from the picker for good.
-  IntColumn get fieldId => integer()
-      .nullable()
-      .references(CardFields, #id, onDelete: KeyAction.setNull)();
+  IntColumn get fieldId => integer().nullable().references(
+    CardFields,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
 
   IntColumn get orderIndex => integer().withDefault(const Constant(0))();
+
+  /// Which photo [rect] is measured against.
+  ///
+  /// The picker offers blocks from both sides, so without this a block picked
+  /// off the back would give its field a box in the front's coordinate space.
+  TextColumn get side =>
+      textEnum<CardSide>().withDefault(Constant(CardSide.front.name))();
 }
 
 /// One run of one engine over one card.
@@ -347,8 +374,7 @@ class Interactions extends Table {
 
   TextColumn get kind => textEnum<InteractionKind>()();
   TextColumn get detail => text().nullable()();
-  DateTimeColumn get occurredAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get occurredAt => dateTime().withDefault(currentDateAndTime)();
 }
 
 /// A tiny key/value store for things the app needs to remember about itself.
@@ -393,8 +419,7 @@ class SearchQueries extends Table {
   /// run over real queries later.
   TextColumn get normalizedJson => text().nullable()();
   TextColumn get lang => text().nullable()();
-  DateTimeColumn get createdAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
 class SearchFeedback extends Table {
@@ -406,8 +431,7 @@ class SearchFeedback extends Table {
 
   /// `useful`, `not_relevant`, `outdated`, `wrong_person`, `wrong_category`.
   TextColumn get verdict => text()();
-  DateTimeColumn get createdAt =>
-      dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
 /// Ranking weights live in the database, not in code, so they can be tuned

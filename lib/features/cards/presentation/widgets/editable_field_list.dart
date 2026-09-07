@@ -12,6 +12,7 @@ import '../../../../core/ui/primitives.dart';
 import '../../../capture/data/card_repository.dart';
 import '../../../contacts/data/identity_repository.dart';
 import '../../../search/data/search_repository.dart';
+import 'card_sides_view.dart';
 
 /// Human name for a field key.
 String fieldLabel(String key) => switch (key) {
@@ -46,8 +47,9 @@ class EditableFieldList extends ConsumerStatefulWidget {
 
   final CardDetail detail;
 
-  /// Reports the region of the row being edited so the image above can box it.
-  final ValueChanged<String?> onRegionChanged;
+  /// Reports the region of the row being edited so the image above can box it,
+  /// on whichever side that region belongs to.
+  final ValueChanged<FieldHighlight?> onRegionChanged;
 
   @override
   ConsumerState<EditableFieldList> createState() => _EditableFieldListState();
@@ -71,7 +73,7 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
   Future<void> _edit(CardField field) async {
     // Box the region on the card above before the sheet arrives, so the
     // printing this value was read from is already framed when it opens.
-    widget.onRegionChanged(field.regionRect);
+    widget.onRegionChanged(FieldHighlight.of(field));
 
     final _EditorOutcome? outcome = await _openEditor(
       title: 'Edit this detail',
@@ -322,18 +324,22 @@ class _FieldRow extends StatelessWidget {
         onTap: onOpen,
         semanticLabel: '${fieldLabel(field.fieldKey)}: ${field.value}',
         child: Container(
-          padding: const EdgeInsets.fromLTRB(Gap.md, Gap.sm + 4, Gap.sm, Gap.sm + 4),
-          decoration: AppDecoration.card(
-            c,
-            isDark: isDarkTheme(context),
-            lifted: false,
-          ).copyWith(
-            // Flagged rows are pushed forward rather than merely marked: the
-            // ones the extractor is unsure about are the ones worth a glance.
-            color: flagged
-                ? Color.lerp(c.card, c.vermilion, 0.07)
-                : null,
+          padding: const EdgeInsets.fromLTRB(
+            Gap.md,
+            Gap.sm + 4,
+            Gap.sm,
+            Gap.sm + 4,
           ),
+          decoration:
+              AppDecoration.card(
+                c,
+                isDark: isDarkTheme(context),
+                lifted: false,
+              ).copyWith(
+                // Flagged rows are pushed forward rather than merely marked: the
+                // ones the extractor is unsure about are the ones worth a glance.
+                color: flagged ? Color.lerp(c.card, c.vermilion, 0.07) : null,
+              ),
           child: Row(
             children: <Widget>[
               Expanded(
@@ -351,6 +357,12 @@ class _FieldRow extends StatelessWidget {
                       children: <Widget>[
                         MicroLabel(fieldLabel(field.fieldKey)),
                         SourceChip(field: field),
+                        // Only the back is named. Saying "front" on nearly
+                        // every row would be noise; the back is the exception
+                        // worth knowing about, because it is the side you are
+                        // not currently looking at.
+                        if (field.side == CardSide.back)
+                          MicroLabel('back', color: c.inkFaint),
                       ],
                     ),
                   ],
@@ -556,6 +568,13 @@ class _FieldEditorState extends State<_FieldEditor> {
     final List<OcrBlockRow> offerable = widget.blocks
         .where((OcrBlockRow b) => b.blockText.trim().isNotEmpty)
         .toList();
+    final Map<CardSide, List<OcrBlockRow>> bySide =
+        <CardSide, List<OcrBlockRow>>{
+          for (final CardSide side in CardSide.values)
+            side: offerable.where((OcrBlockRow b) => b.side == side).toList(),
+        };
+    final bool twoSided =
+        bySide.values.where((List<OcrBlockRow> l) => l.isNotEmpty).length > 1;
 
     return PopScope(
       // Blocks only the *implicit* ways out — back, and a tap on the barrier,
@@ -582,10 +601,9 @@ class _FieldEditorState extends State<_FieldEditor> {
                   // would shout it, and not a heading, which it is not.
                   Text(
                     'What is this?',
-                    style: AppText.displayAsk(c).copyWith(
-                      fontSize: 21,
-                      height: 1.1,
-                    ),
+                    style: AppText.displayAsk(
+                      c,
+                    ).copyWith(fontSize: 21, height: 1.1),
                   ),
                   const SizedBox(height: Gap.sm + 2),
                   // Re-labelling costs no typing at all, which is why it comes first:
@@ -653,26 +671,46 @@ class _FieldEditorState extends State<_FieldEditor> {
                       style: AppText.small(c),
                     ),
                     const SizedBox(height: Gap.sm),
-                    Wrap(
-                      spacing: Gap.xs,
-                      runSpacing: Gap.xs,
-                      children: <Widget>[
-                        for (final OcrBlockRow b in offerable)
-                          SelectChip(
-                            // A card line is often wider than the screen;
-                            // SelectChip ellipsises rather than clipping
-                            // mid-character, which reads as a rendering fault.
-                            label: b.blockText.trim(),
-                            selected: _selected.contains(b.id),
-                            // Blocks already spoken for by another field are
-                            // offered anyway — taking one back is a normal
-                            // repair — but they read quieter so the free text
-                            // stands out.
-                            dim: b.fieldId != null && !_selected.contains(b.id),
-                            onTap: () => _toggleBlock(b),
+                    // Grouped by side, and only once there is a second side
+                    // to group. Two rectangles measured against two different
+                    // photographs have no common space to be boxed in, so a
+                    // value built from both loses its highlight — the least a
+                    // picker can do is show which is which before that
+                    // happens.
+                    for (final CardSide side in CardSide.values)
+                      if (bySide[side]!.isNotEmpty) ...<Widget>[
+                        if (twoSided) ...<Widget>[
+                          const SizedBox(height: Gap.xs),
+                          MicroLabel(
+                            side == CardSide.front ? 'front' : 'back',
+                            color: c.inkFaint,
                           ),
+                          const SizedBox(height: Gap.xs),
+                        ],
+                        Wrap(
+                          spacing: Gap.xs,
+                          runSpacing: Gap.xs,
+                          children: <Widget>[
+                            for (final OcrBlockRow b in bySide[side]!)
+                              SelectChip(
+                                // A card line is often wider than the screen;
+                                // SelectChip ellipsises rather than clipping
+                                // mid-character, which reads as a rendering
+                                // fault.
+                                label: b.blockText.trim(),
+                                selected: _selected.contains(b.id),
+                                // Blocks already spoken for by another field
+                                // are offered anyway — taking one back is a
+                                // normal repair — but they read quieter so the
+                                // free text stands out.
+                                dim:
+                                    b.fieldId != null &&
+                                    !_selected.contains(b.id),
+                                onTap: () => _toggleBlock(b),
+                              ),
+                          ],
+                        ),
                       ],
-                    ),
                   ],
                 ],
               ),

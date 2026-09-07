@@ -27,8 +27,10 @@ final cardRepositoryProvider = Provider<CardRepository>(
 /// Watched by both the review screen and the detail screen: a card is in the
 /// database from the moment its photo is, so reviewing a fresh scan and
 /// revisiting an old one are the same view over the same rows.
-final cardDetailProvider =
-    StreamProvider.family<CardDetail?, int>((Ref ref, int id) {
+final cardDetailProvider = StreamProvider.family<CardDetail?, int>((
+  Ref ref,
+  int id,
+) {
   return ref.watch(cardRepositoryProvider).watchCard(id);
 });
 
@@ -96,8 +98,9 @@ class CardDetail {
   /// Blocks no field claimed. Shown so the user can see everything that was on
   /// the card, and pick from it without retyping.
   List<OcrBlockRow> get unassignedBlocks => blocks
-      .where((OcrBlockRow b) =>
-          b.fieldId == null && b.blockText.trim().isNotEmpty)
+      .where(
+        (OcrBlockRow b) => b.fieldId == null && b.blockText.trim().isNotEmpty,
+      )
       .toList();
 
   List<String> get unassignedText =>
@@ -145,7 +148,9 @@ class CardRepository {
         'card_${DateTime.now().microsecondsSinceEpoch}${p.extension(source.path)}';
     final File stored = await source.copy(p.join(cards.path, name));
 
-    final int id = await _db.into(_db.cards).insert(
+    final int id = await _db
+        .into(_db.cards)
+        .insert(
           CardsCompanion.insert(
             imagePath: stored.path,
             capturedAt: DateTime.now(),
@@ -177,17 +182,20 @@ class CardRepository {
     required String imagePath,
     String? thumbPath,
   }) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     if (card == null) return;
 
-    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(CardsCompanion(
-      imagePath: Value<String>(imagePath),
-      thumbPath: Value<String?>(thumbPath),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+    await (_db.update(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).write(
+      CardsCompanion(
+        imagePath: Value<String>(imagePath),
+        thumbPath: Value<String?>(thumbPath),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
 
     if (card.imagePath != imagePath) {
       await _deleteFile(card.imagePath);
@@ -197,34 +205,37 @@ class CardRepository {
   /// Stores the back of the card.
   ///
   /// Separate from [attachImages] because the two sides are captured in
-  /// separate sessions and mean different things. The front is the card: it is
-  /// what OCR read, what the field regions are measured against, and what the
-  /// library shows. The back is a picture kept beside it — no text is
-  /// extracted from it, nothing is indexed off it, and no field points into
-  /// it.
+  /// separate sessions and mean different things. The front is still the card:
+  /// it is what the library shows, what a hero animation flies from, and which
+  /// side wins when both faces print the same number.
   ///
-  /// That asymmetry is deliberate rather than unfinished. `card_fields` and
-  /// `ocr_blocks` record a `region_rect` in one image's pixel space and carry
-  /// no side, so a value read from the back would highlight a box on the
-  /// front — silently, throwing nothing. Until those rows can say which side
-  /// they came from, the honest thing is to keep the back's text out of them.
+  /// Reading it is a separate step. This writes the pixels and the pointer;
+  /// [attachExtraction] with `side: CardSide.back` folds in what the engine
+  /// makes of them, and `BackCaptureService` runs the two in order. Splitting
+  /// them keeps the rule the front already follows — the image is saved before
+  /// anything is recognised, so a failed or crashed read leaves a card with a
+  /// back on it rather than nothing.
   ///
   /// Re-capturing replaces: the previous back is deleted rather than
-  /// accumulating a file per attempt.
+  /// accumulating a file per attempt. Its fields and blocks are replaced by the
+  /// next extraction, which is scoped to the same side.
   Future<void> attachBackImage({
     required int cardId,
     required String backImagePath,
   }) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     if (card == null) return;
 
-    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(CardsCompanion(
-      backImagePath: Value<String?>(backImagePath),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+    await (_db.update(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).write(
+      CardsCompanion(
+        backImagePath: Value<String?>(backImagePath),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
 
     final String? previous = card.backImagePath;
     if (previous != null && previous != backImagePath) {
@@ -232,62 +243,132 @@ class CardRepository {
     }
   }
 
-  /// Drops the back, image and all.
+  /// Drops the back — image, text, fields and all.
   ///
   /// The counterpart to [attachBackImage]: a back photographed by mistake — a
   /// blank side, the desk, the wrong card — should be removable without
   /// deleting the card it is attached to.
+  ///
+  /// Everything read off it goes with it, including fields the user verified.
+  /// That is the one place a human answer does not survive, and it has to be:
+  /// those rows carry a `region_rect` into an image that no longer exists, so
+  /// keeping them would leave values pointing at nothing. The caller re-indexes
+  /// and re-promotes afterwards, the same as any other change to a card's
+  /// fields.
   Future<void> removeBackImage(int cardId) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     if (card == null) return;
 
-    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(CardsCompanion(
-      backImagePath: const Value<String?>(null),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+    await _db.transaction(() async {
+      await (_db.delete(_db.ocrBlocks)..where(
+            ($OcrBlocksTable b) =>
+                b.cardId.equals(cardId) & b.side.equalsValue(CardSide.back),
+          ))
+          .go();
+      await (_db.delete(_db.cardFields)..where(
+            ($CardFieldsTable f) =>
+                f.cardId.equals(cardId) & f.side.equalsValue(CardSide.back),
+          ))
+          .go();
+
+      final List<CardField> settled = await (_db.select(
+        _db.cardFields,
+      )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
+
+      await (_db.update(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).write(
+        CardsCompanion(
+          backImagePath: const Value<String?>(null),
+          backOcrText: const Value<String?>(null),
+          extractionStatus: Value<ExtractionStatus>(
+            settled.isEmpty
+                ? ExtractionStatus.failed
+                : CardExtraction.isUsefulSet(
+                    settled.map((CardField f) => f.fieldKey),
+                  )
+                ? ExtractionStatus.complete
+                : ExtractionStatus.partial,
+          ),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
+    });
 
     final String? previous = card.backImagePath;
     if (previous != null) await _deleteFile(previous);
   }
 
-  /// Folds OCR output into an existing card.
+  /// Folds OCR output for one side into an existing card.
   ///
   /// Every recognised block is stored, not only the ones that became fields —
   /// the unassigned ones are what tap-to-assign offers later, so a card whose
   /// layout defeated the parser can be repaired without retyping.
+  ///
+  /// Scoped to [side], and that scoping is the whole reason the back can be
+  /// read at all. Each side is recognised in its own pass against its own
+  /// image, so a re-read of one must leave the other's rows exactly where they
+  /// were — otherwise retaking the front would quietly throw away everything
+  /// the back contributed, and reading the back would throw away the card.
   Future<void> attachExtraction({
     required int cardId,
     required ocr.OcrResult result,
     required CardExtraction extraction,
+    CardSide side = CardSide.front,
   }) async {
     await _db.transaction(() async {
-      // Anything the user confirmed or corrected outlives re-extraction. The
-      // engine may change its mind freely; a human answer is not something it
-      // gets to overwrite, or a retry would silently undo every repair.
-      final List<CardField> verified = await (_db.select(_db.cardFields)
-            ..where(($CardFieldsTable f) =>
-                f.cardId.equals(cardId) & f.verifiedByUser.equals(true)))
-          .get();
+      final List<CardField> existing = await (_db.select(
+        _db.cardFields,
+      )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
 
-      await (_db.delete(_db.ocrBlocks)
-            ..where(($OcrBlocksTable b) => b.cardId.equals(cardId)))
+      // Anything the user confirmed or corrected outlives re-extraction, on
+      // either side. The engine may change its mind freely; a human answer is
+      // not something it gets to overwrite, or a retry would silently undo
+      // every repair.
+      final List<CardField> verified = existing
+          .where((CardField f) => f.verifiedByUser)
+          .toList();
+
+      // What the *other* side is currently claiming on its own account. Both
+      // faces of a card usually print the same phone number, so without this
+      // every two-sided card would show each endpoint twice.
+      final List<CardField> otherSide = existing
+          .where((CardField f) => f.side != side && !f.verifiedByUser)
+          .toList();
+
+      await (_db.delete(_db.ocrBlocks)..where(
+            ($OcrBlocksTable b) =>
+                b.cardId.equals(cardId) & b.side.equalsValue(side),
+          ))
           .go();
-      await (_db.delete(_db.cardFields)
-            ..where(($CardFieldsTable f) =>
-                f.cardId.equals(cardId) & f.verifiedByUser.equals(false)))
+      await (_db.delete(_db.cardFields)..where(
+            ($CardFieldsTable f) =>
+                f.cardId.equals(cardId) &
+                f.side.equalsValue(side) &
+                f.verifiedByUser.equals(false),
+          ))
           .go();
 
-      final List<ExtractedField> incoming =
-          _withoutSuperseded(verified, extraction.fields);
+      final List<ExtractedField> incoming = _withoutSuperseded(
+        verified,
+        // Only the back defers. The front is the card — it is the image every
+        // region is measured against and the one the library shows — so when
+        // both faces print the same value, the front's row is the one that
+        // keeps it. Ties are broken the other way below.
+        side == CardSide.back ? otherSide : const <CardField>[],
+        extraction.fields,
+      );
 
       // Fields before blocks: a block records the field row that owns it, so
       // those ids have to exist first.
       final Map<int, int> fieldIdOfBlock = <int, int>{};
+      final Set<String> claimed = <String>{};
       for (final ExtractedField f in incoming) {
-        final int fieldId = await _db.into(_db.cardFields).insert(
+        final int fieldId = await _db
+            .into(_db.cardFields)
+            .insert(
               CardFieldsCompanion.insert(
                 cardId: cardId,
                 fieldKey: f.fieldKey,
@@ -297,10 +378,28 @@ class CardRepository {
                 confidence: Value<double?>(f.confidence),
                 validationIssue: Value<String?>(f.issue),
                 regionRect: Value<String?>(f.regionRect),
+                side: Value<CardSide>(side),
               ),
             );
+        claimed.add(_identity(f.fieldKey, f.normalizedValue, f.value));
         for (final int i in f.sourceBlockIndices) {
           fieldIdOfBlock[i] = fieldId;
+        }
+      }
+
+      // The other half of the tie-break: a value the front has just asserted
+      // for itself no longer needs the back's copy of it. The back's blocks
+      // survive — the delete only nulls their `field_id` — so the words stay
+      // in the picker rather than becoming unreachable.
+      if (side == CardSide.front) {
+        for (final CardField f in otherSide) {
+          if (claimed.contains(
+            _identity(f.fieldKey, f.normalizedValue, f.value),
+          )) {
+            await (_db.delete(
+              _db.cardFields,
+            )..where(($CardFieldsTable t) => t.id.equals(f.id))).go();
+          }
         }
       }
 
@@ -317,41 +416,63 @@ class CardRepository {
               assignedFieldKey: Value<String?>(_keyForBlock(incoming, i)),
               fieldId: Value<int?>(fieldIdOfBlock[i]),
               orderIndex: Value<int>(i),
+              side: Value<CardSide>(side),
             ),
         ]);
       });
 
-      await (_db.update(_db.cards)
-            ..where(($CardsTable c) => c.id.equals(cardId)))
-          .write(
+      // Judged over the card rather than over this run. A blank back is the
+      // ordinary case — most backs are blank — and it must not be able to mark
+      // a cleanly-read card `failed`.
+      final List<CardField> settled = await (_db.select(
+        _db.cardFields,
+      )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
+      final List<String> keys = settled
+          .map((CardField f) => f.fieldKey)
+          .toList();
+
+      await (_db.update(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).write(
         CardsCompanion(
-          rawOcrText: Value<String?>(result.plainText),
+          rawOcrText: side == CardSide.front
+              ? Value<String?>(result.plainText)
+              : const Value<String?>.absent(),
+          backOcrText: side == CardSide.back
+              ? Value<String?>(result.plainText)
+              : const Value<String?>.absent(),
           ocrEngine: Value<String?>(result.engine),
           extractionStatus: Value<ExtractionStatus>(
-            // A card the user has already repaired is never "failed", however
-            // little this particular run managed to read.
-            (extraction.isEmpty && verified.isEmpty)
+            settled.isEmpty
                 ? ExtractionStatus.failed
-                : extraction.isUseful
-                    ? ExtractionStatus.complete
-                    : ExtractionStatus.partial,
+                : CardExtraction.isUsefulSet(keys)
+                ? ExtractionStatus.complete
+                : ExtractionStatus.partial,
           ),
           updatedAt: Value<DateTime>(DateTime.now()),
         ),
       );
     });
 
-    await _db.into(_db.extractionAttempts).insert(
+    await _db
+        .into(_db.extractionAttempts)
+        .insert(
           ExtractionAttemptsCompanion.insert(
             cardId: cardId,
-            engine: result.engine,
+            // Which side this run read, kept in the engine identifier rather
+            // than in a column of its own: the table is a per-run log for the
+            // accuracy report, and a front pass and a back pass are different
+            // runs that would otherwise be indistinguishable.
+            engine: side == CardSide.front
+                ? result.engine
+                : '${result.engine}/back',
             startedAt: DateTime.now().subtract(result.duration),
             durationMs: result.duration.inMilliseconds,
             status: extraction.isEmpty
                 ? AttemptStatus.failed
                 : extraction.isUseful
-                    ? AttemptStatus.success
-                    : AttemptStatus.partial,
+                ? AttemptStatus.success
+                : AttemptStatus.partial,
             fieldsFound: Value<int>(extraction.fields.length),
             errorCode: Value<String?>(result.failure?.name),
           ),
@@ -366,14 +487,18 @@ class CardRepository {
     final String trimmed = body.trim();
     if (trimmed.isEmpty) return;
 
-    await _db.into(_db.notes).insert(
+    await _db
+        .into(_db.notes)
+        .insert(
           NotesCompanion.insert(
             subjectType: 'card',
             subjectId: cardId,
             body: Value<String?>(trimmed),
           ),
         );
-    await _db.into(_db.interactions).insert(
+    await _db
+        .into(_db.interactions)
+        .insert(
           InteractionsCompanion.insert(
             subjectType: 'card',
             subjectId: cardId,
@@ -396,8 +521,9 @@ class CardRepository {
   /// on, and [purge] finishes the job once the undo window closes. Nothing is
   /// unrecoverable until they have had a chance to change their mind.
   Future<void> softDelete(int cardId) async {
-    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(
+    await (_db.update(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).write(
       CardsCompanion(
         deletedAt: Value<DateTime?>(DateTime.now()),
         updatedAt: Value<DateTime>(DateTime.now()),
@@ -407,11 +533,7 @@ class CardRepository {
 
   Future<void> restore(int cardId) async {
     await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(
-      const CardsCompanion(
-        deletedAt: Value<DateTime?>(null),
-      ),
-    );
+        .write(const CardsCompanion(deletedAt: Value<DateTime?>(null)));
   }
 
   /// Permanently removes a card, its image and its notes.
@@ -420,9 +542,9 @@ class CardRepository {
   /// cascades; notes and embeddings hang off a polymorphic subject rather than a
   /// foreign key, so they are cleaned up explicitly.
   Future<void> purge(int cardId) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
 
     if (card != null) {
       await _deleteFile(card.imagePath);
@@ -436,26 +558,51 @@ class CardRepository {
     }
 
     await _db.transaction(() async {
-      await (_db.delete(_db.notes)
-            ..where(($NotesTable n) =>
-                n.subjectType.equals('card') & n.subjectId.equals(cardId)))
+      await (_db.delete(_db.notes)..where(
+            ($NotesTable n) =>
+                n.subjectType.equals('card') & n.subjectId.equals(cardId),
+          ))
           .go();
-      await (_db.delete(_db.interactions)
-            ..where(($InteractionsTable i) =>
-                i.subjectType.equals('card') & i.subjectId.equals(cardId)))
+      await (_db.delete(_db.interactions)..where(
+            ($InteractionsTable i) =>
+                i.subjectType.equals('card') & i.subjectId.equals(cardId),
+          ))
           .go();
-      await (_db.delete(_db.embeddings)
-            ..where(($EmbeddingsTable e) =>
-                e.subjectType.equals('card') & e.subjectId.equals(cardId)))
+      await (_db.delete(_db.embeddings)..where(
+            ($EmbeddingsTable e) =>
+                e.subjectType.equals('card') & e.subjectId.equals(cardId),
+          ))
           .go();
       await _db.customStatement(
         'DELETE FROM search_index WHERE subject_type = ? AND subject_id = ?',
         <Object?>['card', cardId],
       );
-      await (_db.delete(_db.cards)
-            ..where(($CardsTable c) => c.id.equals(cardId)))
-          .go();
+      await (_db.delete(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).go();
     });
+  }
+
+  /// Cards with a back photographed but never read.
+  ///
+  /// `back_ocr_text` is the marker rather than the presence of blocks: it is
+  /// written on every back extraction including one that found nothing, so a
+  /// genuinely blank back is read once and then left alone, while a back
+  /// attached before the side column existed still reads as unread.
+  Future<List<({int id, String path})>> cardsWithUnreadBacks() async {
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT id, back_image_path FROM cards '
+          'WHERE deleted_at IS NULL AND back_image_path IS NOT NULL '
+          'AND back_ocr_text IS NULL',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{_db.cards},
+        )
+        .get();
+
+    return <({int id, String path})>[
+      for (final QueryRow row in rows)
+        (id: row.read<int>('id'), path: row.read<String>('back_image_path')),
+    ];
   }
 
   /// Saved cards, newest first, as a live stream so the library updates itself.
@@ -464,9 +611,9 @@ class CardRepository {
   /// the reason spelled out on [watchCard]: the title of a row comes out of
   /// `card_fields`, so a stream watching only `cards` never notices it change.
   Stream<List<CardSummary>> watchCards() => _watchSummaries(
-        'SELECT id FROM cards WHERE deleted_at IS NULL '
-        'ORDER BY captured_at DESC',
-      );
+    'SELECT id FROM cards WHERE deleted_at IS NULL '
+    'ORDER BY captured_at DESC',
+  );
 
   /// Cards whose extraction went badly, and which the user can still repair.
   ///
@@ -474,10 +621,10 @@ class CardRepository {
   /// week is the one most likely to be forgotten, and a queue that puts the
   /// newest on top buries exactly the rows it exists to surface.
   Stream<List<CardSummary>> watchNeedsAttention() => _watchSummaries(
-        'SELECT id FROM cards WHERE deleted_at IS NULL '
-        r"AND extraction_status IN ('failed', 'partial') "
-        'ORDER BY captured_at ASC',
-      );
+    'SELECT id FROM cards WHERE deleted_at IS NULL '
+    r"AND extraction_status IN ('failed', 'partial') "
+    'ORDER BY captured_at ASC',
+  );
 
   /// Cards deleted but not yet destroyed.
   ///
@@ -487,9 +634,9 @@ class CardRepository {
   /// still occupying the disk. Newest first: recovering something is almost
   /// always about the thing you just lost.
   Stream<List<CardSummary>> watchDeleted() => _watchSummaries(
-        'SELECT id FROM cards WHERE deleted_at IS NOT NULL '
-        'ORDER BY deleted_at DESC',
-      );
+    'SELECT id FROM cards WHERE deleted_at IS NOT NULL '
+    'ORDER BY deleted_at DESC',
+  );
 
   Stream<List<CardSummary>> _watchSummaries(String sql) {
     return _db
@@ -503,44 +650,54 @@ class CardRepository {
         )
         .watch()
         .asyncMap((List<QueryRow> ids) async {
-      final List<CardSummary> out = <CardSummary>[];
-      for (final QueryRow id in ids) {
-        final CardRow? row = await (_db.select(_db.cards)
-              ..where(($CardsTable c) => c.id.equals(id.read<int>('id'))))
-            .getSingleOrNull();
-        if (row == null) continue;
+          final List<CardSummary> out = <CardSummary>[];
+          for (final QueryRow id in ids) {
+            final CardRow? row =
+                await (_db.select(_db.cards)..where(
+                      ($CardsTable c) => c.id.equals(id.read<int>('id')),
+                    ))
+                    .getSingleOrNull();
+            if (row == null) continue;
 
-        final List<CardField> fields = await (_db.select(_db.cardFields)
-              ..where(($CardFieldsTable f) => f.cardId.equals(row.id)))
-            .get();
-        final Note? note = await (_db.select(_db.notes)
-              ..where(($NotesTable n) =>
-                  n.subjectType.equals('card') & n.subjectId.equals(row.id))
-              ..limit(1))
-            .getSingleOrNull();
+            final List<CardField> fields = await (_db.select(
+              _db.cardFields,
+            )..where(($CardFieldsTable f) => f.cardId.equals(row.id))).get();
+            final Note? note =
+                await (_db.select(_db.notes)
+                      ..where(
+                        ($NotesTable n) =>
+                            n.subjectType.equals('card') &
+                            n.subjectId.equals(row.id),
+                      )
+                      ..limit(1))
+                    .getSingleOrNull();
 
-        String? valueOf(String key) {
-          for (final CardField f in fields) {
-            if (f.fieldKey == key) return f.value;
+            String? valueOf(String key) {
+              for (final CardField f in fields) {
+                if (f.fieldKey == key) return f.value;
+              }
+              return null;
+            }
+
+            out.add(
+              CardSummary(
+                id: row.id,
+                imagePath: row.imagePath,
+                thumbPath: row.thumbPath,
+                capturedAt: row.capturedAt,
+                status: row.extractionStatus,
+                title:
+                    valueOf(FieldKeys.company) ??
+                    valueOf(FieldKeys.personName) ??
+                    valueOf(FieldKeys.phone),
+                subtitle:
+                    valueOf(FieldKeys.personName) ?? valueOf(FieldKeys.phone),
+                note: note?.body,
+              ),
+            );
           }
-          return null;
-        }
-
-        out.add(CardSummary(
-          id: row.id,
-          imagePath: row.imagePath,
-          thumbPath: row.thumbPath,
-          capturedAt: row.capturedAt,
-          status: row.extractionStatus,
-          title: valueOf(FieldKeys.company) ??
-              valueOf(FieldKeys.personName) ??
-              valueOf(FieldKeys.phone),
-          subtitle: valueOf(FieldKeys.personName) ?? valueOf(FieldKeys.phone),
-          note: note?.body,
-        ));
-      }
-      return out;
-    });
+          return out;
+        });
   }
 
   /// Watches one card and everything attached to it.
@@ -565,51 +722,65 @@ class CardRepository {
         )
         .watch()
         .asyncMap((List<QueryRow> ids) async {
-      if (ids.isEmpty) return null;
+          if (ids.isEmpty) return null;
 
-      final CardRow? card = await (_db.select(_db.cards)
-            ..where(($CardsTable c) => c.id.equals(cardId)))
-          .getSingleOrNull();
-      if (card == null) return null;
+          final CardRow? card = await (_db.select(
+            _db.cards,
+          )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+          if (card == null) return null;
 
-      final List<CardField> fields = await (_db.select(_db.cardFields)
-            ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
-          .get();
-      final List<Note> notes = await (_db.select(_db.notes)
-            ..where(($NotesTable n) =>
-                n.subjectType.equals('card') & n.subjectId.equals(cardId)))
-          .get();
-      final List<OcrBlockRow> blocks = await (_db.select(_db.ocrBlocks)
-            ..where(($OcrBlocksTable b) => b.cardId.equals(cardId))
-            ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
-              ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
-            ]))
-          .get();
+          final List<CardField> fields = await (_db.select(
+            _db.cardFields,
+          )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
+          final List<Note> notes =
+              await (_db.select(_db.notes)..where(
+                    ($NotesTable n) =>
+                        n.subjectType.equals('card') &
+                        n.subjectId.equals(cardId),
+                  ))
+                  .get();
+          final List<OcrBlockRow> blocks =
+              await (_db.select(_db.ocrBlocks)
+                    ..where(($OcrBlocksTable b) => b.cardId.equals(cardId))
+                    ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+                      ($OcrBlocksTable b) =>
+                          OrderingTerm(expression: b.orderIndex),
+                    ]))
+                  .get();
 
-      // Ordered so the screen reads the way a card does: who and what first,
-      // then how to reach them, then where they are.
-      const List<String> order = <String>[
-        FieldKeys.company,
-        FieldKeys.personName,
-        FieldKeys.designation,
-        FieldKeys.phone,
-        FieldKeys.email,
-        FieldKeys.website,
-        FieldKeys.address,
-      ];
-      fields.sort((CardField a, CardField b) {
-        final int ai = order.indexOf(a.fieldKey);
-        final int bi = order.indexOf(b.fieldKey);
-        return (ai < 0 ? order.length : ai).compareTo(bi < 0 ? order.length : bi);
-      });
+          // Ordered so the screen reads the way a card does: who and what first,
+          // then how to reach them, then where they are.
+          const List<String> order = <String>[
+            FieldKeys.company,
+            FieldKeys.personName,
+            FieldKeys.designation,
+            FieldKeys.phone,
+            FieldKeys.email,
+            FieldKeys.website,
+            FieldKeys.address,
+          ];
+          fields.sort((CardField a, CardField b) {
+            final int ai = order.indexOf(a.fieldKey);
+            final int bi = order.indexOf(b.fieldKey);
+            final int byKey = (ai < 0 ? order.length : ai).compareTo(
+              bi < 0 ? order.length : bi,
+            );
+            if (byKey != 0) return byKey;
+            // Within a key, the front comes first. A card with a number on each
+            // face should read as the card does: the printed front, then whatever
+            // the back adds. Ties go to insertion order, spelled out because
+            // `List.sort` gives no stability guarantee.
+            final int bySide = a.side.index.compareTo(b.side.index);
+            return bySide != 0 ? bySide : a.id.compareTo(b.id);
+          });
 
-      return CardDetail(
-        card: card,
-        fields: fields,
-        notes: notes,
-        blocks: blocks,
-      );
-    });
+          return CardDetail(
+            card: card,
+            fields: fields,
+            notes: notes,
+            blocks: blocks,
+          );
+        });
   }
 
   // --- Corrections ---------------------------------------------------------
@@ -636,9 +807,9 @@ class CardRepository {
     String? fieldKey,
     List<int>? blockIds,
   }) async {
-    final CardField? existing = await (_db.select(_db.cardFields)
-          ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
-        .getSingleOrNull();
+    final CardField? existing = await (_db.select(
+      _db.cardFields,
+    )..where(($CardFieldsTable f) => f.id.equals(fieldId))).getSingleOrNull();
     if (existing == null) return;
 
     final String key = fieldKey ?? existing.fieldKey;
@@ -653,22 +824,28 @@ class CardRepository {
     if (text.isEmpty) return;
 
     final FieldValidation check = validateField(key, text);
+    final _Sourcing sourced = _Sourcing.of(blocks);
 
     await _db.transaction(() async {
-      await (_db.update(_db.cardFields)
-            ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
-          .write(CardFieldsCompanion(
-        fieldKey: Value<String>(key),
-        value: Value<String>(text),
-        normalizedValue: Value<String?>(check.normalized),
-        source: const Value<FactSource>(FactSource.user),
-        verifiedByUser: const Value<bool>(true),
-        validationIssue: Value<String?>(check.issue),
-        regionRect: blocks.isEmpty
-            ? const Value<String?>.absent()
-            : Value<String?>(_unionRect(blocks)),
-        updatedAt: Value<DateTime>(DateTime.now()),
-      ));
+      await (_db.update(
+        _db.cardFields,
+      )..where(($CardFieldsTable f) => f.id.equals(fieldId))).write(
+        CardFieldsCompanion(
+          fieldKey: Value<String>(key),
+          value: Value<String>(text),
+          normalizedValue: Value<String?>(check.normalized),
+          source: const Value<FactSource>(FactSource.user),
+          verifiedByUser: const Value<bool>(true),
+          validationIssue: Value<String?>(check.issue),
+          regionRect: blocks.isEmpty
+              ? const Value<String?>.absent()
+              : Value<String?>(sourced.rect),
+          side: blocks.isEmpty
+              ? const Value<CardSide>.absent()
+              : Value<CardSide>(sourced.side),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
 
       if (blocks.isNotEmpty) {
         await _claimBlocks(fieldId: fieldId, key: key, blocks: blocks);
@@ -694,14 +871,18 @@ class CardRepository {
         ? const <OcrBlockRow>[]
         : await _blocksByIds(cardId, blockIds);
 
-    final String text =
-        blocks.isNotEmpty ? _joinBlocks(blocks) : (value ?? '').trim();
+    final String text = blocks.isNotEmpty
+        ? _joinBlocks(blocks)
+        : (value ?? '').trim();
     if (text.isEmpty) return;
 
     final FieldValidation check = validateField(fieldKey, text);
+    final _Sourcing sourced = _Sourcing.of(blocks);
 
     await _db.transaction(() async {
-      final int fieldId = await _db.into(_db.cardFields).insert(
+      final int fieldId = await _db
+          .into(_db.cardFields)
+          .insert(
             CardFieldsCompanion.insert(
               cardId: cardId,
               fieldKey: fieldKey,
@@ -710,9 +891,8 @@ class CardRepository {
               source: FactSource.user,
               verifiedByUser: const Value<bool>(true),
               validationIssue: Value<String?>(check.issue),
-              regionRect: Value<String?>(
-                blocks.isEmpty ? null : _unionRect(blocks),
-              ),
+              regionRect: Value<String?>(sourced.rect),
+              side: Value<CardSide>(sourced.side),
             ),
           );
 
@@ -728,29 +908,31 @@ class CardRepository {
   /// The blocks behind it go back to the picker rather than staying spoken
   /// for, so nothing the engine read becomes unreachable.
   Future<void> deleteField(int fieldId) async {
-    final CardField? existing = await (_db.select(_db.cardFields)
-          ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
-        .getSingleOrNull();
+    final CardField? existing = await (_db.select(
+      _db.cardFields,
+    )..where(($CardFieldsTable f) => f.id.equals(fieldId))).getSingleOrNull();
     if (existing == null) return;
 
     await _db.transaction(() async {
       await _releaseBlocks(fieldId);
-      await (_db.delete(_db.cardFields)
-            ..where(($CardFieldsTable f) => f.id.equals(fieldId)))
-          .go();
+      await (_db.delete(
+        _db.cardFields,
+      )..where(($CardFieldsTable f) => f.id.equals(fieldId))).go();
       await _logEdit(existing.cardId);
     });
   }
 
   Future<List<OcrBlockRow>> _blocksByIds(int cardId, List<int> ids) async {
     if (ids.isEmpty) return const <OcrBlockRow>[];
-    final List<OcrBlockRow> rows = await (_db.select(_db.ocrBlocks)
-          ..where(($OcrBlocksTable b) =>
-              b.cardId.equals(cardId) & b.id.isIn(ids))
-          ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
-            ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
-          ]))
-        .get();
+    final List<OcrBlockRow> rows =
+        await (_db.select(_db.ocrBlocks)
+              ..where(
+                ($OcrBlocksTable b) => b.cardId.equals(cardId) & b.id.isIn(ids),
+              )
+              ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+                ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
+              ]))
+            .get();
     return rows;
   }
 
@@ -766,25 +948,31 @@ class CardRepository {
   }) async {
     await _releaseBlocks(fieldId);
     for (final OcrBlockRow b in blocks) {
-      await (_db.update(_db.ocrBlocks)
-            ..where(($OcrBlocksTable t) => t.id.equals(b.id)))
-          .write(OcrBlocksCompanion(
-        fieldId: Value<int?>(fieldId),
-        assignedFieldKey: Value<String?>(key),
-      ));
+      await (_db.update(
+        _db.ocrBlocks,
+      )..where(($OcrBlocksTable t) => t.id.equals(b.id))).write(
+        OcrBlocksCompanion(
+          fieldId: Value<int?>(fieldId),
+          assignedFieldKey: Value<String?>(key),
+        ),
+      );
     }
   }
 
   Future<void> _releaseBlocks(int fieldId) =>
-      (_db.update(_db.ocrBlocks)
-            ..where(($OcrBlocksTable b) => b.fieldId.equals(fieldId)))
-          .write(const OcrBlocksCompanion(
-        fieldId: Value<int?>(null),
-        assignedFieldKey: Value<String?>(null),
-      ));
+      (_db.update(
+        _db.ocrBlocks,
+      )..where(($OcrBlocksTable b) => b.fieldId.equals(fieldId))).write(
+        const OcrBlocksCompanion(
+          fieldId: Value<int?>(null),
+          assignedFieldKey: Value<String?>(null),
+        ),
+      );
 
   Future<void> _logEdit(int cardId) async {
-    await _db.into(_db.interactions).insert(
+    await _db
+        .into(_db.interactions)
+        .insert(
           InteractionsCompanion.insert(
             subjectType: 'card',
             subjectId: cardId,
@@ -829,30 +1017,41 @@ class CardRepository {
     FieldKeys.email,
   };
 
-  /// Drops incoming fields that a verified one has already answered.
+  /// What makes two facts the same fact: a key and a canonical value.
+  static String _identity(String key, String? normalized, String value) =>
+      '$key ${normalized ?? value.toLowerCase()}';
+
+  /// Drops incoming fields something already on the card has answered.
+  ///
+  /// [verified] outranks the engine outright, so it settles the whole key for
+  /// anything a card only has one of — a second company name is the engine
+  /// contradicting a human. [alreadyAsserted] is weaker: it suppresses only the
+  /// exact same value, because the other face of a card carrying a *different*
+  /// phone number is a new fact worth keeping.
   static List<ExtractedField> _withoutSuperseded(
     List<CardField> verified,
+    List<CardField> alreadyAsserted,
     List<ExtractedField> incoming,
   ) {
-    if (verified.isEmpty) return incoming;
-
-    String identity(String key, String? normalized, String value) =>
-        '$key ${normalized ?? value.toLowerCase()}';
+    if (verified.isEmpty && alreadyAsserted.isEmpty) return incoming;
 
     final Set<String> settledKeys = <String>{
       for (final CardField f in verified)
         if (!_repeatableKeys.contains(f.fieldKey)) f.fieldKey,
     };
     final Set<String> settledValues = <String>{
-      for (final CardField f in verified)
-        identity(f.fieldKey, f.normalizedValue, f.value),
+      for (final CardField f in <CardField>[...verified, ...alreadyAsserted])
+        _identity(f.fieldKey, f.normalizedValue, f.value),
     };
 
     return incoming
-        .where((ExtractedField f) =>
-            !settledKeys.contains(f.fieldKey) &&
-            !settledValues
-                .contains(identity(f.fieldKey, f.normalizedValue, f.value)))
+        .where(
+          (ExtractedField f) =>
+              !settledKeys.contains(f.fieldKey) &&
+              !settledValues.contains(
+                _identity(f.fieldKey, f.normalizedValue, f.value),
+              ),
+        )
         .toList();
   }
 
@@ -862,7 +1061,9 @@ class CardRepository {
 
   /// The box enclosing every block behind a field, so highlighting a merged
   /// value boxes all of it rather than only its first line.
-  static String? _unionRect(List<OcrBlockRow> blocks) {
+  ///
+  /// Only meaningful for blocks from one side: see [_Sourcing].
+  static String? unionRect(List<OcrBlockRow> blocks) {
     double? left, top, right, bottom;
     for (final OcrBlockRow b in blocks) {
       final List<double> v = b.rect
@@ -887,5 +1088,35 @@ class CardRepository {
       if (f.sourceBlockIndices.contains(index)) return f.fieldKey;
     }
     return null;
+  }
+}
+
+/// Where a hand-repaired field's value came from: which face, and which box.
+///
+/// The picker offers blocks from both sides of the card, so a repair can end up
+/// sourced from either — or, when somebody picks a line from each, from a pair
+/// of images with nothing in common but the card they were printed on. Two
+/// rectangles in two coordinate spaces have no union, so that case gets the
+/// text the user chose and no box at all: no highlight is honest, a box drawn
+/// over the wrong side is not.
+class _Sourcing {
+  const _Sourcing({required this.side, required this.rect});
+
+  final CardSide side;
+
+  /// "left,top,right,bottom" in [side]'s pixel space, or null when there is no
+  /// single space to express it in.
+  final String? rect;
+
+  factory _Sourcing.of(List<OcrBlockRow> blocks) {
+    if (blocks.isEmpty) {
+      return const _Sourcing(side: CardSide.front, rect: null);
+    }
+    final CardSide side = blocks.first.side;
+    final bool mixed = blocks.any((OcrBlockRow b) => b.side != side);
+    return _Sourcing(
+      side: side,
+      rect: mixed ? null : CardRepository.unionRect(blocks),
+    );
   }
 }

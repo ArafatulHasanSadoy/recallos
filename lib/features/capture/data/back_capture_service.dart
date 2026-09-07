@@ -6,12 +6,29 @@ import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../../../core/db/enums.dart';
+import '../../../core/extraction/card_extractor.dart';
 import '../../../core/imaging/card_image_processor.dart';
+import '../../../core/intelligence/ocr_engine.dart';
+import '../../../core/intelligence/ocr_engine_provider.dart';
+import '../../contacts/data/identity_repository.dart';
+import '../../search/data/search_repository.dart';
 import 'card_repository.dart';
 
-final backCaptureServiceProvider = Provider<BackCaptureService>(
-  (Ref ref) => BackCaptureService(ref),
-);
+final backCaptureServiceProvider = Provider<BackCaptureService>((Ref ref) {
+  // Everything resolved here, once, rather than looked up later through a
+  // `Ref`. Providers are auto-disposed when nothing listens to them, and this
+  // service is read for its side effect and then left to run — `ref.read(...)`
+  // after an `await` would land on a disposed container and throw, which is
+  // caught and swallowed a few lines further down. The back would be
+  // photographed, stored, and silently never read.
+  return BackCaptureService(
+    cards: ref.watch(cardRepositoryProvider),
+    search: ref.watch(searchRepositoryProvider),
+    identity: ref.watch(identityRepositoryProvider),
+    engine: ref.watch(ocrEngineProvider),
+  );
+});
 
 /// Opens the scanner and returns the pages it kept, or null if the user left.
 ///
@@ -24,7 +41,11 @@ typedef ScannerLaunch = Future<List<String>?> Function();
 
 /// How a back capture ended.
 enum BackCaptureOutcome {
-  /// The back is photographed, stored and attached.
+  /// The back is photographed, stored, attached and read.
+  ///
+  /// Also the outcome when the read found nothing, which is the ordinary case:
+  /// most backs are blank, or carry a logo and no words. A back with no text on
+  /// it is a successful capture of a back with no text on it.
   captured,
 
   /// The user left the scanner without keeping a page. Not an error, and
@@ -51,13 +72,28 @@ typedef BackCapture = ({BackCaptureOutcome outcome, String? message});
 /// one card, and leave no way at all to add a back to something scanned last
 /// week. A second session costs one more tap and none of that.
 ///
-/// Deliberately does **not** run OCR. See [CardRepository.attachBackImage] for
-/// why reading the back would need a schema change first.
+/// The whole tail of a scan runs here, in the same order a fresh capture uses
+/// it: store, read, fold in, re-index, re-promote. Keeping the five together is
+/// the point — a back read but not re-indexed is a back whose text nothing can
+/// find, and a back read but not re-promoted is a phone number that never
+/// reaches the person it belongs to.
 class BackCaptureService {
-  BackCaptureService(this._ref, {ScannerLaunch? scanner})
-      : _scanner = scanner ?? _openScanner;
+  BackCaptureService({
+    required this.cards,
+    required this.search,
+    required this.identity,
+    required this.engine,
+    ScannerLaunch? scanner,
+  }) : _scanner = scanner ?? _openScanner;
 
-  final Ref _ref;
+  final CardRepository cards;
+  final SearchRepository search;
+  final IdentityRepository identity;
+
+  /// The shared recogniser. Held rather than looked up, for the reason on the
+  /// provider above.
+  final OcrEngine engine;
+
   final ScannerLaunch _scanner;
 
   static Future<List<String>?> _openScanner() =>
@@ -72,8 +108,6 @@ class BackCaptureService {
       );
 
   Future<BackCapture> capture(int cardId) async {
-    final CardRepository repo = _ref.read(cardRepositoryProvider);
-
     final List<String>? pages;
     try {
       pages = await _scanner();
@@ -96,16 +130,72 @@ class BackCaptureService {
     }
 
     final File scanned = File(pages.first);
+    final String stored;
     try {
-      final String stored = await _store(repo, cardId, scanned);
-      await repo.attachBackImage(cardId: cardId, backImagePath: stored);
+      stored = await _store(cardId, scanned);
+      await cards.attachBackImage(cardId: cardId, backImagePath: stored);
       unawaited(_cleanScannerCache());
-      return (outcome: BackCaptureOutcome.captured, message: null);
     } on Object catch (e) {
       return (
         outcome: BackCaptureOutcome.failed,
         message: 'Could not save the back: $e',
       );
+    }
+
+    // Save first, read second — the same rule the front follows. By this point
+    // the back is on disk and pointed at, so everything below can fail without
+    // costing the user the photograph they just took. A read that goes wrong
+    // leaves a back that can be looked at and re-read later, which is why this
+    // reports `captured` either way rather than `failed`.
+    await _read(cardId, File(stored));
+    return (outcome: BackCaptureOutcome.captured, message: null);
+  }
+
+  /// Reads any back that was photographed before backs could be read.
+  ///
+  /// The same problem `SearchRepository.backfill` exists for, and answered the
+  /// same way. Backs have been storable for a while and readable only now, so
+  /// without this the feature would appear to do nothing on exactly the cards
+  /// somebody already has — they would have to retake a photograph they had
+  /// already taken to get anything out of it.
+  ///
+  /// Returns how many were read. One card at a time and awaited throughout:
+  /// this runs at launch beside everything else the first screen is doing, and
+  /// a burst of parallel OCR on a phone this app is aimed at would be felt.
+  Future<int> backfill() async {
+    final List<({int id, String path})> pending = await cards
+        .cardsWithUnreadBacks();
+
+    int read = 0;
+    for (final ({int id, String path}) card in pending) {
+      final File back = File(card.path);
+      // The row still points at it but the file is gone. Nothing to read, and
+      // nothing to fix from here.
+      if (!back.existsSync()) continue;
+      await _read(card.id, back);
+      read++;
+    }
+    return read;
+  }
+
+  /// Recognises the stored back and folds it into the card it belongs to.
+  ///
+  /// Scoped to [CardSide.back] throughout, so nothing the front contributed is
+  /// touched. Swallows its own failures for the reason above; the card's own
+  /// status still records that the read found nothing.
+  Future<void> _read(int cardId, File back) async {
+    try {
+      final OcrResult result = await engine.recognize(back);
+      await cards.attachExtraction(
+        cardId: cardId,
+        result: result,
+        extraction: CardFieldExtractor.extract(result.blocks),
+        side: CardSide.back,
+      );
+      await search.reindexCard(cardId);
+      await identity.promote(cardId);
+    } on Object {
+      // Deliberately ignored; see above.
     }
   }
 
@@ -136,20 +226,22 @@ class BackCaptureService {
   /// front — an image step must not be the reason a capture is lost — and it
   /// is safe here in a way it is not there, because no field regions are
   /// measured against this image.
-  Future<String> _store(CardRepository repo, int cardId, File scanned) async {
-    final Directory cards = await repo.cardsDirectory();
-    final String targetDir = cards.path;
+  Future<String> _store(int cardId, File scanned) async {
+    final Directory directory = await cards.cardsDirectory();
+    final String targetDir = directory.path;
     final String baseName =
         'card_${cardId}_back_${DateTime.now().microsecondsSinceEpoch}';
 
     try {
       final PreparedImage prepared = await Isolate.run(
-        () => prepareCardImage(CardImageRequest(
-          sourcePath: scanned.path,
-          targetDir: targetDir,
-          baseName: baseName,
-          thumbnail: false,
-        )),
+        () => prepareCardImage(
+          CardImageRequest(
+            sourcePath: scanned.path,
+            targetDir: targetDir,
+            baseName: baseName,
+            thumbnail: false,
+          ),
+        ),
       );
       return prepared.imagePath;
     } on Object {

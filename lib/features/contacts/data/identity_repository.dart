@@ -25,8 +25,10 @@ final organizationsProvider = StreamProvider<List<OrgSummary>>(
 );
 
 /// One company and everything hanging off it.
-final organizationDetailProvider =
-    StreamProvider.family<OrgDetail?, int>((Ref ref, int id) {
+final organizationDetailProvider = StreamProvider.family<OrgDetail?, int>((
+  Ref ref,
+  int id,
+) {
   return ref.watch(identityRepositoryProvider).watchOrganization(id);
 });
 
@@ -36,8 +38,10 @@ final duplicateCandidatesProvider = StreamProvider<List<DuplicatePair>>(
 );
 
 /// One person and everything hanging off them.
-final personDetailProvider =
-    StreamProvider.family<PersonDetail?, int>((Ref ref, int id) {
+final personDetailProvider = StreamProvider.family<PersonDetail?, int>((
+  Ref ref,
+  int id,
+) {
   return ref.watch(identityRepositoryProvider).watchPerson(id);
 });
 
@@ -237,9 +241,9 @@ class IdentityRepository {
     await _db.transaction(() async {
       // This card's previous claims go first, whatever happens next. A
       // corrected phone number must not leave the old one behind.
-      await (_db.delete(_db.contactPoints)
-            ..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId)))
-          .go();
+      await (_db.delete(
+        _db.contactPoints,
+      )..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId))).go();
 
       if (facts.isEmpty) {
         await _unlink(cardId);
@@ -251,7 +255,10 @@ class IdentityRepository {
       final int? personId = await _resolvePerson(facts, cardId);
       final int? roleId = (personId != null && orgId != null)
           ? await _findOrCreateRole(
-              personId: personId, orgId: orgId, title: facts.designation)
+              personId: personId,
+              orgId: orgId,
+              title: facts.designation,
+            )
           : null;
 
       // Endpoints hang off the person when there is one — with the role that
@@ -261,7 +268,9 @@ class IdentityRepository {
       final bool toPerson = personId != null;
       if (toPerson || orgId != null) {
         for (final ContactFact c in facts.contacts) {
-          await _db.into(_db.contactPoints).insert(
+          await _db
+              .into(_db.contactPoints)
+              .insert(
                 ContactPointsCompanion.insert(
                   ownerType: toPerson ? 'person' : 'organization',
                   ownerId: toPerson ? personId : orgId!,
@@ -280,17 +289,24 @@ class IdentityRepository {
         await _findOrCreateBranch(orgId, facts.address!);
       }
 
-      await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-          .write(CardsCompanion(
-        personId: Value<int?>(personId),
-        orgId: Value<int?>(orgId),
-        roleId: Value<int?>(roleId),
-        updatedAt: Value<DateTime>(DateTime.now()),
-      ));
+      await (_db.update(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).write(
+        CardsCompanion(
+          personId: Value<int?>(personId),
+          orgId: Value<int?>(orgId),
+          roleId: Value<int?>(roleId),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
 
       if (personId != null) await _syncPersonName(personId);
-      await _proposeDuplicateCards(cardId, facts,
-          personId: personId, orgId: orgId);
+      await _proposeDuplicateCards(
+        cardId,
+        facts,
+        personId: personId,
+        orgId: orgId,
+      );
       await _collectGarbage();
     });
   }
@@ -302,9 +318,9 @@ class IdentityRepository {
   /// up. Call it *before* deleting the card, while the links still resolve.
   Future<void> detach(int cardId) async {
     await _db.transaction(() async {
-      await (_db.delete(_db.contactPoints)
-            ..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId)))
-          .go();
+      await (_db.delete(
+        _db.contactPoints,
+      )..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId))).go();
       await _unlink(cardId);
       await _collectGarbage();
     });
@@ -335,13 +351,17 @@ class IdentityRepository {
       // a person on a card that names nobody goes on its own — so there is
       // nothing to gain by clearing first and a merge to lose.
       final List<QueryRow> all = await _db
-          .customSelect('SELECT id FROM cards WHERE deleted_at IS NULL '
-              'ORDER BY captured_at ASC')
+          .customSelect(
+            'SELECT id FROM cards WHERE deleted_at IS NULL '
+            'ORDER BY captured_at ASC',
+          )
           .get();
       for (final QueryRow r in all) {
         await promote(r.read<int>('id'));
       }
-      await _db.into(_db.settings).insertOnConflictUpdate(
+      await _db
+          .into(_db.settings)
+          .insertOnConflictUpdate(
             SettingsCompanion.insert(
               key: _rulesKey,
               value: rulesVersion.toString(),
@@ -351,27 +371,29 @@ class IdentityRepository {
       return;
     }
 
-    final List<QueryRow> rows = await _db.customSelect(
-      'SELECT id FROM cards WHERE deleted_at IS NULL AND ('
-      // Never promoted.
-      '  (person_id IS NULL AND org_id IS NULL)'
-      // Or promoted under rules that have since changed. The graph is a
-      // derived projection of card fields, so a rule that tightens what
-      // becomes an endpoint leaves rows behind that the current rules could
-      // not produce — an endpoint with no canonical form is one such, since
-      // validated values always have one. Re-promoting those cards is what
-      // stops a tightened rule applying only to cards scanned after it.
-      '  OR id IN (SELECT source_card_id FROM contact_points '
-      '            WHERE source_card_id IS NOT NULL '
-      '            AND normalized_value IS NULL)'
-      // Or carrying a company that resolved to no organization. That is the
-      // shape a rules change leaves behind, and it is broken on its own
-      // terms besides: a card naming a shop should always be reachable from
-      // that shop.
-      '  OR (org_id IS NULL AND id IN '
-      "       (SELECT card_id FROM card_fields WHERE field_key = 'company'))"
-      ') ORDER BY captured_at DESC',
-    ).get();
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT id FROM cards WHERE deleted_at IS NULL AND ('
+          // Never promoted.
+          '  (person_id IS NULL AND org_id IS NULL)'
+          // Or promoted under rules that have since changed. The graph is a
+          // derived projection of card fields, so a rule that tightens what
+          // becomes an endpoint leaves rows behind that the current rules could
+          // not produce — an endpoint with no canonical form is one such, since
+          // validated values always have one. Re-promoting those cards is what
+          // stops a tightened rule applying only to cards scanned after it.
+          '  OR id IN (SELECT source_card_id FROM contact_points '
+          '            WHERE source_card_id IS NOT NULL '
+          '            AND normalized_value IS NULL)'
+          // Or carrying a company that resolved to no organization. That is the
+          // shape a rules change leaves behind, and it is broken on its own
+          // terms besides: a card naming a shop should always be reachable from
+          // that shop.
+          '  OR (org_id IS NULL AND id IN '
+          "       (SELECT card_id FROM card_fields WHERE field_key = 'company'))"
+          ') ORDER BY captured_at DESC',
+        )
+        .get();
 
     for (final QueryRow row in rows) {
       await promote(row.read<int>('id'));
@@ -391,15 +413,18 @@ class IdentityRepository {
       if (looksLikePersonName(p.displayName)) continue;
       // Unhook rather than delete outright, and let garbage collection make
       // the call — the row may still be holding a merge together.
-      await (_db.update(_db.cards)
-            ..where(($CardsTable c) => c.personId.equals(p.id)))
-          .write(const CardsCompanion(
-        personId: Value<int?>(null),
-        roleId: Value<int?>(null),
-      ));
-      await (_db.delete(_db.contactPoints)
-            ..where(($ContactPointsTable c) =>
-                c.ownerType.equals('person') & c.ownerId.equals(p.id)))
+      await (_db.update(
+        _db.cards,
+      )..where(($CardsTable c) => c.personId.equals(p.id))).write(
+        const CardsCompanion(
+          personId: Value<int?>(null),
+          roleId: Value<int?>(null),
+        ),
+      );
+      await (_db.delete(_db.contactPoints)..where(
+            ($ContactPointsTable c) =>
+                c.ownerType.equals('person') & c.ownerId.equals(p.id),
+          ))
           .go();
     }
     await _collectGarbage();
@@ -407,9 +432,9 @@ class IdentityRepository {
   }
 
   Future<int?> _storedRulesVersion() async {
-    final Setting? row = await (_db.select(_db.settings)
-          ..where(($SettingsTable t) => t.key.equals(_rulesKey)))
-        .getSingleOrNull();
+    final Setting? row = await (_db.select(
+      _db.settings,
+    )..where(($SettingsTable t) => t.key.equals(_rulesKey))).getSingleOrNull();
     return row == null ? null : int.tryParse(row.value);
   }
 
@@ -441,9 +466,9 @@ class IdentityRepository {
     final String? domain = identityDomain(facts.websiteDomain);
 
     final String? address = normalizeOrgName(facts.address);
-    final List<Organization> candidates = await (_db.select(_db.organizations)
-          ..where(($OrganizationsTable t) => t.mergedIntoId.isNull()))
-        .get();
+    final List<Organization> candidates = await (_db.select(
+      _db.organizations,
+    )..where(($OrganizationsTable t) => t.mergedIntoId.isNull())).get();
 
     for (final Organization o in candidates) {
       final MatchVerdict v = scoreOrganization(
@@ -462,19 +487,23 @@ class IdentityRepository {
       if (v.score >= MatchVerdict.linkThreshold) {
         // A card that carried the domain fills in one saved without it.
         if (domain != null && o.websiteDomain == null) {
-          await (_db.update(_db.organizations)
-                ..where(($OrganizationsTable t) => t.id.equals(o.id)))
-              .write(OrganizationsCompanion(
-            website: Value<String?>(facts.website),
-            websiteDomain: Value<String?>(domain),
-            updatedAt: Value<DateTime>(DateTime.now()),
-          ));
+          await (_db.update(
+            _db.organizations,
+          )..where(($OrganizationsTable t) => t.id.equals(o.id))).write(
+            OrganizationsCompanion(
+              website: Value<String?>(facts.website),
+              websiteDomain: Value<String?>(domain),
+              updatedAt: Value<DateTime>(DateTime.now()),
+            ),
+          );
         }
         return o.id;
       }
     }
 
-    final int created = await _db.into(_db.organizations).insert(
+    final int created = await _db
+        .into(_db.organizations)
+        .insert(
           OrganizationsCompanion.insert(
             name: name,
             website: Value<String?>(facts.website),
@@ -493,14 +522,17 @@ class IdentityRepository {
 
   /// Candidates noticed while resolving, held until there is a row to pair
   /// them with. Cleared on every resolve, so nothing leaks between cards.
-  final List<(int, MatchVerdict)> _pendingOrgProposals = <(int, MatchVerdict)>[];
+  final List<(int, MatchVerdict)> _pendingOrgProposals =
+      <(int, MatchVerdict)>[];
 
   Future<String?> _addressOf(int orgId) async {
-    final List<QueryRow> rows = await _db.customSelect(
-      'SELECT address FROM org_branches WHERE org_id = ? '
-      'ORDER BY is_primary DESC, id ASC LIMIT 1',
-      variables: <Variable<Object>>[Variable<int>(orgId)],
-    ).get();
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT address FROM org_branches WHERE org_id = ? '
+          'ORDER BY is_primary DESC, id ASC LIMIT 1',
+          variables: <Variable<Object>>[Variable<int>(orgId)],
+        )
+        .get();
     return rows.isEmpty ? null : rows.first.read<String?>('address');
   }
 
@@ -526,16 +558,18 @@ class IdentityRepository {
     if (name == null || name.isEmpty) return null;
 
     if (keys.isNotEmpty) {
-      final List<QueryRow> hits = await _db.customSelect(
-        'SELECT owner_id AS id, COUNT(*) AS n FROM contact_points '
-        'WHERE owner_type = ? AND is_active = 1 '
-        'AND normalized_value IN (${List<String>.filled(keys.length, '?').join(',')}) '
-        'GROUP BY owner_id ORDER BY n DESC, id ASC',
-        variables: <Variable<Object>>[
-          Variable<String>('person'),
-          for (final String k in keys) Variable<String>(k),
-        ],
-      ).get();
+      final List<QueryRow> hits = await _db
+          .customSelect(
+            'SELECT owner_id AS id, COUNT(*) AS n FROM contact_points '
+            'WHERE owner_type = ? AND is_active = 1 '
+            'AND normalized_value IN (${List<String>.filled(keys.length, '?').join(',')}) '
+            'GROUP BY owner_id ORDER BY n DESC, id ASC',
+            variables: <Variable<Object>>[
+              Variable<String>('person'),
+              for (final String k in keys) Variable<String>(k),
+            ],
+          )
+          .get();
 
       if (hits.isNotEmpty) {
         // Through the pointer: a card matching somebody who has since been
@@ -564,15 +598,15 @@ class IdentityRepository {
     // user's own decisions: a card the user merged into another contact would
     // resolve back out by name, land on a fresh row, and reappear as a new
     // duplicate of the person they had just finished combining.
-    final CardRow? row = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? row = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     final int? already = row?.personId;
     if (already != null) return _survivorOf(already);
 
-    final int created = await _db.into(_db.people).insert(
-          PeopleCompanion.insert(displayName: name),
-        );
+    final int created = await _db
+        .into(_db.people)
+        .insert(PeopleCompanion.insert(displayName: name));
 
     // Nobody shared an endpoint, but somebody shares the name. Offer it.
     final List<Person> everyone = await _db.select(_db.people).get();
@@ -607,19 +641,21 @@ class IdentityRepository {
   /// of them. A name the user confirmed wins over one the engine guessed, and
   /// the most recent card wins after that.
   Future<void> _syncPersonName(int personId) async {
-    final Person? person = await (_db.select(_db.people)
-          ..where(($PeopleTable t) => t.id.equals(personId)))
-        .getSingleOrNull();
+    final Person? person = await (_db.select(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(personId))).getSingleOrNull();
     if (person == null) return;
 
-    final List<QueryRow> rows = await _db.customSelect(
-      'SELECT f.value AS value FROM card_fields f '
-      'JOIN cards c ON c.id = f.card_id '
-      r"WHERE f.field_key = 'person_name' AND f.value_kind = 'text' "
-      'AND c.person_id = ? AND c.deleted_at IS NULL '
-      'ORDER BY f.verified_by_user DESC, c.captured_at DESC',
-      variables: <Variable<Object>>[Variable<int>(personId)],
-    ).get();
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT f.value AS value FROM card_fields f '
+          'JOIN cards c ON c.id = f.card_id '
+          r"WHERE f.field_key = 'person_name' AND f.value_kind = 'text' "
+          'AND c.person_id = ? AND c.deleted_at IS NULL '
+          'ORDER BY f.verified_by_user DESC, c.captured_at DESC',
+          variables: <Variable<Object>>[Variable<int>(personId)],
+        )
+        .get();
 
     final List<String> names = <String>[
       for (final QueryRow r in rows)
@@ -629,12 +665,14 @@ class IdentityRepository {
     if (names.isEmpty) return;
     if (names.contains(person.displayName.trim())) return;
 
-    await (_db.update(_db.people)
-          ..where(($PeopleTable t) => t.id.equals(personId)))
-        .write(PeopleCompanion(
-      displayName: Value<String>(names.first),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+    await (_db.update(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(personId))).write(
+      PeopleCompanion(
+        displayName: Value<String>(names.first),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
   }
 
   Future<int> _findOrCreateRole({
@@ -648,24 +686,31 @@ class IdentityRepository {
     // does not find the one already sitting on the tombstone, so the same job
     // is created twice and the contact grows a business it does not have.
     final List<int> ids = await _identitiesOf(personId);
-    final Role? existing = await (_db.select(_db.roles)
-          ..where(($RolesTable r) => r.personId.isIn(ids) & r.orgId.equals(orgId))
-          ..limit(1))
-        .getSingleOrNull();
+    final Role? existing =
+        await (_db.select(_db.roles)
+              ..where(
+                ($RolesTable r) => r.personId.isIn(ids) & r.orgId.equals(orgId),
+              )
+              ..limit(1))
+            .getSingleOrNull();
 
     if (existing != null) {
       if (existing.title == null && title != null && title.trim().isNotEmpty) {
-        await (_db.update(_db.roles)
-              ..where(($RolesTable r) => r.id.equals(existing.id)))
-            .write(RolesCompanion(
-          title: Value<String?>(title.trim()),
-          updatedAt: Value<DateTime>(DateTime.now()),
-        ));
+        await (_db.update(
+          _db.roles,
+        )..where(($RolesTable r) => r.id.equals(existing.id))).write(
+          RolesCompanion(
+            title: Value<String?>(title.trim()),
+            updatedAt: Value<DateTime>(DateTime.now()),
+          ),
+        );
       }
       return existing.id;
     }
 
-    return _db.into(_db.roles).insert(
+    return _db
+        .into(_db.roles)
+        .insert(
           RolesCompanion.insert(
             personId: personId,
             orgId: orgId,
@@ -675,14 +720,16 @@ class IdentityRepository {
   }
 
   Future<void> _findOrCreateBranch(int orgId, String address) async {
-    final List<OrgBranch> existing = await (_db.select(_db.orgBranches)
-          ..where(($OrgBranchesTable b) => b.orgId.equals(orgId)))
-        .get();
+    final List<OrgBranch> existing = await (_db.select(
+      _db.orgBranches,
+    )..where(($OrgBranchesTable b) => b.orgId.equals(orgId))).get();
     final String flat = address.trim().toLowerCase();
     for (final OrgBranch b in existing) {
       if ((b.address ?? '').trim().toLowerCase() == flat) return;
     }
-    await _db.into(_db.orgBranches).insert(
+    await _db
+        .into(_db.orgBranches)
+        .insert(
           OrgBranchesCompanion.insert(
             orgId: orgId,
             address: Value<String?>(address.trim()),
@@ -720,16 +767,18 @@ class IdentityRepository {
     if (mine.isEmpty) return;
     if (personId == null && orgId == null) return;
 
-    final List<QueryRow> others = await _db.customSelect(
-      'SELECT id FROM cards WHERE deleted_at IS NULL AND id != ? '
-      'AND ((person_id IS NOT NULL AND person_id = ?) '
-      '  OR (org_id IS NOT NULL AND org_id = ?))',
-      variables: <Variable<Object>>[
-        Variable<int>(cardId),
-        Variable<int>(personId ?? -1),
-        Variable<int>(orgId ?? -1),
-      ],
-    ).get();
+    final List<QueryRow> others = await _db
+        .customSelect(
+          'SELECT id FROM cards WHERE deleted_at IS NULL AND id != ? '
+          'AND ((person_id IS NOT NULL AND person_id = ?) '
+          '  OR (org_id IS NOT NULL AND org_id = ?))',
+          variables: <Variable<Object>>[
+            Variable<int>(cardId),
+            Variable<int>(personId ?? -1),
+            Variable<int>(orgId ?? -1),
+          ],
+        )
+        .get();
 
     for (final QueryRow r in others) {
       final int other = r.read<int>('id');
@@ -760,7 +809,10 @@ class IdentityRepository {
             shared.length == 1
                 ? 'the same number'
                 : '${shared.length} of the same numbers',
-            if (facts.personName != null) 'the same name' else 'the same company',
+            if (facts.personName != null)
+              'the same name'
+            else
+              'the same company',
           ],
         ),
         subject: 'card',
@@ -778,16 +830,20 @@ class IdentityRepository {
     final int hi = a < b ? b : a;
     if (lo == hi) return;
 
-    final DuplicateCandidate? already = await (_db.select(_db.duplicateCandidates)
-          ..where(($DuplicateCandidatesTable d) =>
-              d.subjectType.equals(subject) &
-              d.aId.equals(lo) &
-              d.bId.equals(hi)))
-        .getSingleOrNull();
+    final DuplicateCandidate? already =
+        await (_db.select(_db.duplicateCandidates)..where(
+              ($DuplicateCandidatesTable d) =>
+                  d.subjectType.equals(subject) &
+                  d.aId.equals(lo) &
+                  d.bId.equals(hi),
+            ))
+            .getSingleOrNull();
     // A candidate the user already ruled on does not come back.
     if (already != null) return;
 
-    await _db.into(_db.duplicateCandidates).insert(
+    await _db
+        .into(_db.duplicateCandidates)
+        .insert(
           DuplicateCandidatesCompanion.insert(
             subjectType: subject,
             aId: lo,
@@ -820,7 +876,9 @@ class IdentityRepository {
         .asyncMap((List<QueryRow> rows) async {
           final List<DuplicatePair> out = <DuplicatePair>[];
           for (final QueryRow r in rows) {
-            final DuplicateKind? kind = switch (r.read<String>('subject_type')) {
+            final DuplicateKind? kind = switch (r.read<String>(
+              'subject_type',
+            )) {
               'person' => DuplicateKind.person,
               'organization' => DuplicateKind.organization,
               'card' => DuplicateKind.card,
@@ -835,16 +893,18 @@ class IdentityRepository {
             if (a == null || b == null) continue;
 
             final String? raw = r.read<String?>('signals_json');
-            out.add(DuplicatePair(
-              id: r.read<int>('id'),
-              kind: kind,
-              a: a,
-              b: b,
-              score: r.read<double>('score'),
-              signals: raw == null
-                  ? const <String>[]
-                  : (jsonDecode(raw) as List<dynamic>).cast<String>(),
-            ));
+            out.add(
+              DuplicatePair(
+                id: r.read<int>('id'),
+                kind: kind,
+                a: a,
+                b: b,
+                score: r.read<double>('score'),
+                signals: raw == null
+                    ? const <String>[]
+                    : (jsonDecode(raw) as List<dynamic>).cast<String>(),
+              ),
+            );
           }
           return out;
         });
@@ -864,16 +924,20 @@ class IdentityRepository {
               );
 
       case DuplicateKind.organization:
-        final Organization? o = await (_db.select(_db.organizations)
-              ..where(($OrganizationsTable t) =>
-                  t.id.equals(id) & t.mergedIntoId.isNull()))
-            .getSingleOrNull();
+        final Organization? o =
+            await (_db.select(_db.organizations)..where(
+                  ($OrganizationsTable t) =>
+                      t.id.equals(id) & t.mergedIntoId.isNull(),
+                ))
+                .getSingleOrNull();
         if (o == null) return null;
-        final List<QueryRow> n = await _db.customSelect(
-          'SELECT COUNT(*) AS n FROM cards '
-          'WHERE org_id = ? AND deleted_at IS NULL',
-          variables: <Variable<Object>>[Variable<int>(id)],
-        ).get();
+        final List<QueryRow> n = await _db
+            .customSelect(
+              'SELECT COUNT(*) AS n FROM cards '
+              'WHERE org_id = ? AND deleted_at IS NULL',
+              variables: <Variable<Object>>[Variable<int>(id)],
+            )
+            .get();
         final int count = n.isEmpty ? 0 : n.first.read<int>('n');
         return DuplicateSide(
           id: o.id,
@@ -883,10 +947,11 @@ class IdentityRepository {
         );
 
       case DuplicateKind.card:
-        final CardRow? c = await (_db.select(_db.cards)
-              ..where(($CardsTable t) =>
-                  t.id.equals(id) & t.deletedAt.isNull()))
-            .getSingleOrNull();
+        final CardRow? c =
+            await (_db.select(_db.cards)..where(
+                  ($CardsTable t) => t.id.equals(id) & t.deletedAt.isNull(),
+                ))
+                .getSingleOrNull();
         if (c == null) return null;
         final CardFacts facts = await _factsOf(id);
         return DuplicateSide(
@@ -909,17 +974,21 @@ class IdentityRepository {
   }
 
   Future<PersonSummary?> _summaryOf(int personId) async {
-    final Person? p = await (_db.select(_db.people)
-          ..where(($PeopleTable t) =>
-              t.id.equals(personId) & t.mergedIntoId.isNull()))
-        .getSingleOrNull();
+    final Person? p =
+        await (_db.select(_db.people)..where(
+              ($PeopleTable t) =>
+                  t.id.equals(personId) & t.mergedIntoId.isNull(),
+            ))
+            .getSingleOrNull();
     if (p == null) return null;
 
-    final List<QueryRow> count = await _db.customSelect(
-      'SELECT COUNT(*) AS n FROM cards '
-      'WHERE person_id = ? AND deleted_at IS NULL',
-      variables: <Variable<Object>>[Variable<int>(personId)],
-    ).get();
+    final List<QueryRow> count = await _db
+        .customSelect(
+          'SELECT COUNT(*) AS n FROM cards '
+          'WHERE person_id = ? AND deleted_at IS NULL',
+          variables: <Variable<Object>>[Variable<int>(personId)],
+        )
+        .get();
 
     return PersonSummary(
       id: p.id,
@@ -938,12 +1007,14 @@ class IdentityRepository {
   Future<void> merge({required int survivor, required int loser}) async {
     if (survivor == loser) return;
     await _db.transaction(() async {
-      await (_db.update(_db.people)
-            ..where(($PeopleTable t) => t.id.equals(loser)))
-          .write(PeopleCompanion(
-        mergedIntoId: Value<int?>(survivor),
-        updatedAt: Value<DateTime>(DateTime.now()),
-      ));
+      await (_db.update(
+        _db.people,
+      )..where(($PeopleTable t) => t.id.equals(loser))).write(
+        PeopleCompanion(
+          mergedIntoId: Value<int?>(survivor),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
       // Anything that pointed at the loser now points at the survivor, so a
       // chain never grows past one hop.
       await (_db.update(_db.people)
@@ -961,12 +1032,14 @@ class IdentityRepository {
   }) async {
     if (survivor == loser) return;
     await _db.transaction(() async {
-      await (_db.update(_db.organizations)
-            ..where(($OrganizationsTable t) => t.id.equals(loser)))
-          .write(OrganizationsCompanion(
-        mergedIntoId: Value<int?>(survivor),
-        updatedAt: Value<DateTime>(DateTime.now()),
-      ));
+      await (_db.update(
+        _db.organizations,
+      )..where(($OrganizationsTable t) => t.id.equals(loser))).write(
+        OrganizationsCompanion(
+          mergedIntoId: Value<int?>(survivor),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
       await (_db.update(_db.organizations)
             ..where(($OrganizationsTable t) => t.mergedIntoId.equals(loser)))
           .write(OrganizationsCompanion(mergedIntoId: Value<int?>(survivor)));
@@ -982,10 +1055,7 @@ class IdentityRepository {
         .write(const OrganizationsCompanion(mergedIntoId: Value<int?>(null)));
   }
 
-  Future<void> keepOrganizationsSeparate({
-    required int a,
-    required int b,
-  }) =>
+  Future<void> keepOrganizationsSeparate({required int a, required int b}) =>
       _settle(a, b, 'rejected', subject: 'organization');
 
   Future<void> keepCardsSeparate({required int a, required int b}) =>
@@ -1002,27 +1072,31 @@ class IdentityRepository {
     required int discard,
   }) async {
     await _settle(keep, discard, 'linked', subject: 'card');
-    await (_db.update(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(discard)))
-        .write(CardsCompanion(
-      deletedAt: Value<DateTime?>(DateTime.now()),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+    await (_db.update(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(discard))).write(
+      CardsCompanion(
+        deletedAt: Value<DateTime?>(DateTime.now()),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
     // Its contribution to the graph goes with it, or the company it created
     // outlives the scan it came from.
-    await (_db.delete(_db.contactPoints)
-          ..where(($ContactPointsTable c) => c.sourceCardId.equals(discard)))
-        .go();
+    await (_db.delete(
+      _db.contactPoints,
+    )..where(($ContactPointsTable c) => c.sourceCardId.equals(discard))).go();
     await _unlink(discard);
     await _collectGarbage();
   }
 
   /// Every row that stands for this company, the survivor included.
   Future<List<int>> _orgIdentitiesOf(int orgId) async {
-    final List<QueryRow> merged = await _db.customSelect(
-      'SELECT id FROM organizations WHERE merged_into_id = ?',
-      variables: <Variable<Object>>[Variable<int>(orgId)],
-    ).get();
+    final List<QueryRow> merged = await _db
+        .customSelect(
+          'SELECT id FROM organizations WHERE merged_into_id = ?',
+          variables: <Variable<Object>>[Variable<int>(orgId)],
+        )
+        .get();
     return <int>[orgId, for (final QueryRow r in merged) r.read<int>('id')];
   }
 
@@ -1045,35 +1119,37 @@ class IdentityRepository {
   }) async {
     final int lo = a < b ? a : b;
     final int hi = a < b ? b : a;
-    await (_db.update(_db.duplicateCandidates)
-          ..where(($DuplicateCandidatesTable d) =>
+    await (_db.update(_db.duplicateCandidates)..where(
+          ($DuplicateCandidatesTable d) =>
               d.subjectType.equals(subject) &
               d.aId.equals(lo) &
-              d.bId.equals(hi)))
-        .write(DuplicateCandidatesCompanion(
-      status: Value<String>(status),
-      updatedAt: Value<DateTime>(DateTime.now()),
-    ));
+              d.bId.equals(hi),
+        ))
+        .write(
+          DuplicateCandidatesCompanion(
+            status: Value<String>(status),
+            updatedAt: Value<DateTime>(DateTime.now()),
+          ),
+        );
   }
 
   /// Follows a merge pointer to the row that stands for this person.
   Future<int> _survivorOf(int personId) async {
-    final Person? p = await (_db.select(_db.people)
-          ..where(($PeopleTable t) => t.id.equals(personId)))
-        .getSingleOrNull();
+    final Person? p = await (_db.select(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(personId))).getSingleOrNull();
     return p?.mergedIntoId ?? personId;
   }
 
   /// Every row that stands for this person, the survivor included.
   Future<List<int>> _identitiesOf(int personId) async {
-    final List<QueryRow> merged = await _db.customSelect(
-      'SELECT id FROM people WHERE merged_into_id = ?',
-      variables: <Variable<Object>>[Variable<int>(personId)],
-    ).get();
-    return <int>[
-      personId,
-      for (final QueryRow r in merged) r.read<int>('id'),
-    ];
+    final List<QueryRow> merged = await _db
+        .customSelect(
+          'SELECT id FROM people WHERE merged_into_id = ?',
+          variables: <Variable<Object>>[Variable<int>(personId)],
+        )
+        .get();
+    return <int>[personId, for (final QueryRow r in merged) r.read<int>('id')];
   }
 
   // -------------------------------------------------------------------------
@@ -1081,12 +1157,15 @@ class IdentityRepository {
   // -------------------------------------------------------------------------
 
   Future<void> _unlink(int cardId) async {
-    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
-        .write(const CardsCompanion(
-      personId: Value<int?>(null),
-      orgId: Value<int?>(null),
-      roleId: Value<int?>(null),
-    ));
+    await (_db.update(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).write(
+      const CardsCompanion(
+        personId: Value<int?>(null),
+        orgId: Value<int?>(null),
+        roleId: Value<int?>(null),
+      ),
+    );
   }
 
   /// Removes entities nothing points at any more.
@@ -1202,8 +1281,7 @@ class IdentityRepository {
     _notifyGraphChanged();
   }
 
-  static String _list(Set<int> ids) =>
-      ids.isEmpty ? '-1' : ids.join(',');
+  static String _list(Set<int> ids) => ids.isEmpty ? '-1' : ids.join(',');
 
   /// Tells Drift the graph changed under it.
   ///
@@ -1257,16 +1335,22 @@ class IdentityRepository {
     // Deleted cards do not hold anything up: they are recoverable, and
     // restoring one re-promotes it and rebuilds whatever it needs.
     final Set<int> held = <int>{
-      for (final QueryRow r in await _db
-          .customSelect('SELECT DISTINCT $cardColumn AS id FROM cards '
-              'WHERE $cardColumn IS NOT NULL AND deleted_at IS NULL')
-          .get())
+      for (final QueryRow r
+          in await _db
+              .customSelect(
+                'SELECT DISTINCT $cardColumn AS id FROM cards '
+                'WHERE $cardColumn IS NOT NULL AND deleted_at IS NULL',
+              )
+              .get())
         r.read<int>('id'),
-      for (final QueryRow r in await _db.customSelect(
-        'SELECT DISTINCT owner_id AS id FROM contact_points '
-        'WHERE owner_type = ?',
-        variables: <Variable<Object>>[Variable<String>(ownerType)],
-      ).get())
+      for (final QueryRow r
+          in await _db
+              .customSelect(
+                'SELECT DISTINCT owner_id AS id FROM contact_points '
+                'WHERE owner_type = ?',
+                variables: <Variable<Object>>[Variable<String>(ownerType)],
+              )
+              .get())
         r.read<int>('id'),
     };
 
@@ -1294,9 +1378,7 @@ class IdentityRepository {
       'DELETE FROM $table WHERE merged_into_id IS NOT NULL '
       'AND id IN (${_list(ids)})',
     );
-    await _db.customStatement(
-      'DELETE FROM $table WHERE id IN (${_list(ids)})',
-    );
+    await _db.customStatement('DELETE FROM $table WHERE id IN (${_list(ids)})');
   }
 
   // -------------------------------------------------------------------------
@@ -1327,12 +1409,14 @@ class IdentityRepository {
           final List<PersonSummary> out = <PersonSummary>[];
           for (final QueryRow r in rows) {
             final int id = r.read<int>('id');
-            out.add(PersonSummary(
-              id: id,
-              displayName: r.read<String>('display_name'),
-              cardCount: r.read<int>('card_count'),
-              subtitle: await _subtitleFor(id),
-            ));
+            out.add(
+              PersonSummary(
+                id: id,
+                displayName: r.read<String>('display_name'),
+                cardCount: r.read<int>('card_count'),
+                subtitle: await _subtitleFor(id),
+              ),
+            );
           }
           return out;
         });
@@ -1359,29 +1443,35 @@ class IdentityRepository {
           },
         )
         .watch()
-        .map((List<QueryRow> rows) => <OrgSummary>[
-              for (final QueryRow r in rows)
-                OrgSummary(
-                  id: r.read<int>('id'),
-                  name: r.read<String>('name'),
-                  subtitle:
-                      r.read<String?>('address') ?? r.read<String?>('domain'),
-                  cardCount: r.read<int>('card_count'),
-                  peopleCount: r.read<int>('people_count'),
-                ),
-            ]);
+        .map(
+          (List<QueryRow> rows) => <OrgSummary>[
+            for (final QueryRow r in rows)
+              OrgSummary(
+                id: r.read<int>('id'),
+                name: r.read<String>('name'),
+                subtitle:
+                    r.read<String?>('address') ?? r.read<String?>('domain'),
+                cardCount: r.read<int>('card_count'),
+                peopleCount: r.read<int>('people_count'),
+              ),
+          ],
+        );
   }
 
   /// What to show under a name: their job if we know it, otherwise a number.
   Future<String?> _subtitleFor(int personId) async {
     final List<int> ids = await _identitiesOf(personId);
-    final List<QueryRow> roles = await _db.customSelect(
-      'SELECT r.title AS title, o.name AS org FROM roles r '
-      'JOIN organizations o ON o.id = r.org_id '
-      'WHERE r.person_id IN (${List<String>.filled(ids.length, '?').join(',')}) '
-      'ORDER BY r.is_current DESC, r.id ASC',
-      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
-    ).get();
+    final List<QueryRow> roles = await _db
+        .customSelect(
+          'SELECT r.title AS title, o.name AS org FROM roles r '
+          'JOIN organizations o ON o.id = r.org_id '
+          'WHERE r.person_id IN (${List<String>.filled(ids.length, '?').join(',')}) '
+          'ORDER BY r.is_current DESC, r.id ASC',
+          variables: <Variable<Object>>[
+            for (final int id in ids) Variable<int>(id),
+          ],
+        )
+        .get();
 
     if (roles.isNotEmpty) {
       final QueryRow first = roles.first;
@@ -1392,11 +1482,14 @@ class IdentityRepository {
       return roles.length > 1 ? '$head  +${roles.length - 1} more' : head;
     }
 
-    final ContactPoint? cp = await (_db.select(_db.contactPoints)
-          ..where(($ContactPointsTable c) =>
-              c.ownerType.equals('person') & c.ownerId.equals(personId))
-          ..limit(1))
-        .getSingleOrNull();
+    final ContactPoint? cp =
+        await (_db.select(_db.contactPoints)
+              ..where(
+                ($ContactPointsTable c) =>
+                    c.ownerType.equals('person') & c.ownerId.equals(personId),
+              )
+              ..limit(1))
+            .getSingleOrNull();
     return cp?.value;
   }
 
@@ -1421,9 +1514,9 @@ class IdentityRepository {
   }
 
   Future<PersonDetail?> _personDetail(int personId) async {
-    final Person? person = await (_db.select(_db.people)
-          ..where(($PeopleTable t) => t.id.equals(personId)))
-        .getSingleOrNull();
+    final Person? person = await (_db.select(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(personId))).getSingleOrNull();
     if (person == null) return null;
 
     // Everything belonging to any row merged into this one. A merge moves no
@@ -1431,18 +1524,24 @@ class IdentityRepository {
     final List<int> ids = await _identitiesOf(personId);
     final String placeholders = List<String>.filled(ids.length, '?').join(',');
 
-    final List<ContactPoint> all = await (_db.select(_db.contactPoints)
-          ..where(($ContactPointsTable c) =>
-              c.ownerType.equals('person') & c.ownerId.isIn(ids)))
-        .get();
+    final List<ContactPoint> all =
+        await (_db.select(_db.contactPoints)..where(
+              ($ContactPointsTable c) =>
+                  c.ownerType.equals('person') & c.ownerId.isIn(ids),
+            ))
+            .get();
 
-    final List<QueryRow> roleRows = await _db.customSelect(
-      'SELECT r.id AS id, r.title AS title, o.id AS org_id, o.name AS org '
-      'FROM roles r JOIN organizations o ON o.id = r.org_id '
-      'WHERE r.person_id IN ($placeholders) '
-      'ORDER BY r.is_current DESC, r.id ASC',
-      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
-    ).get();
+    final List<QueryRow> roleRows = await _db
+        .customSelect(
+          'SELECT r.id AS id, r.title AS title, o.id AS org_id, o.name AS org '
+          'FROM roles r JOIN organizations o ON o.id = r.org_id '
+          'WHERE r.person_id IN ($placeholders) '
+          'ORDER BY r.is_current DESC, r.id ASC',
+          variables: <Variable<Object>>[
+            for (final int id in ids) Variable<int>(id),
+          ],
+        )
+        .get();
 
     final List<RoleDetail> roles = <RoleDetail>[
       for (final QueryRow r in roleRows)
@@ -1451,29 +1550,37 @@ class IdentityRepository {
           orgId: r.read<int>('org_id'),
           orgName: r.read<String>('org'),
           title: r.read<String?>('title'),
-          contacts: _dedupe(all.where((ContactPoint c) => c.roleId == r.read<int>('id'))),
+          contacts: _dedupe(
+            all.where((ContactPoint c) => c.roleId == r.read<int>('id')),
+          ),
         ),
     ];
 
-    final List<QueryRow> cardRows = await _db.customSelect(
-      'SELECT id FROM cards WHERE person_id IN ($placeholders) '
-      'AND deleted_at IS NULL ORDER BY captured_at DESC',
-      variables: <Variable<Object>>[for (final int id in ids) Variable<int>(id)],
-    ).get();
+    final List<QueryRow> cardRows = await _db
+        .customSelect(
+          'SELECT id FROM cards WHERE person_id IN ($placeholders) '
+          'AND deleted_at IS NULL ORDER BY captured_at DESC',
+          variables: <Variable<Object>>[
+            for (final int id in ids) Variable<int>(id),
+          ],
+        )
+        .get();
 
     final List<PersonSummary> mergedFrom = <PersonSummary>[];
     for (final int id in ids) {
       if (id == personId) continue;
-      final Person? other = await (_db.select(_db.people)
-            ..where(($PeopleTable t) => t.id.equals(id)))
-          .getSingleOrNull();
+      final Person? other = await (_db.select(
+        _db.people,
+      )..where(($PeopleTable t) => t.id.equals(id))).getSingleOrNull();
       if (other == null) continue;
-      mergedFrom.add(PersonSummary(
-        id: other.id,
-        displayName: other.displayName,
-        cardCount: 0,
-        subtitle: await _roleNameOf(other.id),
-      ));
+      mergedFrom.add(
+        PersonSummary(
+          id: other.id,
+          displayName: other.displayName,
+          cardCount: 0,
+          subtitle: await _roleNameOf(other.id),
+        ),
+      );
     }
 
     return PersonDetail(
@@ -1506,9 +1613,9 @@ class IdentityRepository {
   }
 
   Future<OrgDetail?> _orgDetail(int orgId) async {
-    final Organization? org = await (_db.select(_db.organizations)
-          ..where(($OrganizationsTable t) => t.id.equals(orgId)))
-        .getSingleOrNull();
+    final Organization? org = await (_db.select(
+      _db.organizations,
+    )..where(($OrganizationsTable t) => t.id.equals(orgId))).getSingleOrNull();
     if (org == null) return null;
 
     // Everything belonging to any row merged into this one — two scans of the
@@ -1519,41 +1626,50 @@ class IdentityRepository {
       for (final int id in ids) Variable<int>(id),
     ];
 
-    final List<OrgBranch> branches = await (_db.select(_db.orgBranches)
-          ..where(($OrgBranchesTable b) => b.orgId.isIn(ids))
-          ..orderBy(<OrderClauseGenerator<$OrgBranchesTable>>[
-            ($OrgBranchesTable b) => OrderingTerm.desc(b.isPrimary),
-          ]))
-        .get();
+    final List<OrgBranch> branches =
+        await (_db.select(_db.orgBranches)
+              ..where(($OrgBranchesTable b) => b.orgId.isIn(ids))
+              ..orderBy(<OrderClauseGenerator<$OrgBranchesTable>>[
+                ($OrgBranchesTable b) => OrderingTerm.desc(b.isPrimary),
+              ]))
+            .get();
 
-    final List<ContactPoint> contacts = await (_db.select(_db.contactPoints)
-          ..where(($ContactPointsTable c) =>
-              c.ownerType.equals('organization') & c.ownerId.isIn(ids)))
-        .get();
+    final List<ContactPoint> contacts =
+        await (_db.select(_db.contactPoints)..where(
+              ($ContactPointsTable c) =>
+                  c.ownerType.equals('organization') & c.ownerId.isIn(ids),
+            ))
+            .get();
 
-    final List<QueryRow> peopleRows = await _db.customSelect(
-      'SELECT DISTINCT p.id AS id, p.display_name AS display_name '
-      'FROM people p JOIN roles r ON r.person_id = p.id '
-      'WHERE r.org_id IN ($placeholders) ORDER BY p.display_name',
-      variables: vars,
-    ).get();
+    final List<QueryRow> peopleRows = await _db
+        .customSelect(
+          'SELECT DISTINCT p.id AS id, p.display_name AS display_name '
+          'FROM people p JOIN roles r ON r.person_id = p.id '
+          'WHERE r.org_id IN ($placeholders) ORDER BY p.display_name',
+          variables: vars,
+        )
+        .get();
 
     final List<PersonSummary> people = <PersonSummary>[];
     for (final QueryRow r in peopleRows) {
       final int id = r.read<int>('id');
-      people.add(PersonSummary(
-        id: id,
-        displayName: r.read<String>('display_name'),
-        cardCount: 0,
-        subtitle: await _roleTitleAt(id, orgId),
-      ));
+      people.add(
+        PersonSummary(
+          id: id,
+          displayName: r.read<String>('display_name'),
+          cardCount: 0,
+          subtitle: await _roleTitleAt(id, orgId),
+        ),
+      );
     }
 
-    final List<QueryRow> cardRows = await _db.customSelect(
-      'SELECT id FROM cards WHERE org_id IN ($placeholders) '
-      'AND deleted_at IS NULL ORDER BY captured_at DESC',
-      variables: vars,
-    ).get();
+    final List<QueryRow> cardRows = await _db
+        .customSelect(
+          'SELECT id FROM cards WHERE org_id IN ($placeholders) '
+          'AND deleted_at IS NULL ORDER BY captured_at DESC',
+          variables: vars,
+        )
+        .get();
 
     return OrgDetail(
       organization: org,
@@ -1566,20 +1682,24 @@ class IdentityRepository {
 
   /// The company a merged-away row came in under, to tell two of them apart.
   Future<String?> _roleNameOf(int personId) async {
-    final List<QueryRow> rows = await _db.customSelect(
-      'SELECT o.name AS org FROM roles r '
-      'JOIN organizations o ON o.id = r.org_id '
-      'WHERE r.person_id = ? ORDER BY r.id ASC LIMIT 1',
-      variables: <Variable<Object>>[Variable<int>(personId)],
-    ).get();
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT o.name AS org FROM roles r '
+          'JOIN organizations o ON o.id = r.org_id '
+          'WHERE r.person_id = ? ORDER BY r.id ASC LIMIT 1',
+          variables: <Variable<Object>>[Variable<int>(personId)],
+        )
+        .get();
     return rows.isEmpty ? null : rows.first.read<String>('org');
   }
 
   Future<String?> _roleTitleAt(int personId, int orgId) async {
-    final Role? role = await (_db.select(_db.roles)
-          ..where(($RolesTable r) =>
-              r.personId.equals(personId) & r.orgId.equals(orgId)))
-        .getSingleOrNull();
+    final Role? role =
+        await (_db.select(_db.roles)..where(
+              ($RolesTable r) =>
+                  r.personId.equals(personId) & r.orgId.equals(orgId),
+            ))
+            .getSingleOrNull();
     return role?.title;
   }
 
@@ -1601,10 +1721,26 @@ class IdentityRepository {
   // -------------------------------------------------------------------------
 
   /// Reads a card's current fields as identity facts.
+  ///
+  /// Ordered front-first, because the singular facts below are taken from the
+  /// first row that carries them and the front is the side that decides who a
+  /// card belongs to. Row order alone cannot be relied on: re-reading the front
+  /// deletes and re-inserts its rows, which lands them *after* the back's.
   Future<CardFacts> _factsOf(int cardId) async {
-    final List<CardField> fields = await (_db.select(_db.cardFields)
-          ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
-        .get();
+    final List<CardField> fields =
+        await (_db.select(_db.cardFields)
+              ..where(($CardFieldsTable f) => f.cardId.equals(cardId))
+              ..orderBy(<OrderClauseGenerator<$CardFieldsTable>>[
+                ($CardFieldsTable f) => OrderingTerm(expression: f.id),
+              ]))
+            .get();
+    // Sorted here rather than in SQL: the column stores the enum's name, and
+    // "back" sorts before "front" alphabetically — which is exactly backwards.
+    // Ties broken on id explicitly, because `List.sort` is not stable.
+    fields.sort((CardField a, CardField b) {
+      final int bySide = a.side.index.compareTo(b.side.index);
+      return bySide != 0 ? bySide : a.id.compareTo(b.id);
+    });
 
     String? first(String key) {
       for (final CardField f in fields) {
@@ -1630,8 +1766,7 @@ class IdentityRepository {
     final String? candidateName = first(FieldKeys.personName);
 
     return CardFacts(
-      personName:
-          looksLikePersonName(candidateName) ? candidateName : null,
+      personName: looksLikePersonName(candidateName) ? candidateName : null,
       company: first(FieldKeys.company),
       designation: first(FieldKeys.designation),
       website: website,
@@ -1667,8 +1802,8 @@ class IdentityRepository {
   }
 
   static ContactKind? _kindOf(String fieldKey) => switch (fieldKey) {
-        FieldKeys.phone => ContactKind.phone,
-        FieldKeys.email => ContactKind.email,
-        _ => null,
-      };
+    FieldKeys.phone => ContactKind.phone,
+    FieldKeys.email => ContactKind.email,
+    _ => null,
+  };
 }

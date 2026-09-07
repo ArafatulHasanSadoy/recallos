@@ -74,6 +74,14 @@ void main() {
       await before.customStatement(
         'ALTER TABLE organizations DROP COLUMN merged_into_id',
       );
+      // v8's three, for the same reason: a database that still has them is not
+      // a v1 database, and the upgrade that adds them would fail on a name
+      // already there.
+      await before.customStatement(
+        'ALTER TABLE cards DROP COLUMN back_ocr_text',
+      );
+      await before.customStatement('ALTER TABLE card_fields DROP COLUMN side');
+      await before.customStatement('ALTER TABLE ocr_blocks DROP COLUMN side');
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 

@@ -2458,6 +2458,17 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _backOcrTextMeta = const VerificationMeta(
+    'backOcrText',
+  );
+  @override
+  late final GeneratedColumn<String> backOcrText = GeneratedColumn<String>(
+    'back_ocr_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _ocrEngineMeta = const VerificationMeta(
     'ocrEngine',
   );
@@ -2550,6 +2561,7 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     backImagePath,
     thumbPath,
     rawOcrText,
+    backOcrText,
     ocrEngine,
     ocrConfidence,
     extractionStatus,
@@ -2620,6 +2632,15 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         rawOcrText.isAcceptableOrUnknown(
           data['raw_ocr_text']!,
           _rawOcrTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('back_ocr_text')) {
+      context.handle(
+        _backOcrTextMeta,
+        backOcrText.isAcceptableOrUnknown(
+          data['back_ocr_text']!,
+          _backOcrTextMeta,
         ),
       );
     }
@@ -2711,6 +2732,10 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         DriftSqlType.string,
         data['${effectivePrefix}raw_ocr_text'],
       ),
+      backOcrText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}back_ocr_text'],
+      ),
       ocrEngine: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}ocr_engine'],
@@ -2770,9 +2795,17 @@ class CardRow extends DataClass implements Insertable<CardRow> {
   final String? backImagePath;
   final String? thumbPath;
 
-  /// Everything the engines read, joined. Feeds keyword search and gives the
-  /// user something to read themselves when field assignment failed.
+  /// Everything the engines read off the **front**, joined. Feeds keyword
+  /// search and gives the user something to read themselves when field
+  /// assignment failed.
   final String? rawOcrText;
+
+  /// The same, for the back.
+  ///
+  /// A second column rather than more text in [rawOcrText], because each side
+  /// is re-read on its own: retaking the front must not throw away what was
+  /// read from the back, and one column cannot be rewritten by half.
+  final String? backOcrText;
 
   /// Engine or routing strategy that produced the current fields.
   final String? ocrEngine;
@@ -2792,6 +2825,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     this.backImagePath,
     this.thumbPath,
     this.rawOcrText,
+    this.backOcrText,
     this.ocrEngine,
     this.ocrConfidence,
     required this.extractionStatus,
@@ -2821,6 +2855,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     }
     if (!nullToAbsent || rawOcrText != null) {
       map['raw_ocr_text'] = Variable<String>(rawOcrText);
+    }
+    if (!nullToAbsent || backOcrText != null) {
+      map['back_ocr_text'] = Variable<String>(backOcrText);
     }
     if (!nullToAbsent || ocrEngine != null) {
       map['ocr_engine'] = Variable<String>(ocrEngine);
@@ -2865,6 +2902,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       rawOcrText: rawOcrText == null && nullToAbsent
           ? const Value.absent()
           : Value(rawOcrText),
+      backOcrText: backOcrText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backOcrText),
       ocrEngine: ocrEngine == null && nullToAbsent
           ? const Value.absent()
           : Value(ocrEngine),
@@ -2902,6 +2942,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       backImagePath: serializer.fromJson<String?>(json['backImagePath']),
       thumbPath: serializer.fromJson<String?>(json['thumbPath']),
       rawOcrText: serializer.fromJson<String?>(json['rawOcrText']),
+      backOcrText: serializer.fromJson<String?>(json['backOcrText']),
       ocrEngine: serializer.fromJson<String?>(json['ocrEngine']),
       ocrConfidence: serializer.fromJson<double?>(json['ocrConfidence']),
       extractionStatus: $CardsTable.$converterextractionStatus.fromJson(
@@ -2928,6 +2969,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       'backImagePath': serializer.toJson<String?>(backImagePath),
       'thumbPath': serializer.toJson<String?>(thumbPath),
       'rawOcrText': serializer.toJson<String?>(rawOcrText),
+      'backOcrText': serializer.toJson<String?>(backOcrText),
       'ocrEngine': serializer.toJson<String?>(ocrEngine),
       'ocrConfidence': serializer.toJson<double?>(ocrConfidence),
       'extractionStatus': serializer.toJson<String>(
@@ -2950,6 +2992,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     Value<String?> backImagePath = const Value.absent(),
     Value<String?> thumbPath = const Value.absent(),
     Value<String?> rawOcrText = const Value.absent(),
+    Value<String?> backOcrText = const Value.absent(),
     Value<String?> ocrEngine = const Value.absent(),
     Value<double?> ocrConfidence = const Value.absent(),
     ExtractionStatus? extractionStatus,
@@ -2969,6 +3012,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
         : this.backImagePath,
     thumbPath: thumbPath.present ? thumbPath.value : this.thumbPath,
     rawOcrText: rawOcrText.present ? rawOcrText.value : this.rawOcrText,
+    backOcrText: backOcrText.present ? backOcrText.value : this.backOcrText,
     ocrEngine: ocrEngine.present ? ocrEngine.value : this.ocrEngine,
     ocrConfidence: ocrConfidence.present
         ? ocrConfidence.value
@@ -2994,6 +3038,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       rawOcrText: data.rawOcrText.present
           ? data.rawOcrText.value
           : this.rawOcrText,
+      backOcrText: data.backOcrText.present
+          ? data.backOcrText.value
+          : this.backOcrText,
       ocrEngine: data.ocrEngine.present ? data.ocrEngine.value : this.ocrEngine,
       ocrConfidence: data.ocrConfidence.present
           ? data.ocrConfidence.value
@@ -3022,6 +3069,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           ..write('backImagePath: $backImagePath, ')
           ..write('thumbPath: $thumbPath, ')
           ..write('rawOcrText: $rawOcrText, ')
+          ..write('backOcrText: $backOcrText, ')
           ..write('ocrEngine: $ocrEngine, ')
           ..write('ocrConfidence: $ocrConfidence, ')
           ..write('extractionStatus: $extractionStatus, ')
@@ -3044,6 +3092,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     backImagePath,
     thumbPath,
     rawOcrText,
+    backOcrText,
     ocrEngine,
     ocrConfidence,
     extractionStatus,
@@ -3065,6 +3114,7 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           other.backImagePath == this.backImagePath &&
           other.thumbPath == this.thumbPath &&
           other.rawOcrText == this.rawOcrText &&
+          other.backOcrText == this.backOcrText &&
           other.ocrEngine == this.ocrEngine &&
           other.ocrConfidence == this.ocrConfidence &&
           other.extractionStatus == this.extractionStatus &&
@@ -3084,6 +3134,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
   final Value<String?> backImagePath;
   final Value<String?> thumbPath;
   final Value<String?> rawOcrText;
+  final Value<String?> backOcrText;
   final Value<String?> ocrEngine;
   final Value<double?> ocrConfidence;
   final Value<ExtractionStatus> extractionStatus;
@@ -3101,6 +3152,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.backImagePath = const Value.absent(),
     this.thumbPath = const Value.absent(),
     this.rawOcrText = const Value.absent(),
+    this.backOcrText = const Value.absent(),
     this.ocrEngine = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
     this.extractionStatus = const Value.absent(),
@@ -3119,6 +3171,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.backImagePath = const Value.absent(),
     this.thumbPath = const Value.absent(),
     this.rawOcrText = const Value.absent(),
+    this.backOcrText = const Value.absent(),
     this.ocrEngine = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
     this.extractionStatus = const Value.absent(),
@@ -3138,6 +3191,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Expression<String>? backImagePath,
     Expression<String>? thumbPath,
     Expression<String>? rawOcrText,
+    Expression<String>? backOcrText,
     Expression<String>? ocrEngine,
     Expression<double>? ocrConfidence,
     Expression<String>? extractionStatus,
@@ -3156,6 +3210,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       if (backImagePath != null) 'back_image_path': backImagePath,
       if (thumbPath != null) 'thumb_path': thumbPath,
       if (rawOcrText != null) 'raw_ocr_text': rawOcrText,
+      if (backOcrText != null) 'back_ocr_text': backOcrText,
       if (ocrEngine != null) 'ocr_engine': ocrEngine,
       if (ocrConfidence != null) 'ocr_confidence': ocrConfidence,
       if (extractionStatus != null) 'extraction_status': extractionStatus,
@@ -3176,6 +3231,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Value<String?>? backImagePath,
     Value<String?>? thumbPath,
     Value<String?>? rawOcrText,
+    Value<String?>? backOcrText,
     Value<String?>? ocrEngine,
     Value<double?>? ocrConfidence,
     Value<ExtractionStatus>? extractionStatus,
@@ -3194,6 +3250,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       backImagePath: backImagePath ?? this.backImagePath,
       thumbPath: thumbPath ?? this.thumbPath,
       rawOcrText: rawOcrText ?? this.rawOcrText,
+      backOcrText: backOcrText ?? this.backOcrText,
       ocrEngine: ocrEngine ?? this.ocrEngine,
       ocrConfidence: ocrConfidence ?? this.ocrConfidence,
       extractionStatus: extractionStatus ?? this.extractionStatus,
@@ -3236,6 +3293,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     if (rawOcrText.present) {
       map['raw_ocr_text'] = Variable<String>(rawOcrText.value);
     }
+    if (backOcrText.present) {
+      map['back_ocr_text'] = Variable<String>(backOcrText.value);
+    }
     if (ocrEngine.present) {
       map['ocr_engine'] = Variable<String>(ocrEngine.value);
     }
@@ -3274,6 +3334,7 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
           ..write('backImagePath: $backImagePath, ')
           ..write('thumbPath: $thumbPath, ')
           ..write('rawOcrText: $rawOcrText, ')
+          ..write('backOcrText: $backOcrText, ')
           ..write('ocrEngine: $ocrEngine, ')
           ..write('ocrConfidence: $ocrConfidence, ')
           ..write('extractionStatus: $extractionStatus, ')
@@ -3451,6 +3512,16 @@ class $CardFieldsTable extends CardFields
     requiredDuringInsert: false,
   );
   @override
+  late final GeneratedColumnWithTypeConverter<CardSide, String> side =
+      GeneratedColumn<String>(
+        'side',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(CardSide.front.name),
+      ).withConverter<CardSide>($CardFieldsTable.$converterside);
+  @override
   List<GeneratedColumn> get $columns => [
     createdAt,
     updatedAt,
@@ -3466,6 +3537,7 @@ class $CardFieldsTable extends CardFields
     validationIssue,
     valueKind,
     regionRect,
+    side,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3632,6 +3704,12 @@ class $CardFieldsTable extends CardFields
         DriftSqlType.string,
         data['${effectivePrefix}region_rect'],
       ),
+      side: $CardFieldsTable.$converterside.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}side'],
+        )!,
+      ),
     );
   }
 
@@ -3646,6 +3724,8 @@ class $CardFieldsTable extends CardFields
   $convertervalueKind = const EnumNameConverter<FieldValueKind>(
     FieldValueKind.values,
   );
+  static JsonTypeConverter2<CardSide, String, String> $converterside =
+      const EnumNameConverter<CardSide>(CardSide.values);
 }
 
 class CardField extends DataClass implements Insertable<CardField> {
@@ -3676,6 +3756,13 @@ class CardField extends DataClass implements Insertable<CardField> {
 
   /// "left,top,right,bottom" in the source image's coordinate space.
   final String? regionRect;
+
+  /// Which face [regionRect] is measured against, and which photo this value
+  /// was printed on.
+  ///
+  /// Defaults to front, which is correct for every row written before the back
+  /// was read: until then the front was the only side anything came off.
+  final CardSide side;
   const CardField({
     required this.createdAt,
     required this.updatedAt,
@@ -3691,6 +3778,7 @@ class CardField extends DataClass implements Insertable<CardField> {
     this.validationIssue,
     required this.valueKind,
     this.regionRect,
+    required this.side,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3727,6 +3815,11 @@ class CardField extends DataClass implements Insertable<CardField> {
     if (!nullToAbsent || regionRect != null) {
       map['region_rect'] = Variable<String>(regionRect);
     }
+    {
+      map['side'] = Variable<String>(
+        $CardFieldsTable.$converterside.toSql(side),
+      );
+    }
     return map;
   }
 
@@ -3756,6 +3849,7 @@ class CardField extends DataClass implements Insertable<CardField> {
       regionRect: regionRect == null && nullToAbsent
           ? const Value.absent()
           : Value(regionRect),
+      side: Value(side),
     );
   }
 
@@ -3783,6 +3877,9 @@ class CardField extends DataClass implements Insertable<CardField> {
         serializer.fromJson<String>(json['valueKind']),
       ),
       regionRect: serializer.fromJson<String?>(json['regionRect']),
+      side: $CardFieldsTable.$converterside.fromJson(
+        serializer.fromJson<String>(json['side']),
+      ),
     );
   }
   @override
@@ -3807,6 +3904,9 @@ class CardField extends DataClass implements Insertable<CardField> {
         $CardFieldsTable.$convertervalueKind.toJson(valueKind),
       ),
       'regionRect': serializer.toJson<String?>(regionRect),
+      'side': serializer.toJson<String>(
+        $CardFieldsTable.$converterside.toJson(side),
+      ),
     };
   }
 
@@ -3825,6 +3925,7 @@ class CardField extends DataClass implements Insertable<CardField> {
     Value<String?> validationIssue = const Value.absent(),
     FieldValueKind? valueKind,
     Value<String?> regionRect = const Value.absent(),
+    CardSide? side,
   }) => CardField(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -3844,6 +3945,7 @@ class CardField extends DataClass implements Insertable<CardField> {
         : this.validationIssue,
     valueKind: valueKind ?? this.valueKind,
     regionRect: regionRect.present ? regionRect.value : this.regionRect,
+    side: side ?? this.side,
   );
   CardField copyWithCompanion(CardFieldsCompanion data) {
     return CardField(
@@ -3871,6 +3973,7 @@ class CardField extends DataClass implements Insertable<CardField> {
       regionRect: data.regionRect.present
           ? data.regionRect.value
           : this.regionRect,
+      side: data.side.present ? data.side.value : this.side,
     );
   }
 
@@ -3890,7 +3993,8 @@ class CardField extends DataClass implements Insertable<CardField> {
           ..write('verifiedByUser: $verifiedByUser, ')
           ..write('validationIssue: $validationIssue, ')
           ..write('valueKind: $valueKind, ')
-          ..write('regionRect: $regionRect')
+          ..write('regionRect: $regionRect, ')
+          ..write('side: $side')
           ..write(')'))
         .toString();
   }
@@ -3911,6 +4015,7 @@ class CardField extends DataClass implements Insertable<CardField> {
     validationIssue,
     valueKind,
     regionRect,
+    side,
   );
   @override
   bool operator ==(Object other) =>
@@ -3929,7 +4034,8 @@ class CardField extends DataClass implements Insertable<CardField> {
           other.verifiedByUser == this.verifiedByUser &&
           other.validationIssue == this.validationIssue &&
           other.valueKind == this.valueKind &&
-          other.regionRect == this.regionRect);
+          other.regionRect == this.regionRect &&
+          other.side == this.side);
 }
 
 class CardFieldsCompanion extends UpdateCompanion<CardField> {
@@ -3947,6 +4053,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
   final Value<String?> validationIssue;
   final Value<FieldValueKind> valueKind;
   final Value<String?> regionRect;
+  final Value<CardSide> side;
   const CardFieldsCompanion({
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -3962,6 +4069,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     this.validationIssue = const Value.absent(),
     this.valueKind = const Value.absent(),
     this.regionRect = const Value.absent(),
+    this.side = const Value.absent(),
   });
   CardFieldsCompanion.insert({
     this.createdAt = const Value.absent(),
@@ -3978,6 +4086,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     this.validationIssue = const Value.absent(),
     this.valueKind = const Value.absent(),
     this.regionRect = const Value.absent(),
+    this.side = const Value.absent(),
   }) : cardId = Value(cardId),
        fieldKey = Value(fieldKey),
        value = Value(value),
@@ -3997,6 +4106,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     Expression<String>? validationIssue,
     Expression<String>? valueKind,
     Expression<String>? regionRect,
+    Expression<String>? side,
   }) {
     return RawValuesInsertable({
       if (createdAt != null) 'created_at': createdAt,
@@ -4013,6 +4123,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
       if (validationIssue != null) 'validation_issue': validationIssue,
       if (valueKind != null) 'value_kind': valueKind,
       if (regionRect != null) 'region_rect': regionRect,
+      if (side != null) 'side': side,
     });
   }
 
@@ -4031,6 +4142,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     Value<String?>? validationIssue,
     Value<FieldValueKind>? valueKind,
     Value<String?>? regionRect,
+    Value<CardSide>? side,
   }) {
     return CardFieldsCompanion(
       createdAt: createdAt ?? this.createdAt,
@@ -4047,6 +4159,7 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
       validationIssue: validationIssue ?? this.validationIssue,
       valueKind: valueKind ?? this.valueKind,
       regionRect: regionRect ?? this.regionRect,
+      side: side ?? this.side,
     );
   }
 
@@ -4099,6 +4212,11 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     if (regionRect.present) {
       map['region_rect'] = Variable<String>(regionRect.value);
     }
+    if (side.present) {
+      map['side'] = Variable<String>(
+        $CardFieldsTable.$converterside.toSql(side.value),
+      );
+    }
     return map;
   }
 
@@ -4118,7 +4236,8 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
           ..write('verifiedByUser: $verifiedByUser, ')
           ..write('validationIssue: $validationIssue, ')
           ..write('valueKind: $valueKind, ')
-          ..write('regionRect: $regionRect')
+          ..write('regionRect: $regionRect, ')
+          ..write('side: $side')
           ..write(')'))
         .toString();
   }
@@ -5075,6 +5194,16 @@ class $OcrBlocksTable extends OcrBlocks
     defaultValue: const Constant(0),
   );
   @override
+  late final GeneratedColumnWithTypeConverter<CardSide, String> side =
+      GeneratedColumn<String>(
+        'side',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(CardSide.front.name),
+      ).withConverter<CardSide>($OcrBlocksTable.$converterside);
+  @override
   List<GeneratedColumn> get $columns => [
     id,
     cardId,
@@ -5086,6 +5215,7 @@ class $OcrBlocksTable extends OcrBlocks
     assignedFieldKey,
     fieldId,
     orderIndex,
+    side,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -5218,6 +5348,12 @@ class $OcrBlocksTable extends OcrBlocks
         DriftSqlType.int,
         data['${effectivePrefix}order_index'],
       )!,
+      side: $OcrBlocksTable.$converterside.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}side'],
+        )!,
+      ),
     );
   }
 
@@ -5225,6 +5361,9 @@ class $OcrBlocksTable extends OcrBlocks
   $OcrBlocksTable createAlias(String alias) {
     return $OcrBlocksTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<CardSide, String, String> $converterside =
+      const EnumNameConverter<CardSide>(CardSide.values);
 }
 
 class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
@@ -5258,6 +5397,12 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
   /// from the picker for good.
   final int? fieldId;
   final int orderIndex;
+
+  /// Which photo [rect] is measured against.
+  ///
+  /// The picker offers blocks from both sides, so without this a block picked
+  /// off the back would give its field a box in the front's coordinate space.
+  final CardSide side;
   const OcrBlockRow({
     required this.id,
     required this.cardId,
@@ -5269,6 +5414,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     this.assignedFieldKey,
     this.fieldId,
     required this.orderIndex,
+    required this.side,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5289,6 +5435,11 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       map['field_id'] = Variable<int>(fieldId);
     }
     map['order_index'] = Variable<int>(orderIndex);
+    {
+      map['side'] = Variable<String>(
+        $OcrBlocksTable.$converterside.toSql(side),
+      );
+    }
     return map;
   }
 
@@ -5310,6 +5461,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
           ? const Value.absent()
           : Value(fieldId),
       orderIndex: Value(orderIndex),
+      side: Value(side),
     );
   }
 
@@ -5329,6 +5481,9 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       assignedFieldKey: serializer.fromJson<String?>(json['assignedFieldKey']),
       fieldId: serializer.fromJson<int?>(json['fieldId']),
       orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      side: $OcrBlocksTable.$converterside.fromJson(
+        serializer.fromJson<String>(json['side']),
+      ),
     );
   }
   @override
@@ -5345,6 +5500,9 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       'assignedFieldKey': serializer.toJson<String?>(assignedFieldKey),
       'fieldId': serializer.toJson<int?>(fieldId),
       'orderIndex': serializer.toJson<int>(orderIndex),
+      'side': serializer.toJson<String>(
+        $OcrBlocksTable.$converterside.toJson(side),
+      ),
     };
   }
 
@@ -5359,6 +5517,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     Value<String?> assignedFieldKey = const Value.absent(),
     Value<int?> fieldId = const Value.absent(),
     int? orderIndex,
+    CardSide? side,
   }) => OcrBlockRow(
     id: id ?? this.id,
     cardId: cardId ?? this.cardId,
@@ -5372,6 +5531,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
         : this.assignedFieldKey,
     fieldId: fieldId.present ? fieldId.value : this.fieldId,
     orderIndex: orderIndex ?? this.orderIndex,
+    side: side ?? this.side,
   );
   OcrBlockRow copyWithCompanion(OcrBlocksCompanion data) {
     return OcrBlockRow(
@@ -5391,6 +5551,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
       orderIndex: data.orderIndex.present
           ? data.orderIndex.value
           : this.orderIndex,
+      side: data.side.present ? data.side.value : this.side,
     );
   }
 
@@ -5406,7 +5567,8 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
           ..write('engine: $engine, ')
           ..write('assignedFieldKey: $assignedFieldKey, ')
           ..write('fieldId: $fieldId, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('side: $side')
           ..write(')'))
         .toString();
   }
@@ -5423,6 +5585,7 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
     assignedFieldKey,
     fieldId,
     orderIndex,
+    side,
   );
   @override
   bool operator ==(Object other) =>
@@ -5437,7 +5600,8 @@ class OcrBlockRow extends DataClass implements Insertable<OcrBlockRow> {
           other.engine == this.engine &&
           other.assignedFieldKey == this.assignedFieldKey &&
           other.fieldId == this.fieldId &&
-          other.orderIndex == this.orderIndex);
+          other.orderIndex == this.orderIndex &&
+          other.side == this.side);
 }
 
 class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
@@ -5451,6 +5615,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
   final Value<String?> assignedFieldKey;
   final Value<int?> fieldId;
   final Value<int> orderIndex;
+  final Value<CardSide> side;
   const OcrBlocksCompanion({
     this.id = const Value.absent(),
     this.cardId = const Value.absent(),
@@ -5462,6 +5627,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     this.assignedFieldKey = const Value.absent(),
     this.fieldId = const Value.absent(),
     this.orderIndex = const Value.absent(),
+    this.side = const Value.absent(),
   });
   OcrBlocksCompanion.insert({
     this.id = const Value.absent(),
@@ -5474,6 +5640,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     this.assignedFieldKey = const Value.absent(),
     this.fieldId = const Value.absent(),
     this.orderIndex = const Value.absent(),
+    this.side = const Value.absent(),
   }) : cardId = Value(cardId),
        blockText = Value(blockText),
        rect = Value(rect),
@@ -5490,6 +5657,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     Expression<String>? assignedFieldKey,
     Expression<int>? fieldId,
     Expression<int>? orderIndex,
+    Expression<String>? side,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -5502,6 +5670,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
       if (assignedFieldKey != null) 'assigned_field_key': assignedFieldKey,
       if (fieldId != null) 'field_id': fieldId,
       if (orderIndex != null) 'order_index': orderIndex,
+      if (side != null) 'side': side,
     });
   }
 
@@ -5516,6 +5685,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     Value<String?>? assignedFieldKey,
     Value<int?>? fieldId,
     Value<int>? orderIndex,
+    Value<CardSide>? side,
   }) {
     return OcrBlocksCompanion(
       id: id ?? this.id,
@@ -5528,6 +5698,7 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
       assignedFieldKey: assignedFieldKey ?? this.assignedFieldKey,
       fieldId: fieldId ?? this.fieldId,
       orderIndex: orderIndex ?? this.orderIndex,
+      side: side ?? this.side,
     );
   }
 
@@ -5564,6 +5735,11 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
     if (orderIndex.present) {
       map['order_index'] = Variable<int>(orderIndex.value);
     }
+    if (side.present) {
+      map['side'] = Variable<String>(
+        $OcrBlocksTable.$converterside.toSql(side.value),
+      );
+    }
     return map;
   }
 
@@ -5579,7 +5755,8 @@ class OcrBlocksCompanion extends UpdateCompanion<OcrBlockRow> {
           ..write('engine: $engine, ')
           ..write('assignedFieldKey: $assignedFieldKey, ')
           ..write('fieldId: $fieldId, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('side: $side')
           ..write(')'))
         .toString();
   }
@@ -13575,6 +13752,7 @@ typedef $$CardsTableCreateCompanionBuilder =
       Value<String?> backImagePath,
       Value<String?> thumbPath,
       Value<String?> rawOcrText,
+      Value<String?> backOcrText,
       Value<String?> ocrEngine,
       Value<double?> ocrConfidence,
       Value<ExtractionStatus> extractionStatus,
@@ -13594,6 +13772,7 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<String?> backImagePath,
       Value<String?> thumbPath,
       Value<String?> rawOcrText,
+      Value<String?> backOcrText,
       Value<String?> ocrEngine,
       Value<double?> ocrConfidence,
       Value<ExtractionStatus> extractionStatus,
@@ -13785,6 +13964,11 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<String> get rawOcrText => $composableBuilder(
     column: $table.rawOcrText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backOcrText => $composableBuilder(
+    column: $table.backOcrText,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -14033,6 +14217,11 @@ class $$CardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get backOcrText => $composableBuilder(
+    column: $table.backOcrText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get ocrEngine => $composableBuilder(
     column: $table.ocrEngine,
     builder: (column) => ColumnOrderings(column),
@@ -14160,6 +14349,11 @@ class $$CardsTableAnnotationComposer
 
   GeneratedColumn<String> get rawOcrText => $composableBuilder(
     column: $table.rawOcrText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get backOcrText => $composableBuilder(
+    column: $table.backOcrText,
     builder: (column) => column,
   );
 
@@ -14398,6 +14592,7 @@ class $$CardsTableTableManager
                 Value<String?> backImagePath = const Value.absent(),
                 Value<String?> thumbPath = const Value.absent(),
                 Value<String?> rawOcrText = const Value.absent(),
+                Value<String?> backOcrText = const Value.absent(),
                 Value<String?> ocrEngine = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
                 Value<ExtractionStatus> extractionStatus = const Value.absent(),
@@ -14415,6 +14610,7 @@ class $$CardsTableTableManager
                 backImagePath: backImagePath,
                 thumbPath: thumbPath,
                 rawOcrText: rawOcrText,
+                backOcrText: backOcrText,
                 ocrEngine: ocrEngine,
                 ocrConfidence: ocrConfidence,
                 extractionStatus: extractionStatus,
@@ -14434,6 +14630,7 @@ class $$CardsTableTableManager
                 Value<String?> backImagePath = const Value.absent(),
                 Value<String?> thumbPath = const Value.absent(),
                 Value<String?> rawOcrText = const Value.absent(),
+                Value<String?> backOcrText = const Value.absent(),
                 Value<String?> ocrEngine = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
                 Value<ExtractionStatus> extractionStatus = const Value.absent(),
@@ -14451,6 +14648,7 @@ class $$CardsTableTableManager
                 backImagePath: backImagePath,
                 thumbPath: thumbPath,
                 rawOcrText: rawOcrText,
+                backOcrText: backOcrText,
                 ocrEngine: ocrEngine,
                 ocrConfidence: ocrConfidence,
                 extractionStatus: extractionStatus,
@@ -14673,6 +14871,7 @@ typedef $$CardFieldsTableCreateCompanionBuilder =
       Value<String?> validationIssue,
       Value<FieldValueKind> valueKind,
       Value<String?> regionRect,
+      Value<CardSide> side,
     });
 typedef $$CardFieldsTableUpdateCompanionBuilder =
     CardFieldsCompanion Function({
@@ -14690,6 +14889,7 @@ typedef $$CardFieldsTableUpdateCompanionBuilder =
       Value<String?> validationIssue,
       Value<FieldValueKind> valueKind,
       Value<String?> regionRect,
+      Value<CardSide> side,
     });
 
 final class $$CardFieldsTableReferences
@@ -14807,6 +15007,12 @@ class $$CardFieldsTableFilterComposer
     column: $table.regionRect,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnWithTypeConverterFilters<CardSide, CardSide, String> get side =>
+      $composableBuilder(
+        column: $table.side,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
 
   $$CardsTableFilterComposer get cardId {
     final $$CardsTableFilterComposer composer = $composerBuilder(
@@ -14931,6 +15137,11 @@ class $$CardFieldsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get side => $composableBuilder(
+    column: $table.side,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CardsTableOrderingComposer get cardId {
     final $$CardsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -15012,6 +15223,9 @@ class $$CardFieldsTableAnnotationComposer
     column: $table.regionRect,
     builder: (column) => column,
   );
+
+  GeneratedColumnWithTypeConverter<CardSide, String> get side =>
+      $composableBuilder(column: $table.side, builder: (column) => column);
 
   $$CardsTableAnnotationComposer get cardId {
     final $$CardsTableAnnotationComposer composer = $composerBuilder(
@@ -15104,6 +15318,7 @@ class $$CardFieldsTableTableManager
                 Value<String?> validationIssue = const Value.absent(),
                 Value<FieldValueKind> valueKind = const Value.absent(),
                 Value<String?> regionRect = const Value.absent(),
+                Value<CardSide> side = const Value.absent(),
               }) => CardFieldsCompanion(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -15119,6 +15334,7 @@ class $$CardFieldsTableTableManager
                 validationIssue: validationIssue,
                 valueKind: valueKind,
                 regionRect: regionRect,
+                side: side,
               ),
           createCompanionCallback:
               ({
@@ -15136,6 +15352,7 @@ class $$CardFieldsTableTableManager
                 Value<String?> validationIssue = const Value.absent(),
                 Value<FieldValueKind> valueKind = const Value.absent(),
                 Value<String?> regionRect = const Value.absent(),
+                Value<CardSide> side = const Value.absent(),
               }) => CardFieldsCompanion.insert(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -15151,6 +15368,7 @@ class $$CardFieldsTableTableManager
                 validationIssue: validationIssue,
                 valueKind: valueKind,
                 regionRect: regionRect,
+                side: side,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -15827,6 +16045,7 @@ typedef $$OcrBlocksTableCreateCompanionBuilder =
       Value<String?> assignedFieldKey,
       Value<int?> fieldId,
       Value<int> orderIndex,
+      Value<CardSide> side,
     });
 typedef $$OcrBlocksTableUpdateCompanionBuilder =
     OcrBlocksCompanion Function({
@@ -15840,6 +16059,7 @@ typedef $$OcrBlocksTableUpdateCompanionBuilder =
       Value<String?> assignedFieldKey,
       Value<int?> fieldId,
       Value<int> orderIndex,
+      Value<CardSide> side,
     });
 
 final class $$OcrBlocksTableReferences
@@ -15929,6 +16149,12 @@ class $$OcrBlocksTableFilterComposer
     column: $table.orderIndex,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnWithTypeConverterFilters<CardSide, CardSide, String> get side =>
+      $composableBuilder(
+        column: $table.side,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
 
   $$CardsTableFilterComposer get cardId {
     final $$CardsTableFilterComposer composer = $composerBuilder(
@@ -16026,6 +16252,11 @@ class $$OcrBlocksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get side => $composableBuilder(
+    column: $table.side,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CardsTableOrderingComposer get cardId {
     final $$CardsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -16112,6 +16343,9 @@ class $$OcrBlocksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumnWithTypeConverter<CardSide, String> get side =>
+      $composableBuilder(column: $table.side, builder: (column) => column);
+
   $$CardsTableAnnotationComposer get cardId {
     final $$CardsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -16197,6 +16431,7 @@ class $$OcrBlocksTableTableManager
                 Value<String?> assignedFieldKey = const Value.absent(),
                 Value<int?> fieldId = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
+                Value<CardSide> side = const Value.absent(),
               }) => OcrBlocksCompanion(
                 id: id,
                 cardId: cardId,
@@ -16208,6 +16443,7 @@ class $$OcrBlocksTableTableManager
                 assignedFieldKey: assignedFieldKey,
                 fieldId: fieldId,
                 orderIndex: orderIndex,
+                side: side,
               ),
           createCompanionCallback:
               ({
@@ -16221,6 +16457,7 @@ class $$OcrBlocksTableTableManager
                 Value<String?> assignedFieldKey = const Value.absent(),
                 Value<int?> fieldId = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
+                Value<CardSide> side = const Value.absent(),
               }) => OcrBlocksCompanion.insert(
                 id: id,
                 cardId: cardId,
@@ -16232,6 +16469,7 @@ class $$OcrBlocksTableTableManager
                 assignedFieldKey: assignedFieldKey,
                 fieldId: fieldId,
                 orderIndex: orderIndex,
+                side: side,
               ),
           withReferenceMapper: (p0) => p0
               .map(

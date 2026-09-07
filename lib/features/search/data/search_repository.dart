@@ -18,14 +18,19 @@ import '../../capture/data/card_repository.dart';
 /// copied — but it does read the asset off disk, so it is held for the life of
 /// the app rather than rebuilt per search.
 final embedderProvider = FutureProvider<StaticEmbedder>((Ref ref) async {
-  final String vocab = await rootBundle.loadString('assets/embedding/vocab.txt');
-  final String normalizer =
-      await rootBundle.loadString('assets/embedding/normalizer.json');
+  final String vocab = await rootBundle.loadString(
+    'assets/embedding/vocab.txt',
+  );
+  final String normalizer = await rootBundle.loadString(
+    'assets/embedding/normalizer.json',
+  );
   final ByteData matrix = await rootBundle.load('assets/embedding/matrix.bin');
 
   return StaticEmbedder.fromBytes(
-    matrixBytes:
-        matrix.buffer.asUint8List(matrix.offsetInBytes, matrix.lengthInBytes),
+    matrixBytes: matrix.buffer.asUint8List(
+      matrix.offsetInBytes,
+      matrix.lengthInBytes,
+    ),
     tokenizer: WordPieceTokenizer.fromAssets(
       vocabText: vocab,
       normalizerJson: normalizer,
@@ -93,28 +98,38 @@ class SearchRepository {
   /// note is usually the most valuable text on the record and the index is
   /// worthless without it.
   Future<void> reindexCard(int cardId) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingleOrNull();
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     if (card == null) return;
 
-    final List<CardField> fields = await (_db.select(_db.cardFields)
-          ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
-        .get();
-    final List<Note> notes = await (_db.select(_db.notes)
-          ..where(($NotesTable n) =>
-              n.subjectType.equals('card') & n.subjectId.equals(cardId)))
-        .get();
+    final List<CardField> fields = await (_db.select(
+      _db.cardFields,
+    )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
+    final List<Note> notes =
+        await (_db.select(_db.notes)..where(
+              ($NotesTable n) =>
+                  n.subjectType.equals('card') & n.subjectId.equals(cardId),
+            ))
+            .get();
 
     // Field values as well as the raw OCR dump: extraction corrects things the
     // raw text got wrong, most visibly phone numbers with a restored digit.
+    //
+    // Both sides' dumps. A back often carries the half of a card that never
+    // becomes a field — an office address, a list of services, a branch — and
+    // that is exactly the text a need-shaped query goes looking for.
     final String cardText = <String>[
       card.rawOcrText ?? '',
+      card.backOcrText ?? '',
       for (final CardField f in fields) f.value,
     ].where((String s) => s.trim().isNotEmpty).join('\n');
 
     final String noteText = notes
-        .map((Note n) => <String?>[n.body, n.transcript].whereType<String>().join(' '))
+        .map(
+          (Note n) =>
+              <String?>[n.body, n.transcript].whereType<String>().join(' '),
+        )
         .where((String s) => s.trim().isNotEmpty)
         .join('\n');
 
@@ -129,15 +144,18 @@ class SearchRepository {
     final StaticEmbedder? embedder = await _embedderOrNull();
     if (embedder == null) return;
 
-    final String embedText = <String>[cardText, noteText]
-        .where((String s) => s.trim().isNotEmpty)
-        .join('\n');
+    final String embedText = <String>[
+      cardText,
+      noteText,
+    ].where((String s) => s.trim().isNotEmpty).join('\n');
     if (embedText.trim().isEmpty) return;
 
     final Float32List vector = embedder.embed(embedText);
     if (!StaticEmbedder.isUsable(vector)) return;
 
-    await _db.into(_db.embeddings).insert(
+    await _db
+        .into(_db.embeddings)
+        .insert(
           EmbeddingsCompanion.insert(
             subjectType: 'card',
             subjectId: cardId,
@@ -154,12 +172,14 @@ class SearchRepository {
   /// would stay invisible forever — the failure looks exactly like "search is
   /// broken" from the outside.
   Future<void> backfill() async {
-    final List<QueryRow> rows = await _db.customSelect(
-      'SELECT c.id AS id FROM cards c '
-      'WHERE c.deleted_at IS NULL AND c.id NOT IN '
-      '(SELECT subject_id FROM search_index WHERE subject_type = ?)',
-      variables: <Variable<Object>>[Variable<String>('card')],
-    ).get();
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT c.id AS id FROM cards c '
+          'WHERE c.deleted_at IS NULL AND c.id NOT IN '
+          '(SELECT subject_id FROM search_index WHERE subject_type = ?)',
+          variables: <Variable<Object>>[Variable<String>('card')],
+        )
+        .get();
 
     for (final QueryRow row in rows) {
       await reindexCard(row.read<int>('id'));
@@ -171,9 +191,10 @@ class SearchRepository {
       'DELETE FROM search_index WHERE subject_type = ? AND subject_id = ?',
       <Object?>['card', cardId],
     );
-    await (_db.delete(_db.embeddings)
-          ..where(($EmbeddingsTable e) =>
-              e.subjectType.equals('card') & e.subjectId.equals(cardId)))
+    await (_db.delete(_db.embeddings)..where(
+          ($EmbeddingsTable e) =>
+              e.subjectType.equals('card') & e.subjectId.equals(cardId),
+        ))
         .go();
   }
 
@@ -212,7 +233,8 @@ class SearchRepository {
       ].join(' ');
 
       final List<String> terms = matchedTerms(rawQuery, haystack);
-      final bool noteMatched = summary.note != null &&
+      final bool noteMatched =
+          summary.note != null &&
           matchedTerms(rawQuery, summary.note!).isNotEmpty;
 
       final UtilityScore score = computeUtility(
@@ -226,12 +248,14 @@ class SearchRepository {
         ),
       );
 
-      hits.add(SearchHit(
-        card: summary,
-        score: score.value,
-        reasons: _explain(f, terms, noteMatched),
-        matchedOnMeaningOnly: f.semanticOnly,
-      ));
+      hits.add(
+        SearchHit(
+          card: summary,
+          score: score.value,
+          reasons: _explain(f, terms, noteMatched),
+          matchedOnMeaningOnly: f.semanticOnly,
+        ),
+      );
     }
 
     hits.sort((SearchHit a, SearchHit b) => b.score.compareTo(a.score));
@@ -240,15 +264,17 @@ class SearchRepository {
 
   Future<List<ScoredCandidate>> _lexicalArm(String match) async {
     try {
-      final List<QueryRow> rows = await _db.customSelect(
-        'SELECT subject_id, bm25(search_index) AS score FROM search_index '
-        'WHERE search_index MATCH ? AND subject_type = ? '
-        'ORDER BY score LIMIT 50',
-        variables: <Variable<Object>>[
-          Variable<String>(match),
-          Variable<String>('card'),
-        ],
-      ).get();
+      final List<QueryRow> rows = await _db
+          .customSelect(
+            'SELECT subject_id, bm25(search_index) AS score FROM search_index '
+            'WHERE search_index MATCH ? AND subject_type = ? '
+            'ORDER BY score LIMIT 50',
+            variables: <Variable<Object>>[
+              Variable<String>(match),
+              Variable<String>('card'),
+            ],
+          )
+          .get();
 
       return fromBm25(<int, double>{
         for (final QueryRow r in rows)
@@ -268,11 +294,13 @@ class SearchRepository {
     final Float32List query = embedder.embed(rawQuery);
     if (!StaticEmbedder.isUsable(query)) return const <ScoredCandidate>[];
 
-    final List<Embedding> stored = await (_db.select(_db.embeddings)
-          ..where(($EmbeddingsTable e) =>
-              e.subjectType.equals('card') &
-              e.model.equals(StaticEmbedder.modelId)))
-        .get();
+    final List<Embedding> stored =
+        await (_db.select(_db.embeddings)..where(
+              ($EmbeddingsTable e) =>
+                  e.subjectType.equals('card') &
+                  e.model.equals(StaticEmbedder.modelId),
+            ))
+            .get();
 
     return rankByCosine(
       queryVector: query,
@@ -311,20 +339,24 @@ class SearchRepository {
   }
 
   Future<CardSummary?> _summaryOf(int cardId) async {
-    final CardRow? card = await (_db.select(_db.cards)
-          ..where(($CardsTable c) =>
-              c.id.equals(cardId) & c.deletedAt.isNull()))
-        .getSingleOrNull();
+    final CardRow? card =
+        await (_db.select(_db.cards)..where(
+              ($CardsTable c) => c.id.equals(cardId) & c.deletedAt.isNull(),
+            ))
+            .getSingleOrNull();
     if (card == null) return null;
 
-    final List<CardField> fields = await (_db.select(_db.cardFields)
-          ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
-        .get();
-    final Note? note = await (_db.select(_db.notes)
-          ..where(($NotesTable n) =>
-              n.subjectType.equals('card') & n.subjectId.equals(cardId))
-          ..limit(1))
-        .getSingleOrNull();
+    final List<CardField> fields = await (_db.select(
+      _db.cardFields,
+    )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
+    final Note? note =
+        await (_db.select(_db.notes)
+              ..where(
+                ($NotesTable n) =>
+                    n.subjectType.equals('card') & n.subjectId.equals(cardId),
+              )
+              ..limit(1))
+            .getSingleOrNull();
 
     String? valueOf(String key) {
       for (final CardField f in fields) {

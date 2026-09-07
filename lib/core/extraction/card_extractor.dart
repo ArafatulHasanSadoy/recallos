@@ -81,7 +81,8 @@ class ExtractedField {
       sourceBlockIndices.isEmpty ? null : sourceBlockIndices.first;
 
   @override
-  String toString() => '$fieldKey="$value" (${confidence.toStringAsFixed(2)})'
+  String toString() =>
+      '$fieldKey="$value" (${confidence.toStringAsFixed(2)})'
       '${issue == null ? "" : " [$issue]"}';
 }
 
@@ -114,10 +115,21 @@ class CardExtraction {
   /// True when enough was found to call the extraction useful. Below this the
   /// card is saved as `partial` and routed to the note prompt instead of a form.
   bool get isUseful =>
-      firstOfKey(FieldKeys.phone) != null ||
-      firstOfKey(FieldKeys.email) != null ||
-      (firstOfKey(FieldKeys.personName) != null &&
-          firstOfKey(FieldKeys.company) != null);
+      isUsefulSet(fields.map((ExtractedField f) => f.fieldKey));
+
+  /// The same judgement, made from field keys alone.
+  ///
+  /// A card is read side by side but its status describes the whole card, so
+  /// the decision has to be answerable from the rows already stored rather than
+  /// only from one run's output. A blank back would otherwise mark a
+  /// perfectly-read card `failed`.
+  static bool isUsefulSet(Iterable<String> fieldKeys) {
+    final Set<String> keys = fieldKeys.toSet();
+    return keys.contains(FieldKeys.phone) ||
+        keys.contains(FieldKeys.email) ||
+        (keys.contains(FieldKeys.personName) &&
+            keys.contains(FieldKeys.company));
+  }
 }
 
 /// A line competing to be the person or the business.
@@ -135,12 +147,12 @@ class _NameCandidate {
   });
 
   factory _NameCandidate.of(int index, OcrBlock block) => _NameCandidate(
-        indices: <int>[index],
-        text: block.text.trim(),
-        rect: block.rect,
-        confidence: CardFieldExtractor._confidenceOf(block),
-        size: CardFieldExtractor._textSize(block),
-      );
+    indices: <int>[index],
+    text: block.text.trim(),
+    rect: block.rect,
+    confidence: CardFieldExtractor._confidenceOf(block),
+    size: CardFieldExtractor._textSize(block),
+  );
 
   final List<int> indices;
   final String text;
@@ -161,36 +173,139 @@ abstract final class CardFieldExtractor {
   /// Job titles seen on Bangladeshi cards. Matched as whole words so that
   /// "Mdina Traders" is not read as "MD".
   static const List<String> designationKeywords = <String>[
-    'ceo', 'cto', 'coo', 'cfo', 'md', 'managing director', 'director',
-    'chairman', 'president', 'vice president', 'founder', 'co-founder',
-    'partner', 'proprietor', 'owner', 'manager', 'senior manager',
-    'assistant manager', 'general manager', 'executive', 'sales executive',
-    'marketing executive', 'officer', 'engineer', 'consultant', 'advisor',
-    'head', 'chief', 'supervisor', 'coordinator', 'analyst', 'accountant',
-    'advocate', 'architect', 'designer', 'developer', 'in charge',
-    'incharge', 'representative', 'agent', 'assistant', 'associate',
+    'ceo',
+    'cto',
+    'coo',
+    'cfo',
+    'md',
+    'managing director',
+    'director',
+    'chairman',
+    'president',
+    'vice president',
+    'founder',
+    'co-founder',
+    'partner',
+    'proprietor',
+    'owner',
+    'manager',
+    'senior manager',
+    'assistant manager',
+    'general manager',
+    'executive',
+    'sales executive',
+    'marketing executive',
+    'officer',
+    'engineer',
+    'consultant',
+    'advisor',
+    'head',
+    'chief',
+    'supervisor',
+    'coordinator',
+    'analyst',
+    'accountant',
+    'advocate',
+    'architect',
+    'designer',
+    'developer',
+    'in charge',
+    'incharge',
+    'representative',
+    'agent',
+    'assistant',
+    'associate',
   ];
 
   /// Tokens that mark a line as a postal address.
   static const List<String> addressKeywords = <String>[
-    'road', 'rd.', 'house', 'flat', 'level', 'floor', 'block', 'sector',
-    'avenue', 'lane', 'plot', 'suite', 'tower', 'plaza', 'market',
-    'dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna',
-    'barisal', 'rangpur', 'mymensingh', 'comilla', 'narayanganj',
-    'gulshan', 'banani', 'dhanmondi', 'uttara', 'mirpur', 'motijheel',
-    'bashundhara', 'mohakhali', 'badda', 'tejgaon', 'farmgate', 'shantinagar',
+    'road',
+    'rd.',
+    'house',
+    'flat',
+    'level',
+    'floor',
+    'block',
+    'sector',
+    'avenue',
+    'lane',
+    'plot',
+    'suite',
+    'tower',
+    'plaza',
+    'market',
+    'dhaka',
+    'chittagong',
+    'chattogram',
+    'sylhet',
+    'rajshahi',
+    'khulna',
+    'barisal',
+    'rangpur',
+    'mymensingh',
+    'comilla',
+    'narayanganj',
+    'gulshan',
+    'banani',
+    'dhanmondi',
+    'uttara',
+    'mirpur',
+    'motijheel',
+    'bashundhara',
+    'mohakhali',
+    'badda',
+    'tejgaon',
+    'farmgate',
+    'shantinagar',
     'bangladesh',
   ];
 
   /// Suffixes that mark a line as an organization rather than a person.
   static const List<String> companyKeywords = <String>[
-    'ltd', 'limited', 'pvt', 'private', 'inc', 'llc', 'corp', 'corporation',
-    'company', 'co.', 'enterprise', 'enterprises', 'trading', 'traders',
-    'industries', 'group', 'agency', 'agencies', 'solutions', 'services',
-    'systems', 'technologies', 'tech', 'associates', 'international',
-    'store', 'shop', 'house', 'centre', 'center', 'mart', 'bazar', 'bazaar',
-    'press', 'printers', 'printing', 'studio', 'clinic', 'hospital',
-    'pharmacy', 'restaurant', 'hotel', 'books', 'library',
+    'ltd',
+    'limited',
+    'pvt',
+    'private',
+    'inc',
+    'llc',
+    'corp',
+    'corporation',
+    'company',
+    'co.',
+    'enterprise',
+    'enterprises',
+    'trading',
+    'traders',
+    'industries',
+    'group',
+    'agency',
+    'agencies',
+    'solutions',
+    'services',
+    'systems',
+    'technologies',
+    'tech',
+    'associates',
+    'international',
+    'store',
+    'shop',
+    'house',
+    'centre',
+    'center',
+    'mart',
+    'bazar',
+    'bazaar',
+    'press',
+    'printers',
+    'printing',
+    'studio',
+    'clinic',
+    'hospital',
+    'pharmacy',
+    'restaurant',
+    'hotel',
+    'books',
+    'library',
   ];
 
   /// Reads [blocks] into fields.
@@ -219,10 +334,7 @@ abstract final class CardFieldExtractor {
         if (!claimed.contains(i) && blocks[i].text.trim().isNotEmpty) i,
     ];
 
-    return CardExtraction(
-      fields: fields,
-      unassignedBlockIndices: unassigned,
-    );
+    return CardExtraction(fields: fields, unassignedBlockIndices: unassigned);
   }
 
   // --- Pattern-based fields: phone, email, website -------------------------
@@ -252,54 +364,61 @@ abstract final class CardFieldExtractor {
             ? PhoneExtractor.formatNational(p.e164)
             : raw;
 
-        out.add(ExtractedField(
-          fieldKey: FieldKeys.phone,
-          value: display,
-          rawText: display == raw ? null : raw,
-          normalizedValue: p.e164.isEmpty ? null : p.e164,
-          confidence: p.isValid ? ocr : ocr * 0.5,
-          regionRect: _rectOf(block),
-          issue: p.issue?.name ??
-              (p.repaired
-                  ? 'ocr_repaired'
-                  : display == raw
-                      ? null
-                      : 'digit_restored'),
-          // Restoring a digit is an inference, so it gets confirmed like any
-          // other guess.
-          needsReview: p.needsReview || display != raw,
-          sourceBlockIndices: <int>[i],
-        ));
+        out.add(
+          ExtractedField(
+            fieldKey: FieldKeys.phone,
+            value: display,
+            rawText: display == raw ? null : raw,
+            normalizedValue: p.e164.isEmpty ? null : p.e164,
+            confidence: p.isValid ? ocr : ocr * 0.5,
+            regionRect: _rectOf(block),
+            issue:
+                p.issue?.name ??
+                (p.repaired
+                    ? 'ocr_repaired'
+                    : display == raw
+                    ? null
+                    : 'digit_restored'),
+            // Restoring a digit is an inference, so it gets confirmed like any
+            // other guess.
+            needsReview: p.needsReview || display != raw,
+            sourceBlockIndices: <int>[i],
+          ),
+        );
         claimed.add(i);
       }
 
       for (final EmailMatch e in WebExtractor.extractEmails(block.text)) {
         if (!seenEmails.add(e.normalized)) continue;
 
-        out.add(ExtractedField(
-          fieldKey: FieldKeys.email,
-          value: e.raw.trim(),
-          normalizedValue: e.normalized,
-          confidence: e.isValid ? ocr : ocr * 0.5,
-          regionRect: _rectOf(block),
-          issue: e.issue ?? (e.repaired ? 'ocr_repaired' : null),
-          needsReview: e.needsReview,
-          sourceBlockIndices: <int>[i],
-        ));
+        out.add(
+          ExtractedField(
+            fieldKey: FieldKeys.email,
+            value: e.raw.trim(),
+            normalizedValue: e.normalized,
+            confidence: e.isValid ? ocr : ocr * 0.5,
+            regionRect: _rectOf(block),
+            issue: e.issue ?? (e.repaired ? 'ocr_repaired' : null),
+            needsReview: e.needsReview,
+            sourceBlockIndices: <int>[i],
+          ),
+        );
         claimed.add(i);
       }
 
       for (final WebsiteMatch w in WebExtractor.extractWebsites(block.text)) {
         if (!seenSites.add(w.domain)) continue;
 
-        out.add(ExtractedField(
-          fieldKey: FieldKeys.website,
-          value: w.raw.trim(),
-          normalizedValue: w.domain,
-          confidence: ocr,
-          regionRect: _rectOf(block),
-          sourceBlockIndices: <int>[i],
-        ));
+        out.add(
+          ExtractedField(
+            fieldKey: FieldKeys.website,
+            value: w.raw.trim(),
+            normalizedValue: w.domain,
+            confidence: ocr,
+            regionRect: _rectOf(block),
+            sourceBlockIndices: <int>[i],
+          ),
+        );
         claimed.add(i);
       }
     }
@@ -351,18 +470,19 @@ abstract final class CardFieldExtractor {
 
     // Addresses usually wrap across consecutive lines; join them so the map
     // action gets something complete rather than "House 42".
-    final String joined =
-        hits.map((int i) => blocks[i].text.trim()).join(', ');
+    final String joined = hits.map((int i) => blocks[i].text.trim()).join(', ');
 
-    out.add(ExtractedField(
-      fieldKey: FieldKeys.address,
-      value: joined,
-      confidence: _confidenceOf(blocks[hits.first]) * 0.8,
-      regionRect: _rectOf(blocks[hits.first]),
-      // Every line, not just the first: the continuation lines are consumed by
-      // this field and must not reappear as unassigned text.
-      sourceBlockIndices: hits,
-    ));
+    out.add(
+      ExtractedField(
+        fieldKey: FieldKeys.address,
+        value: joined,
+        confidence: _confidenceOf(blocks[hits.first]) * 0.8,
+        regionRect: _rectOf(blocks[hits.first]),
+        // Every line, not just the first: the continuation lines are consumed by
+        // this field and must not reappear as unassigned text.
+        sourceBlockIndices: hits,
+      ),
+    );
     claimed.addAll(hits);
   }
 
@@ -385,13 +505,15 @@ abstract final class CardFieldExtractor {
       // — gets filed as somebody's rank instead of the business name.
       if (_isProminent(blocks[i], maxSize)) continue;
 
-      out.add(ExtractedField(
-        fieldKey: FieldKeys.designation,
-        value: text,
-        confidence: _confidenceOf(blocks[i]) * 0.85,
-        regionRect: _rectOf(blocks[i]),
-        sourceBlockIndices: <int>[i],
-      ));
+      out.add(
+        ExtractedField(
+          fieldKey: FieldKeys.designation,
+          value: text,
+          confidence: _confidenceOf(blocks[i]) * 0.85,
+          regionRect: _rectOf(blocks[i]),
+          sourceBlockIndices: <int>[i],
+        ),
+      );
       claimed.add(i);
       return;
     }
@@ -399,9 +521,26 @@ abstract final class CardFieldExtractor {
 
   /// Local parts that belong to a business rather than a person.
   static const Set<String> _genericEmailLocals = <String>{
-    'info', 'sales', 'contact', 'admin', 'support', 'office', 'hello',
-    'enquiry', 'enquiries', 'inquiry', 'mail', 'help', 'service', 'services',
-    'marketing', 'accounts', 'booking', 'bookings', 'order', 'orders',
+    'info',
+    'sales',
+    'contact',
+    'admin',
+    'support',
+    'office',
+    'hello',
+    'enquiry',
+    'enquiries',
+    'inquiry',
+    'mail',
+    'help',
+    'service',
+    'services',
+    'marketing',
+    'accounts',
+    'booking',
+    'bookings',
+    'order',
+    'orders',
   };
 
   /// Longest line still plausible as a name or a business.
@@ -433,8 +572,10 @@ abstract final class CardFieldExtractor {
     if (usable.isEmpty) return;
 
     final String? knownDomain = out
-        .where((ExtractedField f) =>
-            f.fieldKey == FieldKeys.website || f.fieldKey == FieldKeys.email)
+        .where(
+          (ExtractedField f) =>
+              f.fieldKey == FieldKeys.website || f.fieldKey == FieldKeys.email,
+        )
         .map((ExtractedField f) => f.normalizedValue)
         .whereType<String>()
         .map((String v) => v.contains('@') ? v.split('@').last : v)
@@ -447,25 +588,25 @@ abstract final class CardFieldExtractor {
     // Evidence that a human is on this card at all. It decides two things:
     // whether stacked type may be read as one business name, and whether a
     // person is looked for once the business has been picked.
-    final bool hasDesignation =
-        out.any((ExtractedField f) => f.fieldKey == FieldKeys.designation);
+    final bool hasDesignation = out.any(
+      (ExtractedField f) => f.fieldKey == FieldKeys.designation,
+    );
     final bool hasPersonalEmail = out
         .where((ExtractedField f) => f.fieldKey == FieldKeys.email)
         .map((ExtractedField f) => f.normalizedValue)
         .whereType<String>()
         .any((String email) {
-      final String local = email.split('@').first;
-      return local.isNotEmpty &&
-          !_genericEmailLocals.contains(local) &&
-          !RegExp(r'^\d+$').hasMatch(local);
-    });
+          final String local = email.split('@').first;
+          return local.isNotEmpty &&
+              !_genericEmailLocals.contains(local) &&
+              !RegExp(r'^\d+$').hasMatch(local);
+        });
 
-    final List<_NameCandidate> candidates =
-        (hasDesignation || hasPersonalEmail)
-            ? <_NameCandidate>[
-                for (final int i in usable) _NameCandidate.of(i, blocks[i]),
-              ]
-            : _mergeStackedType(blocks, usable, textLooksLikeCompany);
+    final List<_NameCandidate> candidates = (hasDesignation || hasPersonalEmail)
+        ? <_NameCandidate>[
+            for (final int i in usable) _NameCandidate.of(i, blocks[i]),
+          ]
+        : _mergeStackedType(blocks, usable, textLooksLikeCompany);
 
     // Bigger text first; ties break toward the top of the card. Size is the
     // short side of the box so a card photographed sideways ranks the same as
@@ -486,14 +627,16 @@ abstract final class CardFieldExtractor {
     );
     final bool companyIsConfident = looksLikeCompany(company);
 
-    out.add(ExtractedField(
-      fieldKey: FieldKeys.company,
-      value: company.text,
-      confidence: company.confidence * (companyIsConfident ? 0.85 : 0.7),
-      regionRect: _rectString(company.rect),
-      needsReview: true,
-      sourceBlockIndices: company.indices,
-    ));
+    out.add(
+      ExtractedField(
+        fieldKey: FieldKeys.company,
+        value: company.text,
+        confidence: company.confidence * (companyIsConfident ? 0.85 : 0.7),
+        regionRect: _rectString(company.rect),
+        needsReview: true,
+        sourceBlockIndices: company.indices,
+      ),
+    );
     claimed.addAll(company.indices);
 
     final _NameCandidate? person = _findPerson(
@@ -506,14 +649,16 @@ abstract final class CardFieldExtractor {
     );
     if (person == null || person.indices.any(claimed.contains)) return;
 
-    out.add(ExtractedField(
-      fieldKey: FieldKeys.personName,
-      value: person.text,
-      confidence: person.confidence * 0.7,
-      regionRect: _rectString(person.rect),
-      needsReview: true, // Layout is a guess; always worth a glance.
-      sourceBlockIndices: person.indices,
-    ));
+    out.add(
+      ExtractedField(
+        fieldKey: FieldKeys.personName,
+        value: person.text,
+        confidence: person.confidence * 0.7,
+        regionRect: _rectString(person.rect),
+        needsReview: true, // Layout is a guess; always worth a glance.
+        sourceBlockIndices: person.indices,
+      ),
+    );
     claimed.addAll(person.indices);
   }
 
@@ -547,8 +692,9 @@ abstract final class CardFieldExtractor {
     bool Function(String) textLooksLikeCompany,
   ) {
     final List<int> topDown = indices.toList()
-      ..sort((int a, int b) =>
-          blocks[a].rect.top.compareTo(blocks[b].rect.top));
+      ..sort(
+        (int a, int b) => blocks[a].rect.top.compareTo(blocks[b].rect.top),
+      );
 
     final List<_NameCandidate> out = <_NameCandidate>[];
     for (final int i in topDown) {
@@ -605,7 +751,8 @@ abstract final class CardFieldExtractor {
     final double gap = block.rect.top - above.rect.bottom;
     if (gap > size * 0.8 || gap < -size) return false;
 
-    final double overlap = math.min(above.rect.right, block.rect.right) -
+    final double overlap =
+        math.min(above.rect.right, block.rect.right) -
         math.max(above.rect.left, block.rect.left);
     final double narrower = math.min(above.rect.width, block.rect.width);
     return narrower > 0 && overlap > narrower * 0.5;
@@ -673,17 +820,16 @@ abstract final class CardFieldExtractor {
     }
   }
 
-  static ExtractedField _flag(ExtractedField f, String issue) =>
-      ExtractedField(
-        fieldKey: f.fieldKey,
-        value: f.value,
-        normalizedValue: f.normalizedValue,
-        confidence: f.confidence * 0.5,
-        regionRect: f.regionRect,
-        issue: issue,
-        needsReview: true,
-        sourceBlockIndices: f.sourceBlockIndices,
-      );
+  static ExtractedField _flag(ExtractedField f, String issue) => ExtractedField(
+    fieldKey: f.fieldKey,
+    value: f.value,
+    normalizedValue: f.normalizedValue,
+    confidence: f.confidence * 0.5,
+    regionRect: f.regionRect,
+    issue: issue,
+    needsReview: true,
+    sourceBlockIndices: f.sourceBlockIndices,
+  );
 
   // --- Helpers -------------------------------------------------------------
 
@@ -703,8 +849,10 @@ abstract final class CardFieldExtractor {
   /// `medicabooks.com.bd` should match.
   static bool _matchesDomain(String text, String domain) {
     final String label = domain.split('.').first;
-    final String squashed =
-        text.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
+    final String squashed = text.toLowerCase().replaceAll(
+      RegExp('[^a-z0-9]'),
+      '',
+    );
     if (squashed.isEmpty || label.length < 4) return false;
     return squashed.contains(label) || label.contains(squashed);
   }
@@ -727,14 +875,11 @@ abstract final class CardFieldExtractor {
   /// the *width* is the text size. Using height directly ranked a rotated
   /// card's longest line as its biggest, which is how a shop's address came out
   /// more prominent than its name.
-  static double _textSize(OcrBlock b) =>
-      math.min(b.rect.width, b.rect.height);
+  static double _textSize(OcrBlock b) => math.min(b.rect.width, b.rect.height);
 
   static double _maxTextSize(List<OcrBlock> blocks) => blocks.isEmpty
       ? 0
-      : blocks
-          .map(_textSize)
-          .reduce((double a, double b) => math.max(a, b));
+      : blocks.map(_textSize).reduce((double a, double b) => math.max(a, b));
 
   /// Whether [b] is one of the visually dominant lines on the card.
   ///

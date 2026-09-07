@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine_provider.dart';
@@ -9,9 +10,18 @@ import '../../capture/data/card_repository.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
 
-final rescanServiceProvider = Provider<RescanService>(
-  (Ref ref) => RescanService(ref),
-);
+final rescanServiceProvider = Provider<RescanService>((Ref ref) {
+  // Resolved up front rather than through a retained `Ref`. A provider with no
+  // listeners is disposed, and a rescan is minutes of OCR long — a lookup
+  // after the first `await` would land on a disposed container and turn a
+  // working retry into `RescanOutcome.failed` for no visible reason.
+  return RescanService(
+    cards: ref.watch(cardRepositoryProvider),
+    search: ref.watch(searchRepositoryProvider),
+    identity: ref.watch(identityRepositoryProvider),
+    engine: ref.watch(ocrEngineProvider),
+  );
+});
 
 /// What happened to one card on a retry, in the words the queue shows.
 enum RescanOutcome {
@@ -35,14 +45,25 @@ enum RescanOutcome {
 /// a card reaches the attention queue the pixels are already ours. Keeping the
 /// four steps together is the point: a card re-read but not re-indexed is
 /// repaired everywhere except the place people look for it.
+///
+/// Both sides, when there are two. A card in the attention queue is one that
+/// did not read cleanly, and re-reading only half of it would leave the retry
+/// weaker than the capture that produced it.
 class RescanService {
-  RescanService(this._ref);
+  RescanService({
+    required this.cards,
+    required this.search,
+    required this.identity,
+    required this.engine,
+  });
 
-  final Ref _ref;
+  final CardRepository cards;
+  final SearchRepository search;
+  final IdentityRepository identity;
+  final OcrEngine engine;
 
   Future<RescanOutcome> rescan(int cardId) async {
-    final CardRepository repo = _ref.read(cardRepositoryProvider);
-    final CardDetail? before = await repo.watchCard(cardId).first;
+    final CardDetail? before = await cards.watchCard(cardId).first;
     if (before == null) return RescanOutcome.failed;
 
     final File image = File(before.card.imagePath);
@@ -50,26 +71,25 @@ class RescanService {
     // Saying so is more useful than an engine error about a missing path.
     if (!image.existsSync()) return RescanOutcome.imageMissing;
 
+    final String? backPath = before.card.backImagePath;
+    // A missing back is not a missing card. The front is what makes a rescan
+    // possible, so a back whose file has gone is simply skipped.
+    final File? back = (backPath != null && File(backPath).existsSync())
+        ? File(backPath)
+        : null;
+
     final int fieldsBefore = before.fields.length;
 
     try {
-      final OcrEngine engine = _ref.read(ocrEngineProvider);
-      final OcrResult result = await engine.recognize(image);
-      final CardExtraction extraction =
-          CardFieldExtractor.extract(result.blocks);
-
-      await repo.attachExtraction(
-        cardId: cardId,
-        result: result,
-        extraction: extraction,
-      );
-      await _ref.read(searchRepositoryProvider).reindexCard(cardId);
-      await _ref.read(identityRepositoryProvider).promote(cardId);
+      await _readSide(cardId, image, CardSide.front);
+      if (back != null) await _readSide(cardId, back, CardSide.back);
+      await search.reindexCard(cardId);
+      await identity.promote(cardId);
     } on Object {
       return RescanOutcome.failed;
     }
 
-    final CardDetail? after = await repo.watchCard(cardId).first;
+    final CardDetail? after = await cards.watchCard(cardId).first;
     if (after == null) return RescanOutcome.failed;
 
     // Judged on fields rather than on status, because a card that went from
@@ -78,5 +98,15 @@ class RescanService {
     return after.fields.length > fieldsBefore
         ? RescanOutcome.improved
         : RescanOutcome.unchanged;
+  }
+
+  Future<void> _readSide(int cardId, File image, CardSide side) async {
+    final OcrResult result = await engine.recognize(image);
+    await cards.attachExtraction(
+      cardId: cardId,
+      result: result,
+      extraction: CardFieldExtractor.extract(result.blocks),
+      side: side,
+    );
   }
 }

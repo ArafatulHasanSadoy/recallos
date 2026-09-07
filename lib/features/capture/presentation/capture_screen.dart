@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/extraction/card_extractor.dart';
+import '../../../core/imaging/card_geometry.dart';
 import '../../../core/imaging/card_image_processor.dart';
 import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine.dart';
@@ -46,8 +47,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
   bool _saving = false;
   String? _error;
 
-  /// Region of the field currently being edited, boxed on the image above.
-  String? _highlight;
+  /// Region of the field currently being edited, boxed on the side it was
+  /// read from.
+  FieldHighlight? _highlight;
 
   @override
   void initState() {
@@ -91,9 +93,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       );
     } on CunningDocumentScannerException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.code == 'permission_denied'
-          ? 'RecallOS needs camera access to scan a card.'
-          : 'Could not open the scanner: ${e.message}');
+      setState(
+        () => _error = e.code == 'permission_denied'
+            ? 'RecallOS needs camera access to scan a card.'
+            : 'Could not open the scanner: ${e.message}',
+      );
       return;
     } on Object catch (e) {
       if (!mounted) return;
@@ -128,8 +132,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       setState(() => _image = working);
 
       final OcrResult result = await _engine.recognize(working);
-      final CardExtraction extraction =
-          CardFieldExtractor.extract(result.blocks);
+      final CardExtraction extraction = CardFieldExtractor.extract(
+        result.blocks,
+      );
       await repo.attachExtraction(
         cardId: pending.id,
         result: result,
@@ -147,7 +152,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
         _loading = false;
         _error = result.isTotalFailure
             ? 'No text found on this card. Save it anyway and tell RecallOS '
-                'why it matters — that alone makes it findable.'
+                  'why it matters — that alone makes it findable.'
             : null;
       });
     } on Object catch (e) {
@@ -183,11 +188,13 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
           'card_${pending.id}_${DateTime.now().microsecondsSinceEpoch}';
 
       final PreparedImage prepared = await Isolate.run(
-        () => prepareCardImage(CardImageRequest(
-          sourcePath: scanned.path,
-          targetDir: targetDir,
-          baseName: baseName,
-        )),
+        () => prepareCardImage(
+          CardImageRequest(
+            sourcePath: scanned.path,
+            targetDir: targetDir,
+            baseName: baseName,
+          ),
+        ),
       );
 
       await repo.attachImages(
@@ -316,17 +323,19 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                               builder:
                                   (BuildContext context, WidgetRef ref, _) =>
                                       CardSidesView(
-                                cardId: cardId,
-                                front: image,
-                                backPath: cardId == null
-                                    ? null
-                                    : ref
-                                        .watch(cardDetailProvider(cardId))
-                                        .value
-                                        ?.card
-                                        .backImagePath,
-                                highlight: _highlight,
-                              ),
+                                        cardId: cardId,
+                                        front: image,
+                                        backPath: cardId == null
+                                            ? null
+                                            : ref
+                                                  .watch(
+                                                    cardDetailProvider(cardId),
+                                                  )
+                                                  .value
+                                                  ?.card
+                                                  .backImagePath,
+                                        highlight: _highlight,
+                                      ),
                             ),
                           ),
                           if (_loading)
@@ -346,8 +355,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                               ),
                               child: Text(
                                 _error!,
-                                style: AppText.small(c)
-                                    .copyWith(color: c.vermilion),
+                                style: AppText.small(
+                                  c,
+                                ).copyWith(color: c.vermilion),
                               ),
                             ),
                           Expanded(
@@ -355,8 +365,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                                 ? const SizedBox.shrink()
                                 : _ReviewBody(
                                     cardId: cardId,
-                                    onRegionChanged: (String? rect) =>
-                                        setState(() => _highlight = rect),
+                                    onRegionChanged: (FieldHighlight? h) =>
+                                        setState(() => _highlight = h),
                                   ),
                           ),
                           SafeArea(
@@ -393,7 +403,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                                       label: _saving ? 'Saving…' : 'Save card',
                                       icon: Icons.check,
                                       height: 58,
-                                      onTap: (_loading ||
+                                      onTap:
+                                          (_loading ||
                                               _saving ||
                                               cardId == null)
                                           ? null
@@ -454,7 +465,7 @@ class _ViewfinderState extends State<_Viewfinder>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
               child: AspectRatio(
-                aspectRatio: 1.586,
+                aspectRatio: cardAspectRatio,
                 child: Stack(
                   children: <Widget>[
                     Positioned.fill(
@@ -510,8 +521,10 @@ class _ViewfinderState extends State<_Viewfinder>
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: Gap.xl),
-          child: Text('Hold steady — finding the edges',
-              style: AppText.small(c)),
+          child: Text(
+            'Hold steady — finding the edges',
+            style: AppText.small(c),
+          ),
         ),
       ],
     );
@@ -581,26 +594,26 @@ class _ReadingRailState extends State<_ReadingRail>
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: 2,
-        child: AnimatedBuilder(
-          animation: _c,
-          builder: (BuildContext context, _) => LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints box) => Stack(
-              children: <Widget>[
-                Container(height: 2, color: widget.colors.hairline),
-                Positioned(
-                  left: (box.maxWidth + 90) * _c.value - 90,
-                  child: Container(
-                    width: 90,
-                    height: 2,
-                    color: widget.colors.ochre,
-                  ),
-                ),
-              ],
+    height: 2,
+    child: AnimatedBuilder(
+      animation: _c,
+      builder: (BuildContext context, _) => LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) => Stack(
+          children: <Widget>[
+            Container(height: 2, color: widget.colors.hairline),
+            Positioned(
+              left: (box.maxWidth + 90) * _c.value - 90,
+              child: Container(
+                width: 90,
+                height: 2,
+                color: widget.colors.ochre,
+              ),
             ),
-          ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// What the card yielded, and the means to fix it.
@@ -608,17 +621,21 @@ class _ReviewBody extends ConsumerWidget {
   const _ReviewBody({required this.cardId, required this.onRegionChanged});
 
   final int cardId;
-  final ValueChanged<String?> onRegionChanged;
+  final ValueChanged<FieldHighlight?> onRegionChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppColors c = AppColors.of(context);
 
-    return ref.watch(cardDetailProvider(cardId)).when(
+    return ref
+        .watch(cardDetailProvider(cardId))
+        .when(
           loading: () => const SizedBox.shrink(),
           error: (Object e, _) => Center(
-            child: Text('Could not read that back.\n$e',
-                style: AppText.body(c)),
+            child: Text(
+              'Could not read that back.\n$e',
+              style: AppText.body(c),
+            ),
           ),
           data: (CardDetail? detail) {
             if (detail == null) return const SizedBox.shrink();
@@ -718,7 +735,7 @@ class _NotePromptState extends State<_NotePrompt> {
           Text(
             widget.emphasised
                 ? 'Not much was readable on this card, so this note is how '
-                    "you'll find it later."
+                      "you'll find it later."
                 : "You'll search by this later, so write it how you'd say it.",
             style: AppText.body(c),
           ),

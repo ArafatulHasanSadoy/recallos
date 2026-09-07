@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+
+import 'encrypted_database.dart';
 
 // Used by the generated part file for the textEnum<...>() columns.
 import 'enums.dart';
@@ -50,74 +51,90 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
   ],
 )
 class AppDatabase extends _$AppDatabase {
+  /// Opens the wallet, encrypted, unless handed something else.
+  ///
+  /// The parameter is what tests use — an in-memory database with no key and
+  /// no keystore behind it. Everything the app itself runs goes through
+  /// [openEncryptedDatabase]; see that file for what "encrypted" covers and
+  /// what it does not.
   AppDatabase([QueryExecutor? executor])
-      : super(executor ?? driftDatabase(name: 'recallos'));
+    : super(executor ?? openEncryptedDatabase());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (Migrator m) async {
-          await m.createAll();
-          await customStatement(_createSearchIndex);
-          await _createIdentityIndexes();
-          await _seedRankingWeights();
-        },
-        onUpgrade: (Migrator m, int from, int to) async {
-          // v2 — `ocr_blocks.field_id`. Which field owns a block could not be
-          // answered from `assigned_field_key` alone once the user could move a
-          // block between fields; see the column's own comment.
-          if (from < 2) {
-            await m.addColumn(ocrBlocks, ocrBlocks.fieldId);
-          }
-          // v3 — the identity graph started being written. `source_card_id`
-          // is what lets one card's contribution be refreshed on its own; the
-          // indexes are the blocking keys resolution matches on.
-          if (from < 3) {
-            await m.addColumn(contactPoints, contactPoints.sourceCardId);
-            await _createIdentityIndexes();
-          }
-          // v4 — duplicate review. Merging is a pointer, so that it can be
-          // undone; see the column's own comment.
-          if (from < 4) {
-            await m.addColumn(people, people.mergedIntoId);
-          }
-          // v5 — companies can be duplicates too, and two scans of one shop
-          // sign is the commonest way it happens.
-          if (from < 5) {
-            await m.addColumn(organizations, organizations.mergedIntoId);
-          }
-          // v6 — the rules for matching companies changed: similar names and
-          // shared addresses now count, where before only exact agreement did.
-          // Those rules only run during promotion, so without this the new
-          // matching would apply to cards scanned afterwards and never to the
-          // library that already exists — which is exactly where the
-          // duplicates people actually have are sitting.
-          //
-          // Unhooking the cards is enough. `IdentityRepository.backfill`
-          // re-promotes anything carrying a company and no organization, and
-          // garbage collection clears what is left behind. People are
-          // untouched, so no merge anybody made is disturbed.
-          if (from < 6) {
-            await customStatement(
-              'UPDATE cards SET org_id = NULL, role_id = NULL',
-            );
-          }
-          // v7 — somewhere to record which version of the matching rules
-          // produced the graph, so the next change to them rebuilds what is
-          // already stored without needing a migration of its own.
-          if (from < 7) {
-            await m.createTable(settings);
-          }
-        },
-        beforeOpen: (OpeningDetails details) async {
-          await customStatement('PRAGMA foreign_keys = ON');
-          // FTS5 lives outside Drift's schema tracking, so make sure it exists
-          // even for databases created before it was added.
-          await customStatement(_createSearchIndex);
-        },
-      );
+    onCreate: (Migrator m) async {
+      await m.createAll();
+      await customStatement(_createSearchIndex);
+      await _createIdentityIndexes();
+      await _seedRankingWeights();
+    },
+    onUpgrade: (Migrator m, int from, int to) async {
+      // v2 — `ocr_blocks.field_id`. Which field owns a block could not be
+      // answered from `assigned_field_key` alone once the user could move a
+      // block between fields; see the column's own comment.
+      if (from < 2) {
+        await m.addColumn(ocrBlocks, ocrBlocks.fieldId);
+      }
+      // v3 — the identity graph started being written. `source_card_id`
+      // is what lets one card's contribution be refreshed on its own; the
+      // indexes are the blocking keys resolution matches on.
+      if (from < 3) {
+        await m.addColumn(contactPoints, contactPoints.sourceCardId);
+        await _createIdentityIndexes();
+      }
+      // v4 — duplicate review. Merging is a pointer, so that it can be
+      // undone; see the column's own comment.
+      if (from < 4) {
+        await m.addColumn(people, people.mergedIntoId);
+      }
+      // v5 — companies can be duplicates too, and two scans of one shop
+      // sign is the commonest way it happens.
+      if (from < 5) {
+        await m.addColumn(organizations, organizations.mergedIntoId);
+      }
+      // v6 — the rules for matching companies changed: similar names and
+      // shared addresses now count, where before only exact agreement did.
+      // Those rules only run during promotion, so without this the new
+      // matching would apply to cards scanned afterwards and never to the
+      // library that already exists — which is exactly where the
+      // duplicates people actually have are sitting.
+      //
+      // Unhooking the cards is enough. `IdentityRepository.backfill`
+      // re-promotes anything carrying a company and no organization, and
+      // garbage collection clears what is left behind. People are
+      // untouched, so no merge anybody made is disturbed.
+      if (from < 6) {
+        await customStatement('UPDATE cards SET org_id = NULL, role_id = NULL');
+      }
+      // v7 — somewhere to record which version of the matching rules
+      // produced the graph, so the next change to them rebuilds what is
+      // already stored without needing a migration of its own.
+      if (from < 7) {
+        await m.createTable(settings);
+      }
+      // v8 — the back of a card became readable. Every stored region is a
+      // rectangle in one image's pixel space, so a fact needs to say which
+      // image, or a value read off the back boxes a spot on the front.
+      //
+      // Both columns default to `front`, which is the truth for every row
+      // that already exists: until now the front was the only side anything
+      // was ever read from.
+      if (from < 8) {
+        await m.addColumn(cards, cards.backOcrText);
+        await m.addColumn(cardFields, cardFields.side);
+        await m.addColumn(ocrBlocks, ocrBlocks.side);
+      }
+    },
+    beforeOpen: (OpeningDetails details) async {
+      await customStatement('PRAGMA foreign_keys = ON');
+      // FTS5 lives outside Drift's schema tracking, so make sure it exists
+      // even for databases created before it was added.
+      await customStatement(_createSearchIndex);
+    },
+  );
 
   /// Blocking keys for identity resolution.
   ///
@@ -161,13 +178,10 @@ class AppDatabase extends _$AppDatabase {
       'penalty_outdated': 0.20,
     };
     await batch((Batch b) {
-      b.insertAll(
-        rankingWeights,
-        <RankingWeightsCompanion>[
-          for (final MapEntry<String, double> e in defaults.entries)
-            RankingWeightsCompanion.insert(key: e.key, value: e.value),
-        ],
-      );
+      b.insertAll(rankingWeights, <RankingWeightsCompanion>[
+        for (final MapEntry<String, double> e in defaults.entries)
+          RankingWeightsCompanion.insert(key: e.key, value: e.value),
+      ]);
     });
   }
 }

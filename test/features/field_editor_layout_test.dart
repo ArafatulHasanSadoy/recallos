@@ -6,6 +6,7 @@ import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
+import 'package:recallos/features/cards/presentation/widgets/card_sides_view.dart';
 import 'package:recallos/features/cards/presentation/widgets/editable_field_list.dart';
 
 /// Layout-only tests for the field editor.
@@ -22,6 +23,7 @@ void main() {
     String value, {
     String? issue,
     bool verified = false,
+    CardSide side = CardSide.front,
   }) =>
       CardField(
         id: id,
@@ -33,11 +35,18 @@ void main() {
         validationIssue: issue,
         valueKind: FieldValueKind.text,
         regionRect: '10,10,310,50',
+        side: side,
         createdAt: now,
         updatedAt: now,
       );
 
-  OcrBlockRow blockRow(int id, String text, {int? fieldId}) => OcrBlockRow(
+  OcrBlockRow blockRow(
+    int id,
+    String text, {
+    int? fieldId,
+    CardSide side = CardSide.front,
+  }) =>
+      OcrBlockRow(
         id: id,
         cardId: 1,
         blockText: text,
@@ -46,6 +55,7 @@ void main() {
         script: 'latin',
         fieldId: fieldId,
         orderIndex: id,
+        side: side,
       );
 
   /// The card from the device: a shop card with two numbers and a long email.
@@ -91,7 +101,7 @@ void main() {
               children: <Widget>[
                 EditableFieldList(
                   detail: detail(),
-                  onRegionChanged: (String? _) {},
+                  onRegionChanged: (FieldHighlight? _) {},
                 ),
               ],
             ),

@@ -10,6 +10,7 @@ import '../../../core/db/database.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/extraction/phone.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/card_face.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../capture/data/card_repository.dart';
@@ -25,22 +26,48 @@ import 'widgets/editable_field_list.dart';
 /// printed on the card, and every fact is repairable, because mistakes get
 /// noticed a week after scanning at least as often as during the scan.
 class CardDetailScreen extends ConsumerStatefulWidget {
-  const CardDetailScreen({required this.cardId, super.key});
+  const CardDetailScreen({
+    required this.cardId,
+    this.previewImagePath,
+    super.key,
+  });
 
   final int cardId;
+  final String? previewImagePath;
 
   @override
   ConsumerState<CardDetailScreen> createState() => _CardDetailScreenState();
 }
 
 class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
-  /// Region of the field being edited, boxed on the image above.
-  String? _highlight;
+  /// Region of the field being edited, boxed on the side it was read from.
+  FieldHighlight? _highlight;
 
   @override
   Widget build(BuildContext context) {
-    final AsyncValue<CardDetail?> detail =
-        ref.watch(cardDetailProvider(widget.cardId));
+    final AsyncValue<CardDetail?> detail = ref.watch(
+      cardDetailProvider(widget.cardId),
+    );
+    final CardDetail? d = detail.value;
+
+    // The photograph lives here rather than inside `detail.when`, and that is
+    // load-bearing rather than tidying.
+    //
+    // A card is opened by a hero flight out of its own thumbnail, and the
+    // flight needs a destination that exists on the route's *first* frame —
+    // before Drift has emitted anything. There used to be a second widget for
+    // that first frame, and swapping it for the real one when the data landed
+    // rebuilt the photograph from scratch: new element, new decode, a blank
+    // rectangle for a frame or two, and a box of a slightly different height,
+    // all arriving in the last moments of the transition. One widget for the
+    // life of the screen has none of that — the preview is replaced by the
+    // full capture in place, and `gaplessPlayback` holds the old frame until
+    // the new one is ready.
+    final String? front = d?.card.imagePath ?? widget.previewImagePath;
+    final String? preview = d?.card.thumbPath ?? widget.previewImagePath;
+    // Nothing to pin once the card is gone; the flight has nowhere to land
+    // either, which is the honest thing to show.
+    final bool gone = detail.hasValue && d == null;
 
     return Scaffold(
       body: SafeArea(
@@ -59,6 +86,20 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 ),
               ],
             ),
+            if (front != null && !gone)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.sm),
+                child: CardSidesView(
+                  cardId: d?.card.id,
+                  front: File(front),
+                  frontPreview: preview == null ? null : File(preview),
+                  backPath: d?.card.backImagePath,
+                  highlight: _highlight,
+                  maxHeight: 200,
+                  heroTag: cardHeroTag(widget.cardId),
+                  onOpenFullImage: (File side) => _showFullImage(context, side),
+                ),
+              ),
             Expanded(
               child: detail.when(
                 loading: () => const Padding(
@@ -70,21 +111,34 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   title: 'Could not open this card',
                   body: '$e',
                 ),
-                data: (CardDetail? d) => d == null
+                data: (CardDetail? card) => card == null
                     ? const EmptyState(
                         label: 'Gone',
                         title: 'This card is no longer here',
                         body: 'It may have been deleted from another screen.',
                       )
                     : _Body(
-                        detail: d,
-                        highlight: _highlight,
-                        onRegionChanged: (String? rect) =>
-                            setState(() => _highlight = rect),
+                        detail: card,
+                        onRegionChanged: (FieldHighlight? h) =>
+                            setState(() => _highlight = h),
                       ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, File image) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
+          body: Center(
+            child: InteractiveViewer(maxScale: 6, child: Image.file(image)),
+          ),
         ),
       ),
     );
@@ -126,90 +180,50 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   }
 }
 
+/// Everything under the photograph: the title, the note, the actions and the
+/// field list. The photograph itself is pinned by the screen above, so a field
+/// can be checked against the printing while it is corrected rather than from
+/// memory.
 class _Body extends StatelessWidget {
-  const _Body({
-    required this.detail,
-    required this.highlight,
-    required this.onRegionChanged,
-  });
+  const _Body({required this.detail, required this.onRegionChanged});
 
   final CardDetail detail;
-  final String? highlight;
-  final ValueChanged<String?> onRegionChanged;
+  final ValueChanged<FieldHighlight?> onRegionChanged;
 
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
-    final File image = File(detail.card.imagePath);
     final String? note = detail.notes
         .map((Note n) => n.body)
         .whereType<String>()
         .where((String b) => b.trim().isNotEmpty)
         .firstOrNull;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
       children: <Widget>[
-        // Pinned, so a field can be checked against the printing while it is
-        // corrected rather than from memory.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.sm),
-          child: CardSidesView(
-            cardId: detail.card.id,
-            front: image,
-            backPath: detail.card.backImagePath,
-            highlight: highlight,
-            maxHeight: 200,
-            heroTag: 'card-${detail.card.id}',
-            onOpenFullImage: (File side) => _showFullImage(context, side),
+        Text(detail.title, style: AppText.title(c)),
+        const SizedBox(height: Gap.md),
+        if (note != null) ...<Widget>[
+          _NoteBlock(note: note, colors: c),
+          const SizedBox(height: Gap.lg),
+        ],
+        _Actions(detail: detail),
+        const SizedBox(height: Gap.lg),
+        SectionHeader('On the card', count: detail.fields.length),
+        const SizedBox(height: Gap.sm),
+        EditableFieldList(detail: detail, onRegionChanged: onRegionChanged),
+        if (detail.unassignedText.isNotEmpty) ...<Widget>[
+          const SizedBox(height: Gap.lg),
+          const SectionHeader('Other text'),
+          const SizedBox(height: Gap.sm),
+          Text(
+            detail.unassignedText.join(' · '),
+            style: AppText.body(c).copyWith(color: c.inkFaint),
           ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-            children: <Widget>[
-              Text(detail.title, style: AppText.title(c)),
-              const SizedBox(height: Gap.md),
-              if (note != null) ...<Widget>[
-                _NoteBlock(note: note, colors: c),
-                const SizedBox(height: Gap.lg),
-              ],
-              _Actions(detail: detail),
-              const SizedBox(height: Gap.lg),
-              SectionHeader('On the card', count: detail.fields.length),
-              const SizedBox(height: Gap.sm),
-              EditableFieldList(
-                detail: detail,
-                onRegionChanged: onRegionChanged,
-              ),
-              if (detail.unassignedText.isNotEmpty) ...<Widget>[
-                const SizedBox(height: Gap.lg),
-                const SectionHeader('Other text'),
-                const SizedBox(height: Gap.sm),
-                Text(
-                  detail.unassignedText.join(' · '),
-                  style: AppText.body(c).copyWith(color: c.inkFaint),
-                ),
-              ],
-              const SizedBox(height: Gap.xl),
-            ],
-          ),
-        ),
+        ],
+        const SizedBox(height: Gap.xl),
       ],
-    );
-  }
-
-  void _showFullImage(BuildContext context, File image) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
-          body: Center(
-            child: InteractiveViewer(maxScale: 6, child: Image.file(image)),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -223,30 +237,30 @@ class _NoteBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(Gap.md),
-        decoration: AppDecoration.card(
-          colors,
-          isDark: isDarkTheme(context),
-          lifted: false,
+    width: double.infinity,
+    padding: const EdgeInsets.all(Gap.md),
+    decoration: AppDecoration.card(
+      colors,
+      isDark: isDarkTheme(context),
+      lifted: false,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        MicroLabel('Why you saved this', color: colors.ochreInk),
+        const SizedBox(height: Gap.sm),
+        Text(
+          note,
+          style: AppText.rowTitle(colors).copyWith(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w400,
+            fontVariations: AppFonts.weight(400),
+            height: 1.45,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            MicroLabel('Why you saved this', color: colors.ochreInk),
-            const SizedBox(height: Gap.sm),
-            Text(
-              note,
-              style: AppText.rowTitle(colors).copyWith(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w400,
-                fontVariations: AppFonts.weight(400),
-                height: 1.45,
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }
 
 /// Call, message, mail, map.
@@ -297,8 +311,10 @@ class _Actions extends StatelessWidget {
             label: 'Map',
             onTap: () => _open(
               context,
-              Uri.https('www.google.com', '/maps/search/',
-                  <String, String>{'api': '1', 'query': address}),
+              Uri.https('www.google.com', '/maps/search/', <String, String>{
+                'api': '1',
+                'query': address,
+              }),
             ),
           ),
       ],
@@ -335,8 +351,9 @@ class _ActionPill extends StatelessWidget {
   /// the art stays 44 and [PressFade.hitPadding] grows the target around it,
   /// rather than the pill being inflated to meet a number nobody can see.
   static const double _art = 44;
-  static const EdgeInsets _target =
-      EdgeInsets.symmetric(vertical: (kMinTarget - _art) / 2);
+  static const EdgeInsets _target = EdgeInsets.symmetric(
+    vertical: (kMinTarget - _art) / 2,
+  );
 
   @override
   Widget build(BuildContext context) {

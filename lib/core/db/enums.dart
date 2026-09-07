@@ -81,3 +81,12 @@ enum InteractionKind {
 
 /// Result of one run of one engine over one image.
 enum AttemptStatus { success, partial, failed }
+
+/// Which face of a card a stored fact was read from.
+///
+/// `card_fields.region_rect` and `ocr_blocks.rect` are pixel coordinates, and
+/// pixel coordinates are meaningless without the image they were measured
+/// against. This column is that missing half. Without it the back could be
+/// photographed but never read, because a value recognised on the back would
+/// have boxed a spot on the front — wrong, and silently so.
+enum CardSide { front, back }
