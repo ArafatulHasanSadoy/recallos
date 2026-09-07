@@ -115,4 +115,68 @@ void main() {
       );
     });
   });
+
+  group('platform hosts', () {
+    // A card that gives its Facebook page where a website goes is the norm on
+    // a Bangladeshi shop card, not an edge case.
+    test('a platform host is not a business domain', () {
+      expect(isPlatformDomain('youtube.com'), isTrue);
+      expect(isPlatformDomain('facebook.com'), isTrue);
+      expect(isPlatformDomain('wa.me'), isTrue);
+      expect(isPlatformDomain('gmail.com'), isTrue);
+    });
+
+    test('subdomains of one count too', () {
+      // The extractor keeps the host as printed, only stripping `www.`.
+      expect(isPlatformDomain('m.facebook.com'), isTrue);
+      expect(isPlatformDomain('sites.google.com'), isTrue);
+    });
+
+    test("a business's own domain is left alone", () {
+      expect(isPlatformDomain('azadfisheries.com.bd'), isFalse);
+      expect(isPlatformDomain('olympushospital.com'), isFalse);
+      // A name that merely contains a platform's is not that platform.
+      expect(isPlatformDomain('myfacebookrepairs.com'), isFalse);
+    });
+
+    test('nothing is not a platform', () {
+      expect(isPlatformDomain(null), isFalse);
+      expect(isPlatformDomain(''), isFalse);
+    });
+
+    test('only a real domain survives as an identity', () {
+      expect(identityDomain('azadfisheries.com.bd'), 'azadfisheries.com.bd');
+      // Null, not dropped from the card — the URL is still worth tapping, it
+      // just says nothing about which company this is.
+      expect(identityDomain('youtube.com'), isNull);
+    });
+  });
+
+  group('matching organizations on a domain', () {
+    test('a shared business domain links them', () {
+      expect(
+        scoreOrganization(
+          cardDomain: 'azadfisheries.com.bd',
+          candidateDomain: 'azadfisheries.com.bd',
+          cardName: 'Azad Fisheries',
+          candidateName: 'Azad Fisheries Ltd',
+        ).score,
+        1.0,
+      );
+    });
+
+    test('a shared platform host links nothing', () {
+      // Two unrelated shops that both printed a Facebook page. Scoring this
+      // 1.0 merged them with no prompt, because a domain match links outright.
+      final MatchVerdict v = scoreOrganization(
+        cardDomain: 'facebook.com',
+        candidateDomain: 'facebook.com',
+        cardName: 'Azad Fisheries',
+        candidateName: 'Karim Electronics',
+      );
+
+      expect(v.score, lessThan(MatchVerdict.proposeThreshold));
+      expect(v.signals, isEmpty);
+    });
+  });
 }

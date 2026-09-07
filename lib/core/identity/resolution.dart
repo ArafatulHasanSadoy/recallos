@@ -150,6 +150,62 @@ bool looksLikePersonName(String? raw) {
   return letters > digits;
 }
 
+/// Hosts that identify a platform rather than the business printing them.
+///
+/// A shop's card very often gives its Facebook page or YouTube channel where a
+/// website would go — on a Bangladeshi card that is frequently the only web
+/// presence the business has, and the place its customers actually find it.
+///
+/// Treating one of those as the company's own domain goes wrong twice. It
+/// invents an organization called `youtube.com`, because a card with a website
+/// and no readable company name used to be given the domain as its name. Worse
+/// and more quietly: a shared domain is the strongest link signal there is and
+/// it links *without asking*, so every business on the card pile that printed a
+/// Facebook page would collapse into a single organization — the exact
+/// destructive auto-merge this app refuses to do to people.
+///
+/// Not an exhaustive list and it does not need to be. Everything here is a
+/// host whose identity is the platform's; anything missed degrades to the old
+/// behaviour for that one host, and anything wrongly included only costs a
+/// duplicate proposal the user can accept.
+const Set<String> platformDomains = <String>{
+  // Social and video.
+  'facebook.com', 'fb.com', 'fb.me', 'messenger.com', 'threads.net',
+  'youtube.com', 'youtu.be',
+  'instagram.com', 'tiktok.com', 'twitter.com', 'x.com',
+  'linkedin.com', 'pinterest.com', 'snapchat.com',
+  // Messaging. `wa.me` and `t.me` are links to a person, not a site.
+  'whatsapp.com', 'wa.me', 'telegram.me', 't.me', 'imo.im', 'viber.com',
+  // Mail providers, which land in the website field whenever a card runs its
+  // contact lines together and the address loses its `@`.
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com',
+  'icloud.com',
+  // Shorteners and free hosting: the host belongs to the platform and the
+  // business is a path underneath it, which a registrable domain cannot see.
+  'bit.ly', 'linktr.ee', 'goo.gl', 'g.page', 'google.com', 'business.site',
+  'blogspot.com', 'wordpress.com', 'wixsite.com', 'weebly.com',
+};
+
+/// Whether [domain] belongs to a platform rather than to a business.
+///
+/// Matches subdomains too — the extractor keeps the host as printed, so
+/// `m.facebook.com` and `sites.google.com` arrive intact.
+bool isPlatformDomain(String? domain) {
+  final String host = (domain ?? '').trim().toLowerCase();
+  if (host.isEmpty) return false;
+  for (final String platform in platformDomains) {
+    if (host == platform || host.endsWith('.$platform')) return true;
+  }
+  return false;
+}
+
+/// The domain to treat as a company's own, or null when it identifies nobody.
+///
+/// The full URL is still worth keeping and still worth tapping; it just is not
+/// evidence about *which* company this is.
+String? identityDomain(String? domain) =>
+    isPlatformDomain(domain) ? null : domain;
+
 /// A company name reduced to what two cards would have to agree on.
 ///
 /// Unlike people, exact agreement here is safe enough to link on. Business
@@ -242,7 +298,11 @@ MatchVerdict scoreOrganization({
   String? cardAddress,
   String? candidateAddress,
 }) {
-  if (cardDomain != null && cardDomain == candidateDomain) {
+  // Checked again here rather than trusted to the caller, because rows
+  // written under older rules still carry whatever domain was current then.
+  if (cardDomain != null &&
+      cardDomain == candidateDomain &&
+      !isPlatformDomain(cardDomain)) {
     return const MatchVerdict(score: 1.0, signals: <String>['same domain']);
   }
 

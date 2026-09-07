@@ -1010,4 +1010,72 @@ void main() {
       expect(card.personId, isNull);
     });
   });
+
+  group('a website is not a company', () {
+    Future<List<Organization>> orgs() => db.select(db.organizations).get();
+
+    test('a card with a website and no company name creates none', () async {
+      // The reported bug, in its original shape: a fish shop whose card gave
+      // its YouTube channel where a website goes, and a contacts list that
+      // then held a business called `youtube.com`.
+      await scan(
+        phone: '01711363991',
+        website: 'youtube.com/azadfisheries',
+      );
+
+      expect(await orgs(), isEmpty);
+    });
+
+    test('nor does one carrying a real domain and no name', () async {
+      // Not a special case for platforms. A domain is a company's address at
+      // best; naming a business after it is inventing a fact the card does
+      // not carry.
+      await scan(phone: '01711363991', website: 'azadfisheries.com.bd');
+
+      expect(await orgs(), isEmpty);
+    });
+
+    test('the company on the card is the company, website or not', () async {
+      await scan(
+        company: 'Azad Fisheries',
+        phone: '01711363991',
+        website: 'youtube.com/azadfisheries',
+      );
+
+      final List<Organization> found = await orgs();
+      expect(found, hasLength(1));
+      expect(found.single.name, 'Azad Fisheries');
+      // Kept for tapping, not for matching.
+      expect(found.single.website, isNotNull);
+      // The match key stays empty, because this host identifies YouTube.
+      expect(found.single.websiteDomain, isNull);
+    });
+
+    test('two businesses sharing a platform link stay two businesses',
+        () async {
+      // The worse half of the bug, and the silent one. A shared domain scores
+      // 1.0 and links without asking, so every shop that printed a Facebook
+      // page would have collapsed into one company.
+      await scan(company: 'Azad Fisheries', phone: '01711363991',
+          website: 'facebook.com/azadfisheries');
+      await scan(company: 'Karim Electronics', phone: '01712000000',
+          website: 'facebook.com/karimelectronics');
+
+      expect(await orgs(), hasLength(2));
+      // Not merely unmerged — never even proposed, since the only thing they
+      // share is Facebook.
+      expect(await db.select(db.duplicateCandidates).get(), isEmpty);
+    });
+
+    test('a real shared domain still links two cards', () async {
+      // The signal has to keep working, or this fix has traded one bug for
+      // another.
+      await scan(company: 'Azad Fisheries', phone: '01711363991',
+          website: 'azadfisheries.com.bd');
+      await scan(company: 'Azad Fisheries Ltd', phone: '01712000000',
+          website: 'azadfisheries.com.bd');
+
+      expect(await orgs(), hasLength(1));
+    });
+  });
 }

@@ -217,7 +217,9 @@ class IdentityRepository {
   /// means without this a new rule would apply to cards scanned afterwards
   /// and never to the library that already exists — where the duplicates and
   /// the wrong contacts people actually have are sitting.
-  static const int rulesVersion = 3;
+  /// 4 — a company is no longer created from a website alone, and a platform
+  /// host such as `youtube.com` or `facebook.com` no longer counts as one.
+  static const int rulesVersion = 4;
 
   static const String _rulesKey = 'identity_rules_version';
 
@@ -420,10 +422,23 @@ class IdentityRepository {
   /// Two scans of one shop sign are the commonest duplicate this app makes, so
   /// the address is weighed alongside the name: OCR damage to a company name
   /// is routine, but two shops do not share a door.
+  ///
+  /// **A company needs a name off the card.** A website used to be enough, and
+  /// the domain became the name — which is how `youtube.com` ended up in the
+  /// contacts list as a business, from a fish shop that printed its channel
+  /// link. A domain is not a company: at best it is a company's address, at
+  /// worst it is a platform's. Where there is no name, the honest answer is
+  /// that this card does not tell us which business it belongs to. The website
+  /// stays on the card and stays tappable, and if a later card from the same
+  /// business carries the name, the organization is created then and this
+  /// domain fills in behind it.
   Future<int?> _resolveOrganization(CardFacts facts) async {
     final String? name = facts.company?.trim();
-    final String? domain = facts.websiteDomain;
-    if ((name == null || name.isEmpty) && domain == null) return null;
+    if (name == null || name.isEmpty) return null;
+
+    // A platform host is not this company's domain, so it must never become
+    // the key that links two organizations. See [isPlatformDomain].
+    final String? domain = identityDomain(facts.websiteDomain);
 
     final String? address = normalizeOrgName(facts.address);
     final List<Organization> candidates = await (_db.select(_db.organizations)
@@ -461,7 +476,7 @@ class IdentityRepository {
 
     final int created = await _db.into(_db.organizations).insert(
           OrganizationsCompanion.insert(
-            name: name ?? domain!,
+            name: name,
             website: Value<String?>(facts.website),
             websiteDomain: Value<String?>(domain),
           ),
