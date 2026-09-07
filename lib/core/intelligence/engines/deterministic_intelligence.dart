@@ -32,34 +32,84 @@ class DeterministicIntelligence implements TextIntelligence {
   /// not match confidently returns null.
   static const Map<String, List<String>> _categoryCues = <String, List<String>>{
     'printing': <String>[
-      'print', 'printing', 'press', 'banner', 'flex', 'signage', 't-shirt',
-      'tshirt', 'screen print', 'offset', 'digital print',
+      'print',
+      'printing',
+      'press',
+      'banner',
+      'flex',
+      'signage',
+      't-shirt',
+      'tshirt',
+      'screen print',
+      'offset',
+      'digital print',
     ],
     'books': <String>['book', 'books', 'library', 'stationery', 'publisher'],
     'food': <String>[
-      'restaurant', 'cafe', 'catering', 'bakery', 'sweets', 'biryani', 'food',
+      'restaurant',
+      'cafe',
+      'catering',
+      'bakery',
+      'sweets',
+      'biryani',
+      'food',
     ],
     'electronics': <String>[
-      'electronics', 'computer', 'laptop', 'mobile', 'repair', 'hardware',
+      'electronics',
+      'computer',
+      'laptop',
+      'mobile',
+      'repair',
+      'hardware',
     ],
     'clothing': <String>[
-      'apparel', 'garment', 'fashion', 'tailor', 'boutique', 'hoodie',
-      'shirt', 'wholesale clothing', 'paikari',
+      'apparel',
+      'garment',
+      'fashion',
+      'tailor',
+      'boutique',
+      'hoodie',
+      'shirt',
+      'wholesale clothing',
+      'paikari',
     ],
     'events': <String>[
-      'event', 'decor', 'decoration', 'wedding', 'sound', 'lighting', 'led',
-      'stage', 'photography',
+      'event',
+      'decor',
+      'decoration',
+      'wedding',
+      'sound',
+      'lighting',
+      'led',
+      'stage',
+      'photography',
     ],
     'medical': <String>[
-      'doctor', 'clinic', 'hospital', 'pharmacy', 'medical', 'dental',
+      'doctor',
+      'clinic',
+      'hospital',
+      'pharmacy',
+      'medical',
+      'dental',
       'diagnostic',
     ],
     'construction': <String>[
-      'construction', 'engineer', 'contractor', 'interior', 'architect',
-      'furniture', 'electrician', 'plumber',
+      'construction',
+      'engineer',
+      'contractor',
+      'interior',
+      'architect',
+      'furniture',
+      'electrician',
+      'plumber',
     ],
     'transport': <String>[
-      'transport', 'courier', 'logistics', 'delivery', 'cargo', 'rent a car',
+      'transport',
+      'courier',
+      'logistics',
+      'delivery',
+      'cargo',
+      'rent a car',
     ],
   };
 
@@ -75,8 +125,7 @@ class DeterministicIntelligence implements TextIntelligence {
     int bestHits = 0;
     for (final String label in labels) {
       final List<String> cues = _categoryCues[label] ?? <String>[label];
-      final int hits =
-          cues.where((String cue) => lower.contains(cue)).length;
+      final int hits = cues.where((String cue) => lower.contains(cue)).length;
       if (hits > bestHits) {
         bestHits = hits;
         best = label;
@@ -91,25 +140,43 @@ class DeterministicIntelligence implements TextIntelligence {
   /// invent facts the user never stated.
   static const Map<String, Map<String, List<String>>> _attributeCues =
       <String, Map<String, List<String>>>{
-    'price_tier': <String, List<String>>{
-      'cheap': <String>['cheap', 'affordable', 'low price', 'reasonable',
-          'budget', 'komdame', 'kom dame'],
-      'expensive': <String>['expensive', 'costly', 'premium', 'pricey'],
-    },
-    'min_order': <String, List<String>>{
-      'low': <String>['low quantity', 'small order', 'kom quantity',
-          'minimum order', 'small quantity', 'few pieces'],
-      'wholesale': <String>['wholesale', 'paikari', 'bulk'],
-    },
-    'delivery_reliability': <String, List<String>>{
-      'late': <String>['late', 'delayed', 'slow delivery', 'deri'],
-      'fast': <String>['fast', 'quick', 'on time', 'same day'],
-    },
-    'quality': <String, List<String>>{
-      'good': <String>['good quality', 'quality good', 'excellent', 'great'],
-      'poor': <String>['poor quality', 'bad quality', 'low quality'],
-    },
-  };
+        'price_tier': <String, List<String>>{
+          'cheap': <String>[
+            'cheap',
+            'affordable',
+            'low price',
+            'reasonable',
+            'budget',
+            'komdame',
+            'kom dame',
+          ],
+          'expensive': <String>['expensive', 'costly', 'premium', 'pricey'],
+        },
+        'min_order': <String, List<String>>{
+          'low': <String>[
+            'low quantity',
+            'small order',
+            'kom quantity',
+            'minimum order',
+            'small quantity',
+            'few pieces',
+          ],
+          'wholesale': <String>['wholesale', 'paikari', 'bulk'],
+        },
+        'delivery_reliability': <String, List<String>>{
+          'late': <String>['late', 'delayed', 'slow delivery', 'deri'],
+          'fast': <String>['fast', 'quick', 'on time', 'same day'],
+        },
+        'quality': <String, List<String>>{
+          'good': <String>[
+            'good quality',
+            'quality good',
+            'excellent',
+            'great',
+          ],
+          'poor': <String>['poor quality', 'bad quality', 'low quality'],
+        },
+      };
 
   @override
   Future<List<Attr>> extractAttributes(String note) async {
@@ -120,13 +187,15 @@ class DeterministicIntelligence implements TextIntelligence {
         in _attributeCues.entries) {
       for (final MapEntry<String, List<String>> value in attr.value.entries) {
         if (value.value.any(lower.contains)) {
-          found.add(Attr(
-            key: attr.key,
-            value: value.key,
-            // Modest by construction: a keyword hit is weaker evidence than a
-            // model reading the sentence, and the score should say so.
-            confidence: 0.6,
-          ));
+          found.add(
+            Attr(
+              key: attr.key,
+              value: value.key,
+              // Modest by construction: a keyword hit is weaker evidence than a
+              // model reading the sentence, and the score should say so.
+              confidence: 0.6,
+            ),
+          );
           break;
         }
       }
@@ -145,12 +214,13 @@ class DeterministicIntelligence implements TextIntelligence {
     required String cardText,
     String? userNote,
   }) async {
-    final String combined =
-        <String>[cardText, ?userNote].join('\n').trim();
+    final String combined = <String>[cardText, ?userNote].join('\n').trim();
     if (combined.isEmpty) return null;
 
-    final String? category =
-        await classify(combined, _categoryCues.keys.toList());
+    final String? category = await classify(
+      combined,
+      _categoryCues.keys.toList(),
+    );
 
     return CapabilityProfile(
       canonicalEnglish: combined,
@@ -180,8 +250,7 @@ class DeterministicIntelligence implements TextIntelligence {
   Future<String?> draftMessage({
     required String request,
     required String recipientContext,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> dispose() async {}

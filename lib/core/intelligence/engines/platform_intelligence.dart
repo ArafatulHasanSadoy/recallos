@@ -24,7 +24,7 @@ import 'deterministic_intelligence.dart';
 /// the matching — see [normalizeQuery].
 class PlatformIntelligence implements TextIntelligence {
   PlatformIntelligence({TextIntelligence? fallback})
-      : _fallback = fallback ?? const DeterministicIntelligence();
+    : _fallback = fallback ?? const DeterministicIntelligence();
 
   final TextIntelligence _fallback;
   final FlutterLocalAi _ai = FlutterLocalAi();
@@ -65,7 +65,8 @@ class PlatformIntelligence implements TextIntelligence {
     if (_initialized) return true;
     try {
       await _ai.initialize(
-        instructions: 'You help organise business cards. Answer with the exact '
+        instructions:
+            'You help organise business cards. Answer with the exact '
             'format requested and nothing else. Never invent details that are '
             'not present in the input.',
       );
@@ -84,8 +85,10 @@ class PlatformIntelligence implements TextIntelligence {
   Future<String?> _ask(String prompt) async {
     if (!await _ready()) return null;
     try {
-      final String out =
-          await _ai.generateTextSimple(prompt: prompt, maxTokens: 220);
+      final String out = await _ai.generateTextSimple(
+        prompt: prompt,
+        maxTokens: 220,
+      );
       final String trimmed = out.trim();
       return trimmed.isEmpty ? null : trimmed;
     } on Object {
@@ -106,7 +109,10 @@ class PlatformIntelligence implements TextIntelligence {
     );
     if (answer == null) return _fallback.classify(text, labels);
 
-    final String cleaned = answer.toLowerCase().split(RegExp(r'[\s,.\n]')).first;
+    final String cleaned = answer
+        .toLowerCase()
+        .split(RegExp(r'[\s,.\n]'))
+        .first;
     // Trust it only if it actually answered from the list. Models improvise.
     return labels.contains(cleaned)
         ? cleaned
@@ -127,8 +133,12 @@ class PlatformIntelligence implements TextIntelligence {
     if (answer == null) return _fallback.extractAttributes(note);
 
     const Set<String> allowed = <String>{
-      'price_tier', 'min_order', 'delivery_reliability', 'quality',
-      'service', 'location',
+      'price_tier',
+      'min_order',
+      'delivery_reliability',
+      'quality',
+      'service',
+      'location',
     };
 
     final List<Attr> parsed = <Attr>[];
@@ -160,8 +170,7 @@ class PlatformIntelligence implements TextIntelligence {
     required String cardText,
     String? userNote,
   }) async {
-    final String combined =
-        <String>[cardText, ?userNote].join('\n').trim();
+    final String combined = <String>[cardText, ?userNote].join('\n').trim();
     if (combined.isEmpty) return null;
 
     final String? answer = await _ask(
@@ -192,8 +201,10 @@ class PlatformIntelligence implements TextIntelligence {
       }
     }
 
-    final String? category =
-        await classify(combined, DeterministicIntelligence.categories);
+    final String? category = await classify(
+      combined,
+      DeterministicIntelligence.categories,
+    );
 
     return CapabilityProfile(
       // The original text is kept alongside the expansion. The model widens
