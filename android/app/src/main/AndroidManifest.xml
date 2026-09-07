@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
+    <!-- The lock in front of the wallet. Not required: a phone with no
+         enrolled fingerprint still runs the app, it just cannot arm the lock,
+         and the settings row says so rather than failing on a tap. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false"/>
+
     <!-- Deliberately absent: INTERNET.
          Stage 1 does all OCR, inference and search on-device. Leaving the
          permission out makes zero-egress a property the OS enforces, not a
@@ -38,9 +44,28 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove"/>
 
+    <!-- No Android Auto Backup, and this is not a minor setting.
+         It defaults to *on*, which meant the wallet — every number, address
+         and note, in a plain SQLite file — was being copied to the user's
+         Google Drive by the OS. An app whose release build has no INTERNET
+         permission specifically so that nothing leaves the phone was having
+         its entire database uploaded behind its back, and nothing in the code
+         said so.
+
+         It is also what keeps the database key and the database together. The
+         key lives in the Android Keystore, which never leaves the device;
+         restoring a backed-up encrypted file onto a new phone would bring the
+         ciphertext and not the key, and the wallet would be permanently
+         unreadable. Backing up neither is the only coherent answer.
+
+         The cost is real and worth naming: a lost or replaced phone loses the
+         wallet. Export exists for that, and stays the user's own decision. -->
     <application
         android:label="RecallOS"
         android:name="${applicationName}"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

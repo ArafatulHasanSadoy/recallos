@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/brand.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../router.dart';
 import '../data/app_settings.dart';
@@ -50,6 +51,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(Gap.lg, Gap.md, Gap.lg, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: RecallBrand(),
+              ),
+            ),
             Expanded(
               child: PageView(
                 controller: _pages,
@@ -57,19 +65,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 children: const <Widget>[
                   _Panel(
                     title: 'You remember\nthe need,\nnot the name.',
-                    body: 'So scan the card, then say in your own words why it '
+                    body:
+                        'So scan the card, then say in your own words why it '
                         'mattered. That sentence is how you will find it '
                         'again.',
                   ),
                   _Panel(
                     title: 'The camera,\nand nothing\nelse.',
-                    body: 'RecallOS needs the camera to read a card. It asks '
+                    body:
+                        'RecallOS needs the camera to read a card. It asks '
                         'for nothing else — the release build ships without '
                         'permission to reach the internet at all.',
                   ),
                   _Panel(
                     title: 'Start with\na real card.',
-                    body: 'Not a sample. Scan something from your own pocket, '
+                    body:
+                        'Not a sample. Scan something from your own pocket, '
                         'so the first thing in the wallet is worth keeping.',
                   ),
                 ],
@@ -104,10 +115,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       if (last) {
                         unawaited(_finish(scan: true));
                       } else {
-                        unawaited(_pages.nextPage(
-                          duration: AppMotion.normal,
-                          curve: AppMotion.curve,
-                        ));
+                        unawaited(
+                          _pages.nextPage(
+                            duration: AppMotion.normal,
+                            curve: AppMotion.curve,
+                          ),
+                        );
                       }
                     },
                   ),
@@ -143,20 +156,42 @@ class _Panel extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Spacer(),
-          const _FannedCards(),
-          const Spacer(),
-          Text(title, style: AppText.display(c).copyWith(fontSize: 38)),
-          const SizedBox(height: Gap.md),
-          Text(body, style: AppText.body(c).copyWith(fontSize: 15)),
-          const SizedBox(height: Gap.xl),
-        ],
-      ),
+    // Keep the navigation reachable when the brand header and larger type
+    // leave less room for the illustration on a compact phone.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const _FannedCards(),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: Gap.xl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            title,
+                            style: AppText.display(c).copyWith(fontSize: 38),
+                          ),
+                          const SizedBox(height: Gap.md),
+                          Text(
+                            body,
+                            style: AppText.body(c).copyWith(fontSize: 15),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
     );
   }
 }
@@ -192,13 +227,18 @@ class _FannedCards extends StatelessWidget {
                       width: 176,
                       height: 111,
                       decoration: AppDecoration.card(c, isDark: dark),
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: SizedBox(
-                          width: 26,
-                          height: 26,
-                          child: CustomPaint(painter: _FoldCorner(c)),
-                        ),
+                      child: Stack(
+                        children: <Widget>[
+                          if (i == 2) const Center(child: RecallMark(size: 64)),
+                          Align(
+                            alignment: Alignment.topRight,
+                            child: SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: CustomPaint(painter: _FoldCorner(c)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

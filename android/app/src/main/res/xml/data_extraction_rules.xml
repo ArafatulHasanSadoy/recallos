@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ replaced `allowBackup` with these rules, and honours them in
+  preference to it. Both are set, because a phone on Android 11 reads the
+  attribute and a phone on 12 reads this file — and the wallet has to stay on
+  the phone either way.
+
+  `cloud-backup` is Google Drive backup. `device-transfer` is the cable or
+  Wi-Fi copy to a new phone during setup. Neither is wanted: the database key
+  lives in the Keystore and does not travel, so a copied wallet would arrive
+  unreadable even if uploading it were acceptable — which, for an app that
+  ships without permission to reach the internet, it is not.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
