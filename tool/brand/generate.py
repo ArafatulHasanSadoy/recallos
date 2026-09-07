@@ -96,6 +96,12 @@ def main():
           'font-size="26" letter-spacing="4">RECALLOS</text></svg>\n')
     for size in (1024, 512, 192, 180, 120, 48):
         render(icon, BRAND / f'png/appicon-{size}.png', size, opaque=True)
+    # The Play Store listing icon. Same artwork, but PNG32: Play asks for a
+    # 32-bit PNG *with* alpha and rejects a 24-bit one, while Apple requires
+    # the opposite — an App Store icon must have no alpha channel at all. The
+    # two cannot be the same file, so this is a separate export rather than a
+    # flag on the loop above. Every pixel is still opaque.
+    render(icon, BRAND / 'png/appicon-512-play.png', 512)
     rounded = svg('<defs><clipPath id="rounded"><rect width="64" height="64" '
                   'rx="14"/></clipPath></defs><g clip-path="url(#rounded)">'
                   f'<rect width="64" height="64" fill="{INK}"/>'

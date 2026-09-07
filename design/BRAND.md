@@ -13,7 +13,10 @@ uses the already bundled Archivo font, uppercase with 2.6px tracking at 12px.
 `tool/brand/generate.py` holds the canonical geometry and produces:
 
 - Editable SVG mark, inverse, wordmark lockup and app icon in `assets/brand/`.
-- PNG icon exports and transparent marks in `assets/brand/png/`.
+- PNG icon exports and transparent marks in `assets/brand/png/`, including
+  `appicon-512-play.png` — the Play Store listing icon. Play requires a
+  32-bit PNG with an alpha channel; Apple requires an App Store icon with
+  none. Same artwork, fully opaque either way, but two files.
 - `lib/core/ui/brand_paths.dart`, used by `RecallMark` and `RecallBrand`.
 - Android density-specific icons, adaptive foreground and monochrome artwork.
 - iPhone/iPad/App Store icons and light/dark launch image catalogs.

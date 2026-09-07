@@ -14,6 +14,37 @@ This document replaces it. Every claim below was checked against the code on
 **This file is kept up to date as work lands.** Anything marked ✅ DONE below
 was built, tested and walked on the device — not planned.
 
+### Play Store readiness (2026-09-08)
+
+The app is being prepared for Google Play, targeting the **internal testing**
+track first. The full procedure lives in [`RELEASE.md`](RELEASE.md); this is
+what changed in the code.
+
+| Was | Now |
+|---|---|
+| Release signed with the **Android debug key** — Play rejects the upload outright | `signingConfigs` reads `android/key.properties`, falling back to debug when it is absent so a fresh clone still builds |
+| `RECORD_AUDIO` declared for a voice-note feature that does not exist | gone from the manifest and from `Info.plist`. The merger report confirmed it came only from our own file, so no `tools:node="remove"` was needed |
+| The developer **OCR spike** screen shipped to users, reading their gallery | route and Settings group both behind `kDebugMode` |
+| Settings said **"Your cards are encrypted"** — but the photographs are not | now "Your wallet is encrypted", with the gap named in the description |
+| README said the back of a card is "kept, not read" | corrected; back-side OCR shipped on 2026-09-07 |
+| No way to get a wallet off a phone except one contact at a time | **Take a copy** — see row 2 of the table below |
+| No `.aab` had ever been built | built and verified: no `INTERNET`, no `RECORD_AUDIO`, `targetSdk 36` |
+
+**Verified on the artifact, not the source.** `flutter build appbundle`, then
+`bundletool build-apks --mode=universal` and `aapt dump permissions` on the
+result: `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, AICore `BIND_SERVICE`,
+and the app's own dynamic-receiver permission. Nothing else.
+
+`test/features/release_surface_test.dart` pins all of it. Those assertions read
+source rather than running it, deliberately: both facts are only false in a
+*release* build, and the suite runs in debug, where `kDebugMode` is a
+compile-time `true`. There is no runtime seam — a widget test would pass on a
+broken app.
+
+**Still yours to do:** create the Play account ($25, ID verification, and it can
+take days), generate the upload keystore, and switch GitHub Pages on so
+`docs/privacy-policy.html` has a public URL. `RELEASE.md` walks through each.
+
 ### Done in this session (2026-09-07)
 
 | # | Feature | Verified how |
@@ -86,7 +117,7 @@ table, enum or function exists but nothing in `lib/` touches it.
 | # | Feature | State | Cost | Blocker / note |
 |---|---|---|---|---|
 | 1 | **OCR gate run** | never run | S | needs your hand-labelled `labels.json` |
-| 2 | **Whole-library export** (JSON + VCF) | scaffolding | S | `buildVCards` exists at `vcard.dart:113`, no caller |
+| 2 | **Whole-library export** (JSON + VCF + photos) | ✅ **done** | — | Settings → Privacy → "Take a copy". One zip: `contacts.vcf`, `wallet.json`, `photos/`. `wallet_export.dart`; 9 tests |
 | 3 | **Interactions → ranking** | scaffolding | S | table written twice, never read; `previousUse` always 0 |
 | 4 | **Tags + library filter** | scaffolding | S | tables dead; FTS `tags` column written as `''` |
 | 5 | **Retention sweep** | absent | S | nothing compares `deletedAt` to a date |
@@ -242,9 +273,13 @@ Bangladeshi cards, the priority becomes extraction, not features.
 Each is small, and each fixes something currently broken or dishonest rather
 than merely adding surface:
 
-- **#2 Whole-library export** — `buildVCards` already exists and is unused; add
-  a JSON sidecar and a Settings row. Covers most of the "cloud backup" intent
-  offline.
+- ~~**#2 Whole-library export**~~ ✅ **Done 2026-09-08**, brought forward
+  because it turned out to be a data-loss fix rather than a feature. Switching
+  to a real upload key means the release build cannot install over the
+  debug-signed one, and uninstalling destroys the wallet *permanently* — the
+  SQLCipher key lives in the Android Keystore and dies with the app, so a copied
+  `.sqlite` restores to nothing. There was no way to get a wallet off a phone
+  except one contact at a time. Now: Settings → Privacy → "Take a copy".
 - **#3 Interactions → ranking** — write `viewed` / `called` / `messaged` on the
   actions that already exist, then feed `previousUse` into `utility_score`.
   Makes the ranking do what it says.

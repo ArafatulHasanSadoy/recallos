@@ -8,8 +8,6 @@
 	<string>RecallOS uses the camera to scan cards. Scanning happens entirely on this device — no photo is ever uploaded.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>RecallOS can read a card you already photographed. The image stays on this device.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>RecallOS lets you record a short voice note about why a card matters. Recordings stay on this device.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

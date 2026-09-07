@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecallOS — Privacy Policy</title>
+<style>
+  :root {
+    --page: #E4DAC5; --card: #FBF7EE; --ink: #1F1B13;
+    --muted: #6B6047; --hairline: #E3D9C4; --ochre: #8A5A12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #15130F; --card: #1D1A15; --ink: #F0EADC;
+      --muted: #8A8271; --hairline: #2C271F; --ochre: #C8901A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+    background: var(--page); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main {
+    max-width: 42rem; margin: 0 auto; padding: 2.25rem 2rem;
+    background: var(--card); border-radius: 14px;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.08rem; margin: 2.25rem 0 .6rem; letter-spacing: -0.005em; }
+  .meta { color: var(--muted); font-size: .82rem; margin: 0 0 2rem;
+          text-transform: uppercase; letter-spacing: .08em; }
+  p, li { color: var(--ink); }
+  li { margin: .35rem 0; }
+  ul { padding-left: 1.15rem; }
+  strong { font-weight: 650; }
+  hr { border: 0; border-top: 1px solid var(--hairline); margin: 2.5rem 0 1.5rem; }
+  code { background: var(--page); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+  a { color: var(--ochre); }
+  footer { color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>RecallOS — Privacy Policy</h1>
+<p class="meta">Last updated 8 September 2026</p>
+
+<p>RecallOS is a business-card wallet that runs entirely on your phone. You
+photograph a card, the app reads it, and you find the person later by what you
+needed them for.</p>
+
+<p><strong>RecallOS collects no data. Nothing you put into it is transmitted
+anywhere, because there is nowhere for it to go: there is no RecallOS server,
+no account, and no company receiving anything.</strong></p>
+
+<h2>This is enforced, not just promised</h2>
+
+<p>The version of RecallOS published on Google Play is built without the Android
+<code>INTERNET</code> permission. An app without that permission cannot open a
+network connection at all — the operating system refuses. This is not a setting
+you have to trust us about; it is a property of the installed app that Android
+itself enforces.</p>
+
+<h2>What is stored, and where</h2>
+
+<p>Everything stays in the app's own private storage on your device:</p>
+
+<ul>
+  <li>The photographs you take of cards, front and back.</li>
+  <li>Names, job titles, company names, phone numbers, email addresses,
+      websites and postal addresses read from those cards or corrected by you.</li>
+  <li>The raw text the on-device reader extracted from each card.</li>
+  <li>Notes you write about why a card mattered.</li>
+</ul>
+
+<p>Card details are stored in a database encrypted with SQLCipher (AES-256).
+The key is generated on your phone and held in the Android Keystore; it never
+leaves the device and is not known to anyone, including us. <strong>The card
+photographs themselves are not encrypted</strong> — they are ordinary image
+files in the app's private storage, which no other app can read.</p>
+
+<p>Android's automatic backup is switched off for RecallOS, so your wallet is
+not copied to Google Drive or transferred to a new phone.</p>
+
+<h2>Permissions</h2>
+
+<ul>
+  <li><strong>Camera</strong> — to photograph a card. Photographs are processed
+      on the device and saved only to the app's private storage.</li>
+  <li><strong>Biometrics / device lock</strong> — only if you turn on the
+      optional lock. Android performs the check and returns yes or no; no
+      fingerprint or face data reaches the app.</li>
+</ul>
+
+<p>RecallOS does not read your contacts, your location, your microphone, your
+files, or the other apps installed on your phone.</p>
+
+<h2>Text recognition and on-device intelligence</h2>
+
+<p>Reading a card uses Google ML Kit's text recognition, which runs on your
+device with a model included in the app — no image or text is uploaded. On some
+recent phones, RecallOS can also use the phone's own built-in language model
+through Android's system services; that also runs on the device. RecallOS works
+fully without it.</p>
+
+<p>The document-scanner screen is provided by Google Play services, which may
+download its scanner component the first time you use it. That is a Google Play
+services function governed by Google's own privacy policy; no card data of yours
+is involved in it.</p>
+
+<h2>When data leaves your phone</h2>
+
+<p>Only when you deliberately send it, and only where you send it:</p>
+
+<ul>
+  <li><strong>Sharing a contact</strong> — RecallOS writes a <code>.vcf</code>
+      contact file and hands it to Android's share sheet or your contacts app.
+      You choose the destination.</li>
+  <li><strong>Taking a copy of your wallet</strong> — the export in Settings
+      builds one archive containing your cards, contacts, notes and photographs
+      and hands it to the share sheet. <strong>That archive is not
+      encrypted</strong>, so store it somewhere you trust.</li>
+  <li><strong>Tapping a phone number, email address, website or address</strong>
+      — this opens your dialler, mail app, browser, WhatsApp or maps app with
+      that value, which then handles it under its own privacy policy.</li>
+</ul>
+
+<p>RecallOS itself sends nothing in any of these cases; it hands a value to the
+app you picked.</p>
+
+<h2>What RecallOS does not have</h2>
+
+<ul>
+  <li>No accounts, sign-in, or user profiles.</li>
+  <li>No analytics, telemetry, or usage tracking.</li>
+  <li>No crash reporting.</li>
+  <li>No advertising, and no advertising identifier.</li>
+  <li>No third-party SDK that receives your data.</li>
+</ul>
+
+<h2>Other people's information</h2>
+
+<p>Business cards carry other people's personal details, and you are the one
+holding them. RecallOS keeps that information on your device only and never
+shares it on your behalf. Deleting a card removes it from your wallet; the
+"Recently deleted" screen is where a deletion becomes permanent.</p>
+
+<h2>Deleting your data</h2>
+
+<p>Uninstalling RecallOS deletes everything: the database, the encryption key
+held in the Android Keystore, and the card photographs. There is no server copy,
+so there is nothing to request the deletion of and nobody to request it from.
+Because deletion is total and irreversible, take a copy first if you want to
+keep anything — Settings → Take a copy.</p>
+
+<h2>Children</h2>
+
+<p>RecallOS is a professional contact tool intended for adults and is not
+directed at children.</p>
+
+<h2>Changes</h2>
+
+<p>If a future version of RecallOS ever collects or transmits data, this policy
+will be updated before that version is published, and the change will be
+described in the app's release notes.</p>
+
+<hr>
+
+<footer>
+<p>Questions about this policy: <a href="mailto:arafatsadoy@gmail.com">arafatsadoy@gmail.com</a></p>
+<p>RecallOS is an independent project. Source code:
+<a href="https://github.com/ArafatulHasanSadoy/recallos">github.com/ArafatulHasanSadoy/recallos</a></p>
+</footer>
+
+</main>
+</body>
+</html>

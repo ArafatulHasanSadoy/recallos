@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -82,7 +83,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: <RouteBase>[
       GoRoute(path: Routes.home, builder: (_, _) => const HomeScreen()),
       GoRoute(path: Routes.capture, builder: (_, _) => const CaptureScreen()),
-      GoRoute(path: Routes.spike, builder: (_, _) => const SpikeScreen()),
+      // Developer scaffolding, and it stays out of shipped builds entirely.
+      // The spike screen reads whatever the user picks out of the gallery,
+      // runs OCR over it and writes the raw result to a file — an
+      // unadvertised gallery-reading surface that Play would be right to ask
+      // about. `kDebugMode` is a const, so in release the route is not
+      // registered and `/spike` is unreachable even by deep link.
+      if (kDebugMode)
+        GoRoute(path: Routes.spike, builder: (_, _) => const SpikeScreen()),
       GoRoute(path: Routes.contacts, builder: (_, _) => const ContactsScreen()),
       GoRoute(
         path: Routes.needsAttention,
