@@ -13,6 +13,13 @@ import 'ocr_engine.dart';
 /// Disposed with the provider, so the native recogniser is released when the
 /// scope goes rather than being leaked for the process lifetime.
 final ocrEngineProvider = Provider<OcrEngine>((Ref ref) {
+  // Kept alive, which is what "held open across screens" above actually
+  // requires. Providers are disposed when nothing listens to them, and a scan
+  // is seconds of asynchronous work — so without this the native recogniser
+  // could be released underneath a recognition already in flight, and a fresh
+  // one built for the next one. `onDispose` still runs when the scope goes.
+  ref.keepAlive();
+
   final OcrEngine engine = MlKitOcrEngine();
   ref.onDispose(engine.dispose);
   return engine;

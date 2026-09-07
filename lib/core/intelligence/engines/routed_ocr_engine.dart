@@ -30,9 +30,9 @@ class RoutedOcrEngine implements OcrEngine {
 
   @override
   Set<Script> get supportedScripts => <Script>{
-        ...primary.supportedScripts,
-        ...?secondary?.supportedScripts,
-      };
+    ...primary.supportedScripts,
+    ...?secondary?.supportedScripts,
+  };
 
   /// Available whenever the primary engine is. Losing the secondary degrades
   /// the result; it never prevents a scan.
@@ -58,8 +58,7 @@ class RoutedOcrEngine implements OcrEngine {
     final List<OcrBlock> blocks = <OcrBlock>[...primaryPass.blocks];
 
     final OcrEngine? second = secondary;
-    final Set<Script> unread =
-        scripts.difference(primary.supportedScripts);
+    final Set<Script> unread = scripts.difference(primary.supportedScripts);
 
     if (second != null && unread.isNotEmpty && await second.isAvailable()) {
       final Duration remaining = timeout - clock.elapsed;
@@ -134,10 +133,12 @@ Future<File?> cropRegion(
 
     final int x = (region.left - padding).clamp(0, decoded.width - 1).round();
     final int y = (region.top - padding).clamp(0, decoded.height - 1).round();
-    final int w =
-        (region.width + padding * 2).clamp(1, decoded.width - x).round();
-    final int h =
-        (region.height + padding * 2).clamp(1, decoded.height - y).round();
+    final int w = (region.width + padding * 2)
+        .clamp(1, decoded.width - x)
+        .round();
+    final int h = (region.height + padding * 2)
+        .clamp(1, decoded.height - y)
+        .round();
 
     img.Image crop = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
     if (upscale > 1) {

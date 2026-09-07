@@ -31,8 +31,9 @@ class MlKitOcrEngine implements OcrEngine {
   @override
   Future<bool> isAvailable() async => true;
 
-  mlkit.TextRecognizer get _engine =>
-      _recognizer ??= mlkit.TextRecognizer(script: mlkit.TextRecognitionScript.latin);
+  mlkit.TextRecognizer get _engine => _recognizer ??= mlkit.TextRecognizer(
+    script: mlkit.TextRecognitionScript.latin,
+  );
 
   @override
   Future<OcrResult> recognize(
@@ -49,7 +50,8 @@ class MlKitOcrEngine implements OcrEngine {
         failure: OcrFailure.engineUnavailable,
         engine: id,
         duration: clock.elapsed,
-        errorDetail: 'ML Kit reads Latin only; asked for '
+        errorDetail:
+            'ML Kit reads Latin only; asked for '
             '${scripts.map((Script s) => s.name).join(", ")}',
       );
     }
@@ -67,20 +69,22 @@ class MlKitOcrEngine implements OcrEngine {
           final String text = line.text.trim();
           if (text.isEmpty) continue;
 
-          blocks.add(OcrBlock(
-            text: text,
-            rect: Rect.fromLTRB(
-              line.boundingBox.left.toDouble(),
-              line.boundingBox.top.toDouble(),
-              line.boundingBox.right.toDouble(),
-              line.boundingBox.bottom.toDouble(),
+          blocks.add(
+            OcrBlock(
+              text: text,
+              rect: Rect.fromLTRB(
+                line.boundingBox.left.toDouble(),
+                line.boundingBox.top.toDouble(),
+                line.boundingBox.right.toDouble(),
+                line.boundingBox.bottom.toDouble(),
+              ),
+              // ML Kit exposes no per-line confidence on either platform, so we
+              // record that honestly instead of inventing a number.
+              confidence: OcrBlock.confidenceUnknown,
+              script: Script.latin,
+              engine: id,
             ),
-            // ML Kit exposes no per-line confidence on either platform, so we
-            // record that honestly instead of inventing a number.
-            confidence: OcrBlock.confidenceUnknown,
-            script: Script.latin,
-            engine: id,
-          ));
+          );
         }
       }
 
@@ -92,11 +96,7 @@ class MlKitOcrEngine implements OcrEngine {
           duration: clock.elapsed,
         );
       }
-      return OcrResult(
-        blocks: blocks,
-        engine: id,
-        duration: clock.elapsed,
-      );
+      return OcrResult(blocks: blocks, engine: id, duration: clock.elapsed);
     } on Object catch (e) {
       clock.stop();
       return OcrResult.failed(

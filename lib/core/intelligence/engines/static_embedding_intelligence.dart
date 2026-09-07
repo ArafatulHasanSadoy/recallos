@@ -25,10 +25,7 @@ import '../text_intelligence.dart';
 /// with no platform AI still gets full semantic search, because the half that
 /// matters for retrieval never depended on the model.
 class StaticEmbeddingIntelligence implements TextIntelligence {
-  StaticEmbeddingIntelligence({
-    required this.inner,
-    required this.embedder,
-  });
+  StaticEmbeddingIntelligence({required this.inner, required this.embedder});
 
   /// Loads the bundled assets and wraps [inner].
   ///
@@ -38,12 +35,15 @@ class StaticEmbeddingIntelligence implements TextIntelligence {
   static Future<StaticEmbeddingIntelligence> load({
     required TextIntelligence inner,
   }) async {
-    final String vocab =
-        await rootBundle.loadString('assets/embedding/vocab.txt');
-    final String normalizer =
-        await rootBundle.loadString('assets/embedding/normalizer.json');
-    final ByteData matrix =
-        await rootBundle.load('assets/embedding/matrix.bin');
+    final String vocab = await rootBundle.loadString(
+      'assets/embedding/vocab.txt',
+    );
+    final String normalizer = await rootBundle.loadString(
+      'assets/embedding/normalizer.json',
+    );
+    final ByteData matrix = await rootBundle.load(
+      'assets/embedding/matrix.bin',
+    );
 
     final WordPieceTokenizer tokenizer = WordPieceTokenizer.fromAssets(
       vocabText: vocab,
@@ -99,8 +99,7 @@ class StaticEmbeddingIntelligence implements TextIntelligence {
   Future<CapabilityProfile?> buildProfile({
     required String cardText,
     String? userNote,
-  }) =>
-      inner.buildProfile(cardText: cardText, userNote: userNote);
+  }) => inner.buildProfile(cardText: cardText, userNote: userNote);
 
   @override
   Future<QueryIntent> normalizeQuery(String raw) => inner.normalizeQuery(raw);
@@ -110,10 +109,7 @@ class StaticEmbeddingIntelligence implements TextIntelligence {
     required String request,
     required String recipientContext,
   }) =>
-      inner.draftMessage(
-        request: request,
-        recipientContext: recipientContext,
-      );
+      inner.draftMessage(request: request, recipientContext: recipientContext);
 
   @override
   Future<void> dispose() => inner.dispose();
