@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
+import 'features/settings/data/app_settings.dart';
 import 'router.dart';
 
 void main() {
@@ -28,6 +29,9 @@ class RecallOsApp extends ConsumerWidget {
       title: 'RecallOS',
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      // Frame 15: dark is not an inversion, and one widget tree serves both,
+      // so the only thing this switch decides is which palette is installed.
+      themeMode: ref.watch(appSettingsProvider).themeMode,
       routerConfig: ref.watch(routerProvider),
       debugShowCheckedModeBanner: false,
     );
