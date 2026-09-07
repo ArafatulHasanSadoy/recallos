@@ -38,6 +38,10 @@ dependencies:
   go_router: ^17.4.0
   drift: ^2.34.3
   drift_flutter: ^0.3.1
+  # Direct, though drift already pulls it in: the encryption migration opens
+  # the old plaintext file itself to copy it across. See `hooks:` below for
+  # what that `sqlite3` actually is.
+  sqlite3: ^3.5.1
   collection: ^1.19.1
   google_mlkit_text_recognition: ^0.16.0
   image: ^4.9.1
@@ -49,6 +53,18 @@ dependencies:
   cunning_document_scanner: ^3.0.1
   share_plus: ^13.3.0
   open_filex: ^4.7.0
+  # Fingerprint / face / device PIN, for the lock in front of the wallet. No
+  # network of its own: the prompt is the OS's, and the answer is a boolean
+  # that never leaves the device.
+  local_auth: ^3.0.2
+  # The Android Keystore, which is where the database key lives. The key itself
+  # is generated on the phone and never written anywhere the app can read
+  # without the OS unwrapping it first.
+  #
+  # Held at 10.x deliberately. Version 11 compiles against SDK 37, which the
+  # Android Gradle plugin this project is on refuses to build against — and the
+  # API used here is identical in both. Revisit when AGP moves.
+  flutter_secure_storage: ^10.3.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -67,6 +83,23 @@ dev_dependencies:
   # platform interface directly. Test-only.
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
+# Ship SQLCipher instead of plain SQLite.
+#
+# `package:sqlite3` bundles one of three builds; this picks the one that can
+# encrypt. It is the whole of the "database encryption" feature at the build
+# level — everything else is key management, which lives in
+# `lib/core/db/encrypted_database.dart`.
+#
+# Worth knowing: on a plain SQLite build, `PRAGMA key` is not an error. SQLite
+# ignores pragmas it does not recognise, so a build where this line went
+# missing would run happily and write everything in the clear. That is why the
+# app checks `PRAGMA cipher_version` at startup and reports what it finds
+# rather than assuming.
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlcipher
+
 flutter:
   uses-material-design: true
 
