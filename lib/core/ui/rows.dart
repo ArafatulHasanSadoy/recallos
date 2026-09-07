@@ -109,10 +109,7 @@ class FieldRow extends StatelessWidget {
             ),
             if (trail != null) ...<Widget>[
               const SizedBox(width: Gap.sm),
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: trail,
-              ),
+              Padding(padding: const EdgeInsets.only(top: 5), child: trail),
             ],
           ],
         ),

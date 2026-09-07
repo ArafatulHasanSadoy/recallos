@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/brand.dart';
+import '../../../core/ui/card_face.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
+import '../../capture/data/back_capture_service.dart';
 import '../../capture/data/card_repository.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
@@ -44,8 +47,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Cards saved before search existed have no index rows, and without this
     // they stay permanently invisible — which looks exactly like search being
     // broken.
+    //
+    // The backs are the same shape of problem: they have been storable for
+    // longer than they have been readable, so the ones already on the phone
+    // hold text nothing has ever looked at. Read first, indexed second, so a
+    // back read on this launch is findable on this launch.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(ref.read(searchRepositoryProvider).backfill());
+      unawaited(() async {
+        await ref.read(backCaptureServiceProvider).backfill();
+        if (!ref.context.mounted) return;
+        await ref.read(searchRepositoryProvider).backfill();
+      }());
     });
   }
 
@@ -263,28 +275,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 /// The wordmark, and the two ways out of this screen.
 ///
 /// Replaces the `AppBar` and its `PopupMenuButton`. The mark is the logo's
-/// folded card at 22px; the wordmark is Archivo bold, uppercase, wide-tracked,
+/// folded-card R at 32px; the wordmark is Archivo bold, uppercase, wide-tracked,
 /// and never set in the serif.
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader();
 
   @override
   Widget build(BuildContext context) {
-    final AppColors c = AppColors.of(context);
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.md, Gap.md, 0),
       child: Row(
         children: <Widget>[
-          _Mark(colors: c),
-          const SizedBox(width: Gap.sm + 2),
-          Text(
-            'RECALLOS',
-            style: AppText.micro(
-              c,
-            ).copyWith(fontSize: 12, letterSpacing: 2.6, color: c.inkMuted),
+          const Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(fit: BoxFit.scaleDown, child: RecallBrand()),
+            ),
           ),
-          const Spacer(),
           _RoundButton(
             icon: Icons.people_outline,
             tooltip: 'Contacts',
@@ -300,54 +307,6 @@ class _HomeHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The logo mark: a card with its corner turned back.
-///
-/// Drawn rather than loaded. At 22px an SVG or a PNG would cost a decode and a
-/// cache entry to produce eleven pixels of ochre.
-class _Mark extends StatelessWidget {
-  const _Mark({required this.colors});
-
-  final AppColors colors;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 22,
-    height: 18,
-    child: CustomPaint(painter: _MarkPainter(colors)),
-  );
-}
-
-class _MarkPainter extends CustomPainter {
-  const _MarkPainter(this.colors);
-
-  final AppColors colors;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const double fold = 7;
-    final Path body = Path()
-      ..moveTo(0, 3)
-      ..lineTo(size.width - fold, 3)
-      ..lineTo(size.width, 3 + fold)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    canvas.drawPath(body, Paint()..color = colors.ink);
-    canvas.drawPath(
-      Path()
-        ..moveTo(size.width - fold, 3)
-        ..lineTo(size.width, 3 + fold)
-        ..lineTo(size.width - fold, 3 + fold)
-        ..close(),
-      Paint()..color = colors.ochre,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_MarkPainter old) => old.colors.ink != colors.ink;
 }
 
 /// A 36px round icon button with a 52px tap target.
@@ -397,7 +356,7 @@ class _RoundButton extends StatelessWidget {
 ///
 /// Rule 1. This is a [Pocket] rather than a `TextField` with a border, and the
 /// caret is the one place ochre appears on this screen at rest.
-class _SearchPocket extends StatelessWidget {
+class _SearchPocket extends StatefulWidget {
   const _SearchPocket({
     required this.controller,
     required this.onChanged,
@@ -411,52 +370,109 @@ class _SearchPocket extends StatelessWidget {
   final bool hasQuery;
 
   @override
+  State<_SearchPocket> createState() => _SearchPocketState();
+}
+
+class _SearchPocketState extends State<_SearchPocket> {
+  final FocusNode _focus = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (_focused != _focus.hasFocus) {
+      setState(() => _focused = _focus.hasFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus
+      ..removeListener(_onFocusChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
+    final bool dark = isDarkTheme(context);
 
-    return Pocket(
-      height: 54,
-      padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
-      trailing: hasQuery
-          ? PressFade(
-              onTap: onClear,
-              scale: 0.9,
-              semanticLabel: 'Clear the search',
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: Icon(Icons.close, size: 18, color: c.inkMuted),
-              ),
-            )
-          : null,
-      child: Row(
-        children: <Widget>[
-          Icon(Icons.search, size: 19, color: c.inkMuted),
-          const SizedBox(width: Gap.sm + 2),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              textInputAction: TextInputAction.search,
-              cursorColor: c.ochre,
-              cursorWidth: 2,
-              style: AppText.rowTitle(c).copyWith(
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                fontVariations: AppFonts.weight(400),
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                hintText: 'cheap t-shirt print, low qty',
-                hintStyle: AppText.body(c).copyWith(fontSize: 15),
-              ),
-            ),
+    // The top shadow still says "recess"; the lower shadow gives that recess
+    // a visible wall so its rounded bottom no longer dissolves into the page,
+    // and it deepens on focus — which is the whole of the focus signal now.
+    //
+    // There was a 4px ochre rail down the left-hand edge here as well, as an
+    // "index marker". It read as a stray orange sliver beside the field: rule
+    // 2 allows a rail, but the ones that work are *attached* to the thing they
+    // mark and carry a state — the repair queue's cap rail is flush inside the
+    // row's own rounded edge and says failed-versus-partial. This one was
+    // floating over a recess it did not belong to and meant nothing. The ochre
+    // caret is the accent on this field.
+    return AnimatedContainer(
+      duration: AppMotion.quick,
+      curve: AppMotion.curve,
+      decoration: BoxDecoration(
+        borderRadius: AppRadius.pocketR,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: dark
+                ? Colors.black.withValues(alpha: 0.72)
+                : c.ink.withValues(alpha: _focused ? 0.18 : 0.12),
+            blurRadius: _focused ? 5 : 3,
+            offset: const Offset(0, 3),
           ),
         ],
+      ),
+      child: Pocket(
+        height: 58,
+        padding: const EdgeInsets.only(left: Gap.lg, right: Gap.sm),
+        trailing: widget.hasQuery
+            ? PressFade(
+                onTap: widget.onClear,
+                scale: 0.9,
+                semanticLabel: 'Clear the search',
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(Icons.close, size: 18, color: c.inkMuted),
+                ),
+              )
+            : null,
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.search, size: 19, color: c.inkMuted),
+            const SizedBox(width: Gap.sm + 2),
+            Expanded(
+              child: TextField(
+                focusNode: _focus,
+                controller: widget.controller,
+                onChanged: widget.onChanged,
+                textInputAction: TextInputAction.search,
+                cursorColor: c.ochre,
+                cursorWidth: 2,
+                style: AppText.rowTitle(c).copyWith(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  fontVariations: AppFonts.weight(400),
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  hintText: 'cheap t-shirt print, low qty',
+                  hintStyle: AppText.body(c).copyWith(fontSize: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -526,14 +542,18 @@ class _SwipeableTile extends StatelessWidget {
             subtitle: card.note ?? card.subtitle ?? 'No details read',
             imagePath: card.displayPath,
             hasNote: card.note != null && card.note!.trim().isNotEmpty,
-            heroTag: 'card-${card.id}',
+            heroTag: cardHeroTag(card.id),
             meta: card.needsAttention
                 ? MetaLabel(
                     'Needs attention',
                     color: AppColors.of(context).vermilion,
                   )
                 : MetaLabel(_age(card.capturedAt)),
-            onTap: () => context.push(Routes.card(card.id)),
+            onTap: () => openCardDetail(
+              context,
+              cardId: card.id,
+              imagePath: card.displayPath,
+            ),
           ),
         ),
       ],
@@ -644,7 +664,7 @@ class _SearchHitCard extends StatelessWidget {
           subtitle: card.note ?? card.subtitle ?? 'No details read',
           imagePath: card.displayPath,
           hasNote: card.note != null && card.note!.trim().isNotEmpty,
-          heroTag: 'card-${card.id}',
+          heroTag: cardHeroTag(card.id),
           meta: MetaLabel(
             // Straight from the signals that actually ranked this. Never
             // prose, never written after the fact.
@@ -653,7 +673,11 @@ class _SearchHitCard extends StatelessWidget {
                 : hit.reasons.join(' · '),
             color: c.ochreInk,
           ),
-          onTap: () => context.push(Routes.card(card.id)),
+          onTap: () => openCardDetail(
+            context,
+            cardId: card.id,
+            imagePath: card.displayPath,
+          ),
         ),
         const SizedBox(height: Gap.sm),
         // The bar is honest: its width is the real rank, not a decoration.

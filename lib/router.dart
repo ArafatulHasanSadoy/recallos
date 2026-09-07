@@ -1,6 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/theme/app_theme.dart';
 import 'features/capture/presentation/capture_screen.dart';
 import 'features/capture/presentation/spike_screen.dart';
 import 'features/cards/presentation/card_detail_screen.dart';
@@ -38,6 +40,18 @@ abstract final class Routes {
   static String organization(int id) => '/org/$id';
 }
 
+/// Opens a card from any surface with the same motion and a first-frame image.
+/// Clearing focus keeps a search/filter keyboard from reappearing underneath
+/// the card as it flies home.
+Future<T?> openCardDetail<T>(
+  BuildContext context, {
+  required int cardId,
+  required String? imagePath,
+}) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  return context.push<T>(Routes.card(cardId), extra: imagePath);
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   late final GoRouter router;
   // Re-runs the redirect when the stored settings arrive a frame after launch.
@@ -66,22 +80,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return state.matchedLocation == Routes.home ? Routes.onboarding : null;
     },
     routes: <RouteBase>[
-      GoRoute(
-        path: Routes.home,
-        builder: (_, _) => const HomeScreen(),
-      ),
-      GoRoute(
-        path: Routes.capture,
-        builder: (_, _) => const CaptureScreen(),
-      ),
-      GoRoute(
-        path: Routes.spike,
-        builder: (_, _) => const SpikeScreen(),
-      ),
-      GoRoute(
-        path: Routes.contacts,
-        builder: (_, _) => const ContactsScreen(),
-      ),
+      GoRoute(path: Routes.home, builder: (_, _) => const HomeScreen()),
+      GoRoute(path: Routes.capture, builder: (_, _) => const CaptureScreen()),
+      GoRoute(path: Routes.spike, builder: (_, _) => const SpikeScreen()),
+      GoRoute(path: Routes.contacts, builder: (_, _) => const ContactsScreen()),
       GoRoute(
         path: Routes.needsAttention,
         builder: (_, _) => const NeedsAttentionScreen(),
@@ -90,10 +92,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.duplicates,
         builder: (_, _) => const DuplicatesScreen(),
       ),
-      GoRoute(
-        path: Routes.settings,
-        builder: (_, _) => const SettingsScreen(),
-      ),
+      GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
       GoRoute(
         path: Routes.onboarding,
         builder: (_, _) => const OnboardingScreen(),
@@ -102,7 +101,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/person/:id',
         builder: (_, GoRouterState state) {
           final int? id = int.tryParse(state.pathParameters['id'] ?? '');
-          return id == null ? const ContactsScreen() : PersonScreen(personId: id);
+          return id == null
+              ? const ContactsScreen()
+              : PersonScreen(personId: id);
         },
       ),
       GoRoute(
@@ -116,12 +117,87 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/card/:id',
-        builder: (_, GoRouterState state) {
+        pageBuilder: (_, GoRouterState state) {
           final int? id = int.tryParse(state.pathParameters['id'] ?? '');
-          // A malformed id lands on the home screen rather than crashing.
-          return id == null
+          final Widget screen = id == null
               ? const HomeScreen()
-              : CardDetailScreen(cardId: id);
+              : CardDetailScreen(
+                  cardId: id,
+                  previewImagePath: state.extra is String
+                      ? state.extra! as String
+                      : null,
+                );
+
+          // A card opens out of its photograph. The page itself only fades,
+          // leaving the Hero as the spatial movement; a horizontal platform
+          // slide made the two motions fight and sometimes hid the expansion.
+          //
+          // Two layers, because the incoming page is opaque: fading it alone
+          // would show the wallet through it for the whole transition. The
+          // ground goes down first and the content follows, with just enough
+          // overlap that they read as one move rather than two.
+          //
+          // The timings are the transition, so they are worth stating. The
+          // wallet used to be swallowed by a flat sand wash inside the first
+          // 34% — a cut, not a transition, with a card then flying over an
+          // empty page for the remaining 280ms — and on the way back the wash
+          // held until the flight was nearly over, so the wallet appeared
+          // underneath a card that had already arrived. Now the ground
+          // dissolves across the first 45%, the content lands exactly as the
+          // hero does, and on the way home the content clears early so the
+          // wallet is uncovered *while* the card is still travelling towards
+          // its slot in it. You watch the card go back where it came from.
+          return CustomTransitionPage<void>(
+            key: state.pageKey,
+            transitionDuration: AppMotion.hero,
+            reverseTransitionDuration: AppMotion.hero,
+            child: screen,
+            transitionsBuilder:
+                (
+                  BuildContext context,
+                  Animation<double> animation,
+                  Animation<double> secondaryAnimation,
+                  Widget child,
+                ) {
+                  final Animation<double> ground = CurvedAnimation(
+                    parent: animation,
+                    curve: const Interval(0, 0.45, curve: AppMotion.curve),
+                    // Flipped, and that is not symmetry for its own sake.
+                    // `easeOutCubic` front-loads, so read backwards it *holds*:
+                    // on the device the sand was still 87% opaque a quarter of
+                    // the way through the pop, and the wallet only appeared in
+                    // the last few frames — the card landed in a slot the user
+                    // had not seen yet. Flipped, the ground clears early and
+                    // you watch the card go back into the stack it came from.
+                    reverseCurve: Interval(
+                      0,
+                      0.5,
+                      curve: AppMotion.curve.flipped,
+                    ),
+                  );
+                  final Animation<double> content = CurvedAnimation(
+                    parent: animation,
+                    curve: const Interval(0.35, 1, curve: AppMotion.curve),
+                    reverseCurve: const Interval(
+                      0.55,
+                      1,
+                      curve: AppMotion.curve,
+                    ),
+                  );
+                  final Color page = AppColors.of(context).page;
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      FadeTransition(
+                        opacity: ground,
+                        child: ColoredBox(color: page),
+                      ),
+                      FadeTransition(opacity: content, child: child),
+                    ],
+                  );
+                },
+          );
         },
       ),
     ],

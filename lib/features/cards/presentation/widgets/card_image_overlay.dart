@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/imaging/card_geometry.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/primitives.dart';
 
@@ -39,12 +40,24 @@ Rect? parseRegionRect(String? value) {
 class CardImageOverlay extends StatefulWidget {
   const CardImageOverlay({
     required this.image,
+    this.preview,
     this.highlight,
     this.maxHeight = 240,
     super.key,
   });
 
   final File image;
+
+  /// The wallet's thumbnail of [image], drawn underneath until the full
+  /// capture decodes.
+  ///
+  /// [image] is a fresh decode of a file up to 1600px on its long edge, and it
+  /// is not ready on the frame a hero flight lands. Without a stand-in the
+  /// card arrives, vanishes into an empty rectangle for a frame or two, and
+  /// comes back — which is most of what "the animation isn't smooth" was.
+  /// This is the entry the wallet tile is already drawing from, so it costs
+  /// nothing and it is there immediately.
+  final File? preview;
 
   /// Region to box, as stored in `card_fields.region_rect`. Null boxes nothing.
   final String? highlight;
@@ -79,7 +92,11 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
     if (old.image.path != widget.image.path) {
       _detach();
       _provider = FileImage(widget.image);
-      _imageSize = null;
+      // The old size is kept rather than cleared. Card detail swaps the
+      // wallet's thumbnail for the full capture a frame or two after the
+      // screen opens, and both are the same card at the same proportion —
+      // dropping back to "unknown" made the box collapse to the default shape
+      // and grow again under a hero that had just landed on it.
       _failed = false;
       _resolve();
     }
@@ -101,8 +118,12 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
       (ImageInfo info, bool _) {
         final ui.Image image = info.image;
         if (!mounted) return;
-        setState(() => _imageSize =
-            Size(image.width.toDouble(), image.height.toDouble()));
+        setState(
+          () => _imageSize = Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          ),
+        );
       },
       onError: (Object _, StackTrace? _) {
         // A missing or unreadable file is shown as a placeholder rather than
@@ -139,66 +160,89 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
         child: Icon(Icons.badge_outlined, size: 22, color: c.inkFaint),
       );
     }
-    if (size == null) {
-      // Rule 5: no spinner. The photo is about to be here, so its own shape
-      // stands in for it — the same trick the wallet uses while it loads.
-      return Container(
-        height: widget.maxHeight,
-        decoration: BoxDecoration(
-          color: c.pocket,
-          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
-        ),
-      );
-    }
 
-    final Rect? region = parseRegionRect(widget.highlight);
+    final Rect? region = size == null
+        ? null
+        : parseRegionRect(widget.highlight);
+    final File? thumb = widget.preview;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: widget.maxHeight),
-      child: DecoratedBox(
-        // The same paper as a wallet tile, so the header reads as the object
-        // the user tapped rather than as a picture of it.
-        //
-        // No border and no fill of its own. The photograph fills this box
-        // edge to edge, so a hairline around it is a line drawn on top of a
-        // card that already has its own edge — under the old Material colours
-        // that was `surfaceContainerHighest`, a near-white, and it showed as a
-        // white frame around every scan on capture review and card detail.
-        decoration: AppDecoration.card(
-          c,
-          isDark: isDarkTheme(context),
-        ).copyWith(
-          border: null,
-          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
-          child: AspectRatio(
-            // The card's own shape, not the uniform tile shape. Tiles crop to
-            // fill a wallet frame; this one is where fields get checked and
-            // corrected, so the whole card has to be visible and every region
-            // reachable. Since the image is now a cropped card rather than a
-            // photograph of one, following its shape leaves no dead space
-            // anyway.
-            aspectRatio: size.width / size.height,
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Image(image: _provider, fit: BoxFit.contain),
-                if (region != null)
-                  CustomPaint(
-                    painter: _RegionPainter(
-                      region: region,
-                      imageSize: size,
-                      // Rule 2: ochre is a marker, and boxing the printing a
-                      // value was read from is exactly what it marks.
-                      colour: c.ochre,
+    // The card's own shape once it has been measured, and the uniform wallet
+    // frame until then — so the box is the right size on the first frame
+    // instead of appearing at some default and reflowing under a hero that
+    // has already landed. A card whose crop is not [cardAspectRatio] eases
+    // to its real shape rather than jumping to it.
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(
+        begin: size == null ? cardAspectRatio : size.width / size.height,
+        end: size == null ? cardAspectRatio : size.width / size.height,
+      ),
+      duration: AppMotion.quick,
+      curve: AppMotion.curve,
+      builder: (BuildContext context, double aspect, Widget? child) =>
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: widget.maxHeight),
+            child: DecoratedBox(
+              // The same paper as a wallet tile, so the header reads as the
+              // object the user tapped rather than as a picture of it.
+              //
+              // No border and no fill of its own. The photograph fills this box
+              // edge to edge, so a hairline around it is a line drawn on top of
+              // a card that already has its own edge — under the old Material
+              // colours that was `surfaceContainerHighest`, a near-white, and it
+              // showed as a white frame around every scan on capture review and
+              // card detail.
+              decoration: AppDecoration.card(c, isDark: isDarkTheme(context))
+                  .copyWith(
+                    border: null,
+                    borderRadius: BorderRadius.circular(
+                      CardImageOverlay._radius,
                     ),
                   ),
-              ],
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(CardImageOverlay._radius),
+                child: AspectRatio(
+                  // The card's own shape, not the uniform tile shape. Tiles
+                  // crop to fill a wallet frame; this one is where fields get
+                  // checked and corrected, so the whole card has to be visible
+                  // and every region reachable. Since the image is now a
+                  // cropped card rather than a photograph of one, following its
+                  // shape leaves no dead space anyway.
+                  aspectRatio: aspect,
+                  child: child,
+                ),
+              ),
             ),
           ),
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          // Under everything, for the frames before the full decode lands.
+          // `cover` and the wallet's own cache width, because this is the
+          // wallet's own decode — see [CardImageOverlay.preview].
+          if (thumb != null)
+            Image.file(
+              thumb,
+              fit: BoxFit.cover,
+              cacheWidth:
+                  (Gap.cardFaceThumb.width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .round(),
+              filterQuality: FilterQuality.medium,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          Image(image: _provider, fit: BoxFit.contain, gaplessPlayback: true),
+          if (region != null && size != null)
+            CustomPaint(
+              painter: _RegionPainter(
+                region: region,
+                imageSize: size,
+                // Rule 2: ochre is a marker, and boxing the printing a value
+                // was read from is exactly what it marks.
+                colour: c.ochre,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -264,5 +308,7 @@ class _RegionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RegionPainter old) =>
-      old.region != region || old.imageSize != imageSize || old.colour != colour;
+      old.region != region ||
+      old.imageSize != imageSize ||
+      old.colour != colour;
 }

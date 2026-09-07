@@ -73,8 +73,8 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
           improved == 0
               ? 'No card read any better this time.'
               : improved == 1
-                  ? '1 card improved.'
-                  : '$improved cards improved.',
+              ? '1 card improved.'
+              : '$improved cards improved.',
         ),
       ),
     );
@@ -83,8 +83,9 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
-    final AsyncValue<List<CardSummary>> queue =
-        ref.watch(needsAttentionProvider);
+    final AsyncValue<List<CardSummary>> queue = ref.watch(
+      needsAttentionProvider,
+    );
     final List<CardSummary> deleted =
         ref.watch(deletedCardsProvider).value ?? const <CardSummary>[];
 
@@ -94,10 +95,7 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            ScreenHeader(
-              title: 'Needs attention',
-              onBack: () => context.pop(),
-            ),
+            ScreenHeader(title: 'Needs attention', onBack: () => context.pop()),
             Expanded(
               child: queue.when(
                 loading: () => const Padding(
@@ -114,7 +112,8 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
                     return const EmptyState(
                       label: 'All clear',
                       title: 'Every card read cleanly',
-                      body: 'Cards that go wrong show up here, with a way to '
+                      body:
+                          'Cards that go wrong show up here, with a way to '
                           'read them again.',
                     );
                   }
@@ -201,7 +200,11 @@ class _QueueRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.sm),
       child: PressFade(
-        onTap: () => context.push(Routes.card(card.id)),
+        onTap: () => openCardDetail(
+          context,
+          cardId: card.id,
+          imagePath: card.displayPath,
+        ),
         semanticLabel: card.title ?? 'Unread card',
         child: Container(
           decoration: AppDecoration.card(
@@ -226,6 +229,7 @@ class _QueueRow extends StatelessWidget {
                   padding: const EdgeInsets.all(Gap.sm + 2),
                   child: CardFace(
                     imagePath: card.displayPath,
+                    heroTag: cardHeroTag(card.id),
                     size: const Size(74, 46),
                     radius: 7,
                   ),
@@ -285,7 +289,12 @@ class _DeletedRow extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.sm),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(Gap.sm + 2, Gap.sm + 2, Gap.sm, Gap.xs),
+        padding: const EdgeInsets.fromLTRB(
+          Gap.sm + 2,
+          Gap.sm + 2,
+          Gap.sm,
+          Gap.xs,
+        ),
         decoration: BoxDecoration(
           color: c.pocket.withValues(alpha: 0.55),
           borderRadius: AppRadius.cardR,
@@ -343,9 +352,7 @@ class _DeletedRow extends ConsumerWidget {
                   onTap: () async {
                     await ref.read(cardRepositoryProvider).restore(card.id);
                     // Back in the library means back in the graph too.
-                    await ref
-                        .read(identityRepositoryProvider)
-                        .promote(card.id);
+                    await ref.read(identityRepositoryProvider).promote(card.id);
                   },
                   scale: 0.94,
                   child: Container(
@@ -360,7 +367,10 @@ class _DeletedRow extends ConsumerWidget {
                     ),
                     child: Text(
                       'Restore',
-                      style: AppText.button(c, on: c.ink).copyWith(fontSize: 14),
+                      style: AppText.button(
+                        c,
+                        on: c.ink,
+                      ).copyWith(fontSize: 14),
                     ),
                   ),
                 ),

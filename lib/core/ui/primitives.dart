@@ -405,10 +405,9 @@ class SectionHeader extends StatelessWidget {
             const SizedBox(width: Gap.sm + 2),
             Text(
               '$n',
-              style: AppText.rowSerif(c).copyWith(
-                fontSize: 19,
-                color: c.inkMuted,
-              ),
+              style: AppText.rowSerif(
+                c,
+              ).copyWith(fontSize: 19, color: c.inkMuted),
             ),
           ] else if (trail != null) ...<Widget>[
             const SizedBox(width: Gap.sm + 2),
@@ -624,8 +623,10 @@ class AppSwitch extends StatelessWidget {
                     color: c.ink,
                     borderRadius: BorderRadius.circular(14),
                   )
-                : AppDecoration.pocket(c, isDark: isDarkTheme(context))
-                    .copyWith(borderRadius: BorderRadius.circular(14)),
+                : AppDecoration.pocket(
+                    c,
+                    isDark: isDarkTheme(context),
+                  ).copyWith(borderRadius: BorderRadius.circular(14)),
             child: Container(
               width: 22,
               height: 22,
@@ -678,7 +679,10 @@ class SettingRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Text(label, style: AppText.rowTitle(c).copyWith(fontSize: 15)),
+                  Text(
+                    label,
+                    style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                  ),
                   if (note != null) ...<Widget>[
                     const SizedBox(height: 2),
                     Text(note, style: AppText.small(c)),
@@ -686,7 +690,10 @@ class SettingRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (trail != null) ...<Widget>[const SizedBox(width: Gap.sm), trail],
+            if (trail != null) ...<Widget>[
+              const SizedBox(width: Gap.sm),
+              trail,
+            ],
           ],
         ),
       ),
@@ -770,7 +777,9 @@ class SelectChip extends StatelessWidget {
       scale: 0.95,
       // The chips are 38 tall so a row of seven fits; the press target is
       // grown to the floor without moving the artwork.
-      hitPadding: const EdgeInsets.symmetric(vertical: (kMinTarget - height) / 2),
+      hitPadding: const EdgeInsets.symmetric(
+        vertical: (kMinTarget - height) / 2,
+      ),
       semanticLabel: label,
       child: Container(
         height: height,
@@ -799,8 +808,8 @@ class SelectChip extends StatelessWidget {
                   on: selected
                       ? on
                       : dim
-                          ? c.inkFaint
-                          : c.ink,
+                      ? c.inkFaint
+                      : c.ink,
                 ).copyWith(fontSize: 14),
               ),
             ),

@@ -25,7 +25,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-
 // ---------------------------------------------------------------------------
 // Colour
 // ---------------------------------------------------------------------------
@@ -207,8 +206,9 @@ abstract final class AppFonts {
   /// weight would render at the 400 default with the heavier ones faked by
   /// synthetic bolding, which on this type reads as a smudge. Setting the
   /// `wght` axis is what actually cuts the weight.
-  static List<FontVariation> weight(double w) =>
-      <FontVariation>[FontVariation('wght', w)];
+  static List<FontVariation> weight(double w) => <FontVariation>[
+    FontVariation('wght', w),
+  ];
 
   /// Instrument Serif. Display lines, card and person titles, and any standalone
   /// numeral in a section header. Italic is reserved for questions the app asks
@@ -228,67 +228,67 @@ abstract final class AppFonts {
 /// body→`bodyMedium`, small→`bodySmall`, micro→`labelSmall`.
 abstract final class AppText {
   static TextStyle display(AppColors c) => TextStyle(
-        fontFamily: AppFonts.serif,
-        fontSize: 44,
-        height: 1.06,
-        letterSpacing: -0.2,
-        color: c.ink,
-      );
+    fontFamily: AppFonts.serif,
+    fontSize: 44,
+    height: 1.06,
+    letterSpacing: -0.2,
+    color: c.ink,
+  );
 
   /// The italic variant. Only for a question addressed to the user.
   static TextStyle displayAsk(AppColors c) =>
       display(c).copyWith(fontStyle: FontStyle.italic);
 
   static TextStyle title(AppColors c) => TextStyle(
-        fontFamily: AppFonts.serif,
-        fontSize: 28,
-        height: 1.1,
-        color: c.ink,
-      );
+    fontFamily: AppFonts.serif,
+    fontSize: 28,
+    height: 1.1,
+    color: c.ink,
+  );
 
   /// Card and person titles inside a row.
   static TextStyle rowSerif(AppColors c) => TextStyle(
-        fontFamily: AppFonts.serif,
-        fontSize: 22,
-        height: 1.1,
-        color: c.ink,
-      );
+    fontFamily: AppFonts.serif,
+    fontSize: 22,
+    height: 1.1,
+    color: c.ink,
+  );
 
   static TextStyle rowTitle(AppColors c) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 17,
-        height: 1.28,
-        fontWeight: FontWeight.w600,
-        fontVariations: AppFonts.weight(600),
-        letterSpacing: -0.2,
-        color: c.ink,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 17,
+    height: 1.28,
+    fontWeight: FontWeight.w600,
+    fontVariations: AppFonts.weight(600),
+    letterSpacing: -0.2,
+    color: c.ink,
+  );
 
   static TextStyle body(AppColors c) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 14,
-        height: 1.45,
-        color: c.inkMuted,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 14,
+    height: 1.45,
+    color: c.inkMuted,
+  );
 
   static TextStyle small(AppColors c) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 12.5,
-        height: 1.4,
-        color: c.inkMuted,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 12.5,
+    height: 1.4,
+    color: c.inkMuted,
+  );
 
   /// Section headers and field labels. The wide tracking is load-bearing —
   /// at 10.5px without it this is unreadable mud.
   static TextStyle micro(AppColors c) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 10.5,
-        height: 1.2,
-        fontWeight: FontWeight.w700,
-        fontVariations: AppFonts.weight(700),
-        letterSpacing: 2.4,
-        color: c.inkMuted,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 10.5,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    fontVariations: AppFonts.weight(700),
+    letterSpacing: 2.4,
+    color: c.inkMuted,
+  );
 
   /// The metadata line on a wallet tile — "FARMGATE · 3D".
   ///
@@ -296,23 +296,23 @@ abstract final class AppText {
   /// rather than one because a header labels a region and this labels a row;
   /// at the same size the row's line competes with its own title.
   static TextStyle meta(AppColors c) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 10,
-        height: 1.2,
-        fontWeight: FontWeight.w700,
-        fontVariations: AppFonts.weight(700),
-        letterSpacing: 1.6,
-        color: c.inkFaint,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 10,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    fontVariations: AppFonts.weight(700),
+    letterSpacing: 1.6,
+    color: c.inkFaint,
+  );
 
   static TextStyle button(AppColors c, {required Color on}) => TextStyle(
-        fontFamily: AppFonts.sans,
-        fontSize: 15.5,
-        fontWeight: FontWeight.w600,
-        fontVariations: AppFonts.weight(600),
-        letterSpacing: 0.2,
-        color: on,
-      );
+    fontFamily: AppFonts.sans,
+    fontSize: 15.5,
+    fontWeight: FontWeight.w600,
+    fontVariations: AppFonts.weight(600),
+    letterSpacing: 0.2,
+    color: on,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -353,8 +353,7 @@ abstract final class AppRadius {
   static BorderRadius get chipR => BorderRadius.circular(chip);
 
   /// A pill is always exactly half its height. Never a fixed 999.
-  static BorderRadius pill(double height) =>
-      BorderRadius.circular(height / 2);
+  static BorderRadius pill(double height) => BorderRadius.circular(height / 2);
 }
 
 /// Minimum tap target. Applies to icon buttons too — a 40px icon button in a
@@ -379,7 +378,6 @@ const double kMinTarget = 52;
 /// along the bottom, so the pockets read as raised rather than sunken, which
 /// is rule 1 exactly inverted.
 abstract final class AppDecoration {
-
   /// The recessed input. This is the app's signature surface — use it for
   /// every text field, and for any value the user can edit in place.
   ///
@@ -502,30 +500,28 @@ abstract final class AppDecoration {
 
   /// The ink pill. Primary action in light mode.
   static BoxDecoration inkPill(AppColors c, double height) => BoxDecoration(
-        color: c.ink,
-        borderRadius: AppRadius.pill(height),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: c.ink.withValues(alpha: 0.65),
-            blurRadius: 26,
-            spreadRadius: -10,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      );
+    color: c.ink,
+    borderRadius: AppRadius.pill(height),
+    boxShadow: <BoxShadow>[
+      BoxShadow(
+        color: c.ink.withValues(alpha: 0.65),
+        blurRadius: 26,
+        spreadRadius: -10,
+        offset: const Offset(0, 14),
+      ),
+    ],
+  );
 
   /// The ochre pill. Primary action in dark mode. No shadow — a glow around a
   /// bright fill on near-black reads as a bug.
-  static BoxDecoration ochrePill(AppColors c, double height) => BoxDecoration(
-        color: c.ochre,
-        borderRadius: AppRadius.pill(height),
-      );
+  static BoxDecoration ochrePill(AppColors c, double height) =>
+      BoxDecoration(color: c.ochre, borderRadius: AppRadius.pill(height));
 
   /// Secondary action: hairline outline, no fill, ink label.
   static BoxDecoration outlinePill(AppColors c, double height) => BoxDecoration(
-        borderRadius: AppRadius.pill(height),
-        border: Border.all(color: c.hairline, width: 1.5),
-      );
+    borderRadius: AppRadius.pill(height),
+    border: Border.all(color: c.hairline, width: 1.5),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -559,8 +555,12 @@ abstract final class AppTheme {
       onTertiary: c.onInk,
       error: c.vermilion,
       onError: c.onInk,
-      errorContainer: isDark ? const Color(0xFF2A1D12) : const Color(0xFFF3DCD2),
-      onErrorContainer: isDark ? const Color(0xFFE4C9A8) : const Color(0xFF8E3416),
+      errorContainer: isDark
+          ? const Color(0xFF2A1D12)
+          : const Color(0xFFF3DCD2),
+      onErrorContainer: isDark
+          ? const Color(0xFFE4C9A8)
+          : const Color(0xFF8E3416),
       surface: c.page,
       onSurface: c.ink,
       surfaceContainerLowest: c.pocket,
@@ -592,7 +592,9 @@ abstract final class AppTheme {
       bodyMedium: AppText.body(c),
       bodySmall: AppText.small(c),
       labelLarge: AppText.button(c, on: c.ink),
-      labelMedium: AppText.micro(c).copyWith(fontSize: 11.5, letterSpacing: 1.8),
+      labelMedium: AppText.micro(
+        c,
+      ).copyWith(fontSize: 11.5, letterSpacing: 1.8),
       labelSmall: AppText.micro(c),
     );
 
@@ -621,8 +623,9 @@ abstract final class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: true,
         titleTextStyle: AppText.micro(c),
-        systemOverlayStyle:
-            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        systemOverlayStyle: isDark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
       ),
 
       // Fields get their look from AppDecoration.pocket, so the InputDecorator
@@ -636,8 +639,9 @@ abstract final class AppTheme {
         filled: false,
         isDense: true,
         contentPadding: EdgeInsets.zero,
-        hintStyle: AppText.body(c)
-            .copyWith(fontSize: 15, color: c.inkMuted.withValues(alpha: 0.85)),
+        hintStyle: AppText.body(
+          c,
+        ).copyWith(fontSize: 15, color: c.inkMuted.withValues(alpha: 0.85)),
       ),
 
       textSelectionTheme: TextSelectionThemeData(
@@ -646,11 +650,7 @@ abstract final class AppTheme {
         selectionHandleColor: c.ochre,
       ),
 
-      dividerTheme: DividerThemeData(
-        color: c.hairline,
-        thickness: 1,
-        space: 1,
-      ),
+      dividerTheme: DividerThemeData(color: c.hairline, thickness: 1, space: 1),
 
       // Retained only for dialogs and anything not yet converted. New UI should
       // use the InkPill / OutlinePill widgets, not FilledButton.
@@ -659,7 +659,9 @@ abstract final class AppTheme {
           backgroundColor: isDark ? c.ochre : c.ink,
           foregroundColor: isDark ? c.onOchre : c.onInk,
           minimumSize: const Size(64, kMinTarget),
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.pill(kMinTarget)),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.pill(kMinTarget),
+          ),
           textStyle: AppText.button(c, on: isDark ? c.onOchre : c.onInk),
         ),
       ),
@@ -668,7 +670,9 @@ abstract final class AppTheme {
           foregroundColor: c.ink,
           minimumSize: const Size(64, kMinTarget),
           side: BorderSide(color: c.hairline, width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.pill(kMinTarget)),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.pill(kMinTarget),
+          ),
           textStyle: AppText.button(c, on: c.ink),
         ),
       ),
@@ -715,7 +719,9 @@ abstract final class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: c.ink,
-        contentTextStyle: AppText.body(c).copyWith(color: c.onInk, fontSize: 14),
+        contentTextStyle: AppText.body(
+          c,
+        ).copyWith(color: c.onInk, fontSize: 14),
         actionTextColor: c.ochre,
         insetPadding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, 100),
         elevation: 0,

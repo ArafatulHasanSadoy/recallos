@@ -30,8 +30,9 @@ class StackMetrics {
   factory StackMetrics.of(BuildContext context) {
     // Clamped: past 1.8 the cards stop overlapping usefully and the wallet is
     // better off as a taller list than as a broken stack.
-    final double scale =
-        MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.8);
+    final double scale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1).clamp(1.0, 1.8);
     return StackMetrics(
       pitch: Gap.stackPitch * scale,
       height: Gap.stackCardHeight * scale,
@@ -300,13 +301,13 @@ class _Bar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(height / 2),
-        ),
-      );
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(height / 2),
+    ),
+  );
 }
 
 /// The one empty state, four times over.
@@ -360,17 +361,9 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: Gap.lg),
             MicroLabel(label),
             const SizedBox(height: Gap.sm + 2),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: AppText.title(c),
-            ),
+            Text(title, textAlign: TextAlign.center, style: AppText.title(c)),
             const SizedBox(height: Gap.sm + 2),
-            Text(
-              body,
-              textAlign: TextAlign.center,
-              style: AppText.body(c),
-            ),
+            Text(body, textAlign: TextAlign.center, style: AppText.body(c)),
             if (action != null) ...<Widget>[
               const SizedBox(height: Gap.lg),
               OutlinePill(label: action, onTap: onAction, height: 52),

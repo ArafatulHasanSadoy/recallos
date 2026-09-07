@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/db/database.dart';
@@ -62,13 +61,11 @@ class _EndpointRow extends StatelessWidget {
       ),
       onLongPress: mobile
           ? () => unawaited(
-                _open(
-                  context,
-                  Uri.parse(
-                    'https://wa.me/${canonical.replaceAll("+", "")}',
-                  ),
-                ),
-              )
+              _open(
+                context,
+                Uri.parse('https://wa.me/${canonical.replaceAll("+", "")}'),
+              ),
+            )
           : null,
       semanticLabel: '${contact.value}, ${actions.join(" or ")}',
       child: Container(
@@ -133,14 +130,21 @@ class CardStrip extends ConsumerWidget {
         separatorBuilder: (_, _) => const SizedBox(width: Gap.sm + 2),
         itemBuilder: (BuildContext context, int i) {
           final int id = cardIds[i];
-          final AsyncValue<CardDetail?> card = ref.watch(cardDetailProvider(id));
+          final AsyncValue<CardDetail?> card = ref.watch(
+            cardDetailProvider(id),
+          );
           return card.maybeWhen(
             data: (CardDetail? d) => d == null
                 ? const SizedBox.shrink()
                 : PressFade(
-                    onTap: () => context.push(Routes.card(id)),
+                    onTap: () => openCardDetail(
+                      context,
+                      cardId: id,
+                      imagePath: d.card.thumbPath ?? d.card.imagePath,
+                    ),
                     child: CardFace(
                       imagePath: d.card.thumbPath ?? d.card.imagePath,
+                      heroTag: cardHeroTag(id),
                       // The real card proportion, so the strip reads as paper.
                       size: const Size(148, 93),
                       radius: 10,
@@ -160,9 +164,28 @@ class CardStrip extends ConsumerWidget {
 /// of the name that identifies nobody.
 String contactInitials(String name) {
   const Set<String> skip = <String>{
-    'md', 'md.', 'mohammad', 'mohammed', 'mohd', 'mohd.', 'muhammad',
-    'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'miss',
-    'dr', 'dr.', 'prof', 'prof.', 'engr', 'engr.', 'alhaj', 'late',
+    'md',
+    'md.',
+    'mohammad',
+    'mohammed',
+    'mohd',
+    'mohd.',
+    'muhammad',
+    'mr',
+    'mr.',
+    'mrs',
+    'mrs.',
+    'ms',
+    'ms.',
+    'miss',
+    'dr',
+    'dr.',
+    'prof',
+    'prof.',
+    'engr',
+    'engr.',
+    'alhaj',
+    'late',
   };
 
   final List<String> parts = name
@@ -170,8 +193,9 @@ String contactInitials(String name) {
       .split(RegExp(r'\s+'))
       .where((String p) => p.isNotEmpty)
       .toList();
-  final List<String> real =
-      parts.where((String p) => !skip.contains(p.toLowerCase())).toList();
+  final List<String> real = parts
+      .where((String p) => !skip.contains(p.toLowerCase()))
+      .toList();
   // If stripping left nothing, the honorific was the whole name.
   final List<String> use = real.isEmpty ? parts : real;
 

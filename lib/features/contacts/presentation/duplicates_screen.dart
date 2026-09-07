@@ -1,10 +1,10 @@
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/imaging/card_geometry.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/card_face.dart';
 import '../../../core/ui/primitives.dart';
@@ -27,8 +27,9 @@ class DuplicatesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppColors c = AppColors.of(context);
-    final AsyncValue<List<DuplicatePair>> pairs =
-        ref.watch(duplicateCandidatesProvider);
+    final AsyncValue<List<DuplicatePair>> pairs = ref.watch(
+      duplicateCandidatesProvider,
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -56,7 +57,8 @@ class DuplicatesScreen extends ConsumerWidget {
                     return const EmptyState(
                       label: 'Nothing to review',
                       title: 'Nothing to review',
-                      body: 'Records that share a number or an email are '
+                      body:
+                          'Records that share a number or an email are '
                           'combined on their own. This list is only for the '
                           'ones that need your judgement.',
                     );
@@ -70,10 +72,7 @@ class DuplicatesScreen extends ConsumerWidget {
                       Gap.xl,
                     ),
                     children: <Widget>[
-                      Text(
-                        'Possible duplicates',
-                        style: AppText.title(c),
-                      ),
+                      Text('Possible duplicates', style: AppText.title(c)),
                       const SizedBox(height: Gap.sm),
                       Text(
                         'Nothing here has been combined or deleted. RecallOS '
@@ -102,24 +101,24 @@ class _PairCard extends ConsumerWidget {
   final DuplicatePair pair;
 
   String get _heading => switch (pair.kind) {
-        DuplicateKind.person => 'Two contacts',
-        DuplicateKind.organization => 'Two companies',
-        DuplicateKind.card => 'The same card, scanned twice?',
-      };
+    DuplicateKind.person => 'Two contacts',
+    DuplicateKind.organization => 'Two companies',
+    DuplicateKind.card => 'The same card, scanned twice?',
+  };
 
   /// What combining actually does, which differs by kind and is the thing the
   /// user is really deciding.
   String get _affirmative => switch (pair.kind) {
-        DuplicateKind.person => 'Same person',
-        DuplicateKind.organization => 'Same company',
-        DuplicateKind.card => 'Delete one',
-      };
+    DuplicateKind.person => 'Same person',
+    DuplicateKind.organization => 'Same company',
+    DuplicateKind.card => 'Delete one',
+  };
 
   String get _negative => switch (pair.kind) {
-        DuplicateKind.person => 'Different people',
-        DuplicateKind.organization => 'Different companies',
-        DuplicateKind.card => 'Keep both',
-      };
+    DuplicateKind.person => 'Different people',
+    DuplicateKind.organization => 'Different companies',
+    DuplicateKind.card => 'Keep both',
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -193,26 +192,26 @@ class _PairCard extends ConsumerWidget {
   Future<void> _confirm(BuildContext context, WidgetRef ref) async {
     final (String title, String body, String action) = switch (pair.kind) {
       DuplicateKind.person => (
-          'Same person?',
-          '${pair.a.title} and ${pair.b.title} will be shown as one contact, '
-              'with both businesses and every number under them.\n\n'
-              'Nothing is deleted, and you can separate them again later.',
-          'Combine',
-        ),
+        'Same person?',
+        '${pair.a.title} and ${pair.b.title} will be shown as one contact, '
+            'with both businesses and every number under them.\n\n'
+            'Nothing is deleted, and you can separate them again later.',
+        'Combine',
+      ),
       DuplicateKind.organization => (
-          'Same company?',
-          '${pair.a.title} and ${pair.b.title} will be shown as one company, '
-              'with every card and everyone you know there under it.\n\n'
-              'Nothing is deleted, and you can separate them again later.',
-          'Combine',
-        ),
+        'Same company?',
+        '${pair.a.title} and ${pair.b.title} will be shown as one company, '
+            'with every card and everyone you know there under it.\n\n'
+            'Nothing is deleted, and you can separate them again later.',
+        'Combine',
+      ),
       DuplicateKind.card => (
-          'Delete the newer scan?',
-          'The older card is kept, along with anything you have corrected or '
-              'written on it. The newer photograph is removed.\n\n'
-              'It goes to Recently deleted first, so this can be undone.',
-          'Delete',
-        ),
+        'Delete the newer scan?',
+        'The older card is kept, along with anything you have corrected or '
+            'written on it. The newer photograph is removed.\n\n'
+            'It goes to Recently deleted first, so this can be undone.',
+        'Delete',
+      ),
     };
 
     final bool? sure = await showDialog<bool>(
@@ -340,9 +339,13 @@ class _CardSides extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Expanded(child: _CardPhoto(side: pair.a, label: 'Kept')),
+        Expanded(
+          child: _CardPhoto(side: pair.a, label: 'Kept'),
+        ),
         const SizedBox(width: Gap.md),
-        Expanded(child: _CardPhoto(side: pair.b, label: 'Newer')),
+        Expanded(
+          child: _CardPhoto(side: pair.b, label: 'Newer'),
+        ),
       ],
     );
   }
@@ -360,7 +363,7 @@ class _CardPhoto extends StatelessWidget {
     final String? path = side.imagePath;
 
     return PressFade(
-      onTap: () => context.push(Routes.card(side.id)),
+      onTap: () => openCardDetail(context, cardId: side.id, imagePath: path),
       semanticLabel: label,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,8 +371,12 @@ class _CardPhoto extends StatelessWidget {
           // The real card proportion. This is the decision surface, so the
           // photographs have to be comparable at a glance.
           AspectRatio(
-            aspectRatio: 1.586,
-            child: CardFace(imagePath: path, radius: 10),
+            aspectRatio: cardAspectRatio,
+            child: CardFace(
+              imagePath: path,
+              radius: 10,
+              heroTag: cardHeroTag(side.id),
+            ),
           ),
           const SizedBox(height: Gap.sm),
           MetaLabel(label),

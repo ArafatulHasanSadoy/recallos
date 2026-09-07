@@ -85,18 +85,18 @@ design collapses into "another AI app". Add a test that asserts
 
 ### App icon
 
-`assets/brand/appicon-1024.png` is the source. Generate platform sets with
-`flutter_launcher_icons` (dev dependency only, no runtime cost):
+The geometry source is `tool/brand/generate.py`. It produces SVG masters,
+transparent marks, opaque launcher PNGs, Android adaptive/monochrome vectors,
+iOS asset catalogs, and the Flutter paths. No runtime package is needed.
 
-```yaml
-flutter_launcher_icons:
-  image_path: assets/brand/appicon-1024.png
-  android: true
-  ios: true
-  remove_alpha_ios: true
-  adaptive_icon_background: "#1F1B13"
-  adaptive_icon_foreground: assets/brand/mark-light-512.png
+```sh
+python3 tool/brand/generate.py  # Python 3 + ImageMagick (`magick`)
+dart format lib/core/ui/brand_paths.dart
 ```
+
+The 1024px export is `assets/brand/png/appicon-1024.png`. The rounded export
+is for previews only; the operating system masks the actual launcher icon.
+See `design/BRAND.md` for launch-screen behavior and verification steps.
 
 ---
 
@@ -115,6 +115,13 @@ caret, a corner fold, a 4px rail, a confidence dot, or small-caps link text
 (use `ochreInk`, which is dark enough for 4.5:1 body contrast). It never fills a
 button. In dark mode it takes over the primary button, because ink-on-ink has no
 contrast.
+
+A rail has to be *attached* to what it marks and has to carry a state. The
+repair queue's cap rail qualifies: it is flush inside the row's own rounded
+edge and it says failed-versus-partial. A short bar floating beside the search
+pocket did not — it belonged to nothing and meant nothing, and it read as a
+stray orange sliver next to the field. It has been removed. A decorative rail
+is not covered by this rule; it is the thing this rule exists to prevent.
 
 **3 · Serif italic is the app's own voice.** Instrument Serif italic is used
 only for questions addressed to the user — "What do you need?", "Why did this
@@ -169,6 +176,7 @@ consistent state rather than half-converted.
 | 16 | `SearchHitCard` | Flat, separated, with the score bar. Bar width comes from the real rank; the label is `hit.reasons.join(' · ')`. Never write prose reasons. |
 | 17 | `AttentionRow` | Tinted row, 7px vermilion dot with a soft ring, count, chevron. Replaces `_AttentionBanner`. |
 | 18 | `EmptyState` | Glyph + serif line + one sentence + one action. Four instances (see frame 14). The glyph is always a card — never a magnifier or a warning triangle. |
+| 19a | `CardHero` / `CardFrame` | The shared-element boundary every card entry point goes through, and the description of how a card is drawn at each end of the flight — corner radius, its own lift, and which file is behind it. **Never wrap a card photo in a bare `Hero`.** Flutter's default shuttle is the *destination* hero's child, so the detail screen's photograph gets drawn into a 104×64 thumbnail on the flight's first frame: the image re-fits, the corner snaps and a shadow appears before the card has moved. `CardHero` supplies its own shuttle, which interpolates all three. It also pins `createRectTween` to a straight `RectTween` — `MaterialApp` hands every unnamed hero a `MaterialRectArcTween`, which bows the card sideways and changes its proportion on the way, so deleting the arc is not enough to be rid of it. |
 | 19 | `GhostStack` | Three `CardFace`-shaped skeletons at 40% opacity. Replaces every `CircularProgressIndicator`. |
 
 ### Phase 4 — capture
@@ -251,21 +259,23 @@ checked against the file it names.
 
 ## 6. Logo
 
-The mark is a business card with a folded corner. The fold is the only ochre in
-it, and it is the shape that recurs through the UI as `CornerFold`.
+The mark is a business card with a folded corner and an R cut out of the face.
+The R gives RecallOS a recognizable initial; the ochre dog-ear connects it to
+saved context and the `CornerFold` used on cards with notes. The cutout is
+transparent, so the same geometry works on paper, ink and themed launchers.
 
 | File | Use |
 |---|---|
-| `recallos-mark.svg` | 22–32px, on paper |
+| `recallos-mark.svg` | 32px and above, on paper |
 | `recallos-mark-inverse.svg` | on ink |
 | `recallos-lockup.svg` | mark + wordmark, splash and about |
 | `recallos-appicon.svg` | icon source |
 | `png/appicon-*.png` | 1024 / 512 / 192 / 180 / 120 / 48 |
 | `png/mark-{light,dark}-*.png` | 512 / 256 / 96, transparent ground |
 
-The wordmark is Archivo Bold, uppercase, +5.8 tracking. Never set it in the
+The wordmark is Archivo Bold, uppercase. Never set it in the
 serif, and never sentence-case it in UI chrome — the app header shows
 `RECALLOS` at 12px with 2.6 tracking.
 
-Minimum mark size is 16px; below that the fold stops reading and the icon
-should be used instead.
+Use 32px for in-app chrome so the R remains legible. Launcher exports are
+generated individually at the sizes required by each platform.
