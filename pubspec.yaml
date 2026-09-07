@@ -61,6 +61,12 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.15.1
   drift_dev: ^2.34.0
+
+  # Both arrive transitively with path_provider; named here because the back
+  # capture test substitutes a fake documents directory, which needs the
+  # platform interface directly. Test-only.
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
 flutter:
   uses-material-design: true
 
@@ -69,6 +75,26 @@ flutter:
     # ~8 MB, and the reason semantic search runs on every device rather than
     # only on phones with platform AI.
     - assets/embedding/
+    # Logo mark and app icon source. See design/DESIGN.md §6.
+    - assets/brand/
+
+  # Bundled, never fetched. `google_fonts` downloads on first run, which would
+  # put a network call in an app whose release build has no INTERNET
+  # permission. See design/DESIGN.md §1.
+  #
+  # Archivo is declared once as its variable file rather than as four static
+  # instances: Google ships no static builds for it, and the weight axis is
+  # driven explicitly through `fontVariations` in AppText, so the four weights
+  # the design calls for all render from this one 640 KB file.
+  fonts:
+    - family: Archivo
+      fonts:
+        - asset: assets/fonts/Archivo.ttf
+    - family: InstrumentSerif
+      fonts:
+        - asset: assets/fonts/InstrumentSerif-Regular.ttf
+        - asset: assets/fonts/InstrumentSerif-Italic.ttf
+          style: italic
 
 
   # To add assets to your application, add an assets section, like this:

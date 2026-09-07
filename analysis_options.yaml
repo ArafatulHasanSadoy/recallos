@@ -8,6 +8,10 @@ analyzer:
     # linting it would only produce noise we are not going to act on.
     # See third_party/tesseract_ocr/PATCHES.md.
     - "third_party/**"
+    # The design handoff, kept as reference. Its `lib/` is a staging copy of
+    # files that now live for real under `lib/` — analysing both reports every
+    # issue twice and invites edits to the copy nothing builds.
+    - "handoff/**"
   errors:
     # Unawaited futures in an app that does background OCR are real bugs, not style.
     unawaited_futures: error
