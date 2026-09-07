@@ -29,6 +29,62 @@ enum ContactExportResult {
   gone,
 }
 
+
+/// One person as a vCard.
+///
+/// Pulled out of [ContactExport.savePerson] so the whole-library export builds
+/// exactly the same card as the single-contact share — two serialisers for one
+/// format is how they drift apart, and a backup that disagrees with what the
+/// share sheet produces is worse than no backup.
+VCardData vCardForPerson(PersonDetail detail) {
+  // Deduplicated across the whole person, not per role. `PersonDetail`
+  // collapses endpoints within a role, but the same number usually appears
+  // under every role a person has — both of this man's cards carry both of
+  // his numbers — and a contacts app given the same number twice stores it
+  // twice. The first role to claim an endpoint keeps the label.
+  final Map<String, VCardContact> endpoints = <String, VCardContact>{};
+  void offer(ContactPoint c, String? label) {
+    endpoints.putIfAbsent(
+      '${c.kind}|${c.normalizedValue ?? c.value.trim()}',
+      () => VCardContact(kind: c.kind, value: c.value, label: label),
+    );
+  }
+
+  for (final RoleDetail role in detail.roles) {
+    for (final ContactPoint c in role.contacts) {
+      // The company is the only label that means anything to a contacts app
+      // here, and it is what tells two numbers apart.
+      offer(c, c.label ?? role.orgName);
+    }
+  }
+  for (final ContactPoint c in detail.looseContacts) {
+    offer(c, c.label);
+  }
+
+  final RoleDetail? primary = detail.roles.isEmpty ? null : detail.roles.first;
+
+  return VCardData(
+    displayName: detail.person.displayName,
+    organization: primary?.orgName,
+    title: primary?.title,
+    note: detail.person.relationship,
+    contacts: endpoints.values.toList(),
+  );
+}
+
+/// One organisation as a vCard.
+VCardData vCardForOrganization(OrgDetail detail) => VCardData(
+  // No person on the card, so the company *is* the contact.
+  displayName: detail.organization.name,
+  organization: detail.organization.name,
+  website: detail.organization.website,
+  address: detail.branches.isEmpty ? null : detail.branches.first.address,
+  contacts: <VCardContact>[
+    for (final ContactPoint c in detail.contacts)
+      VCardContact(kind: c.kind, value: c.value, label: c.label),
+  ],
+);
+
 /// Hands a contact to the rest of the phone.
 ///
 /// Deliberately *not* `flutter_contacts`. Writing directly to the address book
@@ -75,41 +131,7 @@ class ContactExport {
         .first;
     if (detail == null) return ContactExportResult.gone;
 
-    // Deduplicated across the whole person, not per role. `PersonDetail`
-    // collapses endpoints within a role, but the same number usually appears
-    // under every role a person has — both of this man's cards carry both of
-    // his numbers — and a contacts app given the same number twice stores it
-    // twice. The first role to claim an endpoint keeps the label.
-    final Map<String, VCardContact> endpoints = <String, VCardContact>{};
-    void offer(ContactPoint c, String? label) {
-      endpoints.putIfAbsent(
-        '${c.kind}|${c.normalizedValue ?? c.value.trim()}',
-        () => VCardContact(kind: c.kind, value: c.value, label: label),
-      );
-    }
-
-    for (final RoleDetail role in detail.roles) {
-      for (final ContactPoint c in role.contacts) {
-        // The company is the only label that means anything to a contacts app
-        // here, and it is what tells two numbers apart.
-        offer(c, c.label ?? role.orgName);
-      }
-    }
-    for (final ContactPoint c in detail.looseContacts) {
-      offer(c, c.label);
-    }
-
-    final RoleDetail? primary = detail.roles.isEmpty
-        ? null
-        : detail.roles.first;
-
-    final VCardData card = VCardData(
-      displayName: detail.person.displayName,
-      organization: primary?.orgName,
-      title: primary?.title,
-      note: detail.person.relationship,
-      contacts: endpoints.values.toList(),
-    );
+    final VCardData card = vCardForPerson(detail);
     if (share) {
       await _share(card, fileName: detail.person.displayName);
       return ContactExportResult.shared;
@@ -128,17 +150,7 @@ class ContactExport {
         .first;
     if (detail == null) return ContactExportResult.gone;
 
-    final VCardData card = VCardData(
-      // No person on the card, so the company *is* the contact.
-      displayName: detail.organization.name,
-      organization: detail.organization.name,
-      website: detail.organization.website,
-      address: detail.branches.isEmpty ? null : detail.branches.first.address,
-      contacts: <VCardContact>[
-        for (final ContactPoint c in detail.contacts)
-          VCardContact(kind: c.kind, value: c.value, label: c.label),
-      ],
-    );
+    final VCardData card = vCardForOrganization(detail);
     if (share) {
       await _share(card, fileName: detail.organization.name);
       return ContactExportResult.shared;

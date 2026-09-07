@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../data/app_lock.dart';
 import '../data/app_settings.dart';
+import '../data/wallet_export.dart';
 import 'lock_gate.dart';
 
 /// Whether this phone can be asked to prove who is holding it.
@@ -134,6 +136,9 @@ class SettingsScreen extends ConsumerWidget {
                             'Nothing is uploaded, and Android is told '
                             'not to back the wallet up either.',
                       ),
+                      // Directly under the row that says nothing backs this
+                      // up, because that is the sentence it answers.
+                      const _ExportRow(),
                     ],
                   ),
                   const SizedBox(height: Gap.lg),
@@ -157,26 +162,34 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: Gap.lg),
-
                   // Phase 0 scaffolding, and the last thing still reachable
                   // only from a menu. It lives here until the spike screen
                   // itself goes.
-                  SettingGroup(
-                    label: 'Development',
-                    children: <Widget>[
-                      SettingRow(
-                        label: 'OCR spike',
-                        description: 'Scores extraction against real cards',
-                        trailing: Icon(
-                          Icons.chevron_right,
-                          size: 18,
-                          color: c.inkFaint,
+                  //
+                  // Debug builds only. The spike reads whatever is picked out
+                  // of the gallery and writes the raw OCR to a file, which is a
+                  // developer's tool and not something to hand a user. The
+                  // route is gated the same way in `router.dart`, so the group
+                  // and its destination disappear together — `kDebugMode` is a
+                  // const, so neither survives into a release build.
+                  if (kDebugMode) ...<Widget>[
+                    const SizedBox(height: Gap.lg),
+                    SettingGroup(
+                      label: 'Development',
+                      children: <Widget>[
+                        SettingRow(
+                          label: 'OCR spike',
+                          description: 'Scores extraction against real cards',
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: c.inkFaint,
+                          ),
+                          onTap: () => context.push(Routes.spike),
                         ),
-                        onTap: () => context.push(Routes.spike),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
 
                   const SizedBox(height: Gap.xl),
                   const Center(child: RecallBrand()),
@@ -411,6 +424,77 @@ class LockNowRow extends ConsumerWidget {
   }
 }
 
+
+/// Takes a copy of the whole wallet out of the phone.
+///
+/// The row above it says nothing backs the wallet up, which is true and was,
+/// until this existed, the end of the story. Android backup is off, there is
+/// no server, and the database key lives in the Android Keystore — so it dies
+/// with the app. Reinstalling, replacing the phone, or changing the signing
+/// key all cost the user everything they had scanned, and the only way out was
+/// sharing one contact at a time.
+///
+/// No spinner while it packs (rule 5). The description carries the state
+/// instead, and the row stops accepting taps — a second archive halfway
+/// through the first is not something to let happen.
+class _ExportRow extends ConsumerStatefulWidget {
+  const _ExportRow();
+
+  @override
+  ConsumerState<_ExportRow> createState() => _ExportRowState();
+}
+
+class _ExportRowState extends ConsumerState<_ExportRow> {
+  bool _busy = false;
+  WalletExportResult? _last;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return SettingRow(
+      label: 'Take a copy',
+      description: switch ((_busy, _last)) {
+        (true, _) => 'Packing everything up…',
+        (false, WalletExportResult.shared) =>
+          'Sent. Keep it somewhere you trust — the copy is not encrypted.',
+        (false, WalletExportResult.empty) => 'Nothing saved yet.',
+        (false, WalletExportResult.failed) =>
+          'That did not work. Nothing was changed or lost.',
+        (false, null) =>
+          'Every card, contact, note and photo, in one file you can '
+              'keep off the phone.',
+      },
+      trailing: Icon(
+        _last == WalletExportResult.failed
+            ? Icons.error_outline
+            : Icons.ios_share,
+        size: 18,
+        // Rule 2: ochre is a marker, so a state the user should act on wears
+        // vermilion — the same colour a field that failed to read wears.
+        color: _last == WalletExportResult.failed ? c.vermilion : c.inkFaint,
+      ),
+      onTap: _busy ? null : () => unawaited(_run()),
+    );
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      _busy = true;
+      _last = null;
+    });
+    // Read before the await, not after: the provider is auto-disposed, and a
+    // `Ref` read on the far side of an await may already be dead.
+    final WalletExport export = ref.read(walletExportProvider);
+    final WalletExportResult result = await export.exportAll();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _last = result;
+    });
+  }
+}
+
 /// What the wallet on disk is, said to the person who owns it.
 ///
 /// An earlier version of this row opened a sheet of hex — the file's first
@@ -429,6 +513,14 @@ class LockNowRow extends ConsumerWidget {
 /// SQLCipher, `PRAGMA key` is silently ignored, so the reassuring sentence
 /// would be indistinguishable from the truth — which is why the failure states
 /// below are worded as plainly as the success one, and coloured.
+///
+/// The label used to read "Your cards are encrypted", and that was wider than
+/// the truth in the other direction: the *database* is encrypted, but the card
+/// photographs are ordinary JPEGs in the documents directory — see the header
+/// of `encrypted_database.dart`. A card is a picture to most people, so the old
+/// label promised exactly the thing SQLCipher does not cover. It now says
+/// "wallet", and the description names the gap rather than leaving the reader
+/// to find it.
 class _StorageRow extends ConsumerWidget {
   const _StorageRow();
 
@@ -439,12 +531,13 @@ class _StorageRow extends ConsumerWidget {
     final StorageStatus? settled = status.value;
 
     return SettingRow(
-      label: 'Your cards are encrypted',
+      label: 'Your wallet is encrypted',
       description: switch (settled) {
         null => 'Checking…',
         (protection: StorageProtection.encrypted, reason: _) =>
-          'Scrambled on this phone with a key only this phone holds. Nobody '
-              'can read them from the file, on here or anywhere else.',
+          'Names, numbers and notes are scrambled on this phone with a key '
+              'only this phone holds. The card photographs are not — they sit '
+              'in this app\'s own storage, which no other app can open.',
         (protection: StorageProtection.plaintext, reason: final String? why) =>
           'Not encrypted on this phone. ${why ?? ''}'.trim(),
         (protection: StorageProtection.unreadable, reason: final String? why) =>

@@ -45,6 +45,11 @@ dependencies:
   collection: ^1.19.1
   google_mlkit_text_recognition: ^0.16.0
   image: ^4.9.1
+  # The wallet export writes one zip. Direct, though `image` already
+  # pulls it in: an export that depends on a transitive dep is one
+  # `flutter pub upgrade` away from not compiling. Pure Dart, no native
+  # code, and nothing to reach the network with.
+  archive: ^4.0.9
   image_picker: ^1.2.3
   path_provider: ^2.1.6
   path: ^1.9.1
