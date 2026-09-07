@@ -16,8 +16,6 @@ library;
 import '../db/enums.dart';
 import 'similarity.dart';
 
-
-
 /// One reachable endpoint read off a card.
 class ContactFact {
   const ContactFact({
@@ -80,8 +78,10 @@ class CardFacts {
 
   /// The endpoints that can actually link this card to an existing person.
   Iterable<String> get matchKeys => contacts
-      .where((ContactFact c) =>
-          c.kind == ContactKind.phone || c.kind == ContactKind.email)
+      .where(
+        (ContactFact c) =>
+            c.kind == ContactKind.phone || c.kind == ContactKind.email,
+      )
       .map((ContactFact c) => c.key)
       .whereType<String>();
 }
@@ -93,18 +93,46 @@ class CardFacts {
 /// only affects *comparison*; the stored `displayName` keeps whatever was
 /// printed.
 const Set<String> _honorifics = <String>{
-  'md', 'mohammad', 'mohammed', 'mohd', 'muhammad',
-  'mr', 'mrs', 'ms', 'miss',
-  'dr', 'prof', 'professor',
-  'engr', 'engineer', 'adv', 'advocate',
-  'alhaj', 'alhajj', 'hajji', 'late',
+  'md',
+  'mohammad',
+  'mohammed',
+  'mohd',
+  'muhammad',
+  'mr',
+  'mrs',
+  'ms',
+  'miss',
+  'dr',
+  'prof',
+  'professor',
+  'engr',
+  'engineer',
+  'adv',
+  'advocate',
+  'alhaj',
+  'alhajj',
+  'hajji',
+  'late',
 };
 
 /// Legal-form suffixes that two records of the same company disagree about.
 const Set<String> _orgSuffixes = <String>{
-  'ltd', 'limited', 'pvt', 'private', 'inc', 'incorporated',
-  'co', 'company', 'corp', 'corporation', 'llc', 'plc',
-  'enterprise', 'enterprises', 'trading', 'traders',
+  'ltd',
+  'limited',
+  'pvt',
+  'private',
+  'inc',
+  'incorporated',
+  'co',
+  'company',
+  'corp',
+  'corporation',
+  'llc',
+  'plc',
+  'enterprise',
+  'enterprises',
+  'trading',
+  'traders',
 };
 
 final RegExp _nonWord = RegExp(r'[^a-z0-9\s]');
@@ -269,8 +297,10 @@ MatchVerdict scorePerson({
     score = 1.0;
   }
 
-  final double alike =
-      nameSimilarity(normalizePersonName(cardName), normalizePersonName(candidateName));
+  final double alike = nameSimilarity(
+    normalizePersonName(cardName),
+    normalizePersonName(candidateName),
+  );
   if (alike >= proposeSimilarity) {
     // "Same name" covers an OCR variant as well as an exact match — the two
     // are indistinguishable to the person looking at the prompt, and both are
@@ -310,7 +340,8 @@ MatchVerdict scoreOrganization({
   final String? b = normalizeOrgName(candidateName);
   final double alike = nameSimilarity(a, b);
 
-  final bool sameAddress = cardAddress != null &&
+  final bool sameAddress =
+      cardAddress != null &&
       candidateAddress != null &&
       nameSimilarity(cardAddress, candidateAddress) >= proposeSimilarity;
 

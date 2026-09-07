@@ -66,8 +66,14 @@ double nameSimilarity(String? a, String? b) {
   if (a == null || b == null) return 0;
   if (a == b) return 1;
 
-  final List<String> left = a.split(' ').where((String t) => t.isNotEmpty).toList();
-  final List<String> right = b.split(' ').where((String t) => t.isNotEmpty).toList();
+  final List<String> left = a
+      .split(' ')
+      .where((String t) => t.isNotEmpty)
+      .toList();
+  final List<String> right = b
+      .split(' ')
+      .where((String t) => t.isNotEmpty)
+      .toList();
   if (left.isEmpty || right.isEmpty) return 0;
 
   final List<String> shorter = left.length <= right.length ? left : right;
