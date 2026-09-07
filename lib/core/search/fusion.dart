@@ -9,10 +9,7 @@ import 'dart:math' as math;
 
 /// One candidate from one retrieval arm.
 class ScoredCandidate {
-  const ScoredCandidate({
-    required this.subjectId,
-    required this.score,
-  });
+  const ScoredCandidate({required this.subjectId, required this.score});
 
   final int subjectId;
 
@@ -54,7 +51,8 @@ class FusedResult {
   bool get semanticOnly => lexicalRank == null && vectorRank != null;
 
   @override
-  String toString() => '#$subjectId rrf=${fusedScore.toStringAsFixed(4)} '
+  String toString() =>
+      '#$subjectId rrf=${fusedScore.toStringAsFixed(4)} '
       'lex=$lexicalRank vec=$vectorRank';
 }
 
@@ -93,7 +91,8 @@ List<FusedResult> reciprocalRankFusion({
     for (final int id in <int>{...lexicalRanks.keys, ...vectorRanks.keys})
       FusedResult(
         subjectId: id,
-        fusedScore: (lexicalRanks[id] == null ? 0 : 1 / (k + lexicalRanks[id]!)) +
+        fusedScore:
+            (lexicalRanks[id] == null ? 0 : 1 / (k + lexicalRanks[id]!)) +
             (vectorRanks[id] == null ? 0 : 1 / (k + vectorRanks[id]!)),
         lexicalRank: lexicalRanks[id],
         vectorRank: vectorRanks[id],

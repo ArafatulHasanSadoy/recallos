@@ -89,9 +89,7 @@ class StaticEmbedder {
       tokenizer: tokenizer,
       weights: Int8List.sublistView(matrixBytes, weightsOffset),
       scales: Float32List.sublistView(
-        Uint8List.fromList(
-          matrixBytes.sublist(scalesOffset, weightsOffset),
-        ),
+        Uint8List.fromList(matrixBytes.sublist(scalesOffset, weightsOffset)),
       ),
       rows: rows,
       dimensions: dims,
@@ -171,8 +169,7 @@ class StaticEmbedder {
   }
 
   /// Packs a vector for the `embeddings.vector` BLOB column.
-  static Uint8List toBlob(Float32List vector) =>
-      Uint8List.sublistView(vector);
+  static Uint8List toBlob(Float32List vector) => Uint8List.sublistView(vector);
 
   /// Unpacks a stored BLOB.
   ///

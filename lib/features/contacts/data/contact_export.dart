@@ -65,10 +65,14 @@ class ContactExport {
   /// bank office is still one human, and splitting them into two address-book
   /// entries is precisely the flattening the identity graph exists to avoid.
   /// The organisation and job title come from their current role.
-  Future<ContactExportResult> savePerson(int personId,
-      {bool share = false}) async {
-    final PersonDetail? detail =
-        await _ref.read(identityRepositoryProvider).watchPerson(personId).first;
+  Future<ContactExportResult> savePerson(
+    int personId, {
+    bool share = false,
+  }) async {
+    final PersonDetail? detail = await _ref
+        .read(identityRepositoryProvider)
+        .watchPerson(personId)
+        .first;
     if (detail == null) return ContactExportResult.gone;
 
     // Deduplicated across the whole person, not per role. `PersonDetail`
@@ -95,8 +99,9 @@ class ContactExport {
       offer(c, c.label);
     }
 
-    final RoleDetail? primary =
-        detail.roles.isEmpty ? null : detail.roles.first;
+    final RoleDetail? primary = detail.roles.isEmpty
+        ? null
+        : detail.roles.first;
 
     final VCardData card = VCardData(
       displayName: detail.person.displayName,
@@ -113,8 +118,10 @@ class ContactExport {
   }
 
   /// Shares a company as a contact file.
-  Future<ContactExportResult> saveOrganization(int orgId,
-      {bool share = false}) async {
+  Future<ContactExportResult> saveOrganization(
+    int orgId, {
+    bool share = false,
+  }) async {
     final OrgDetail? detail = await _ref
         .read(identityRepositoryProvider)
         .watchOrganization(orgId)
@@ -145,8 +152,10 @@ class ContactExport {
     required String fileName,
   }) async {
     final File file = await _write(data, fileName);
-    final OpenResult result =
-        await OpenFilex.open(file.path, type: 'text/x-vcard');
+    final OpenResult result = await OpenFilex.open(
+      file.path,
+      type: 'text/x-vcard',
+    );
 
     return result.type == ResultType.done
         ? ContactExportResult.opened

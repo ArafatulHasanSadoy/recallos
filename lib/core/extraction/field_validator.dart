@@ -57,9 +57,7 @@ FieldValidation _phone(String text) {
     return const FieldValidation(issue: 'unrecognizedFormat');
   }
   if (!match.isValid) {
-    return FieldValidation(
-      issue: match.issue?.name ?? 'unrecognizedFormat',
-    );
+    return FieldValidation(issue: match.issue?.name ?? 'unrecognizedFormat');
   }
   return FieldValidation(
     normalized: match.e164,

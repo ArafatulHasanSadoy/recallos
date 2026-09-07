@@ -129,17 +129,24 @@ class UtilityScore {
 
   /// The signals that did the most work, for explaining the match.
   List<String> topReasons({int count = 3, double threshold = 0.02}) {
-    final List<MapEntry<String, double>> sorted = contributions.entries
-        .where((MapEntry<String, double> e) => e.value >= threshold)
-        .toList()
-      ..sort((MapEntry<String, double> a, MapEntry<String, double> b) =>
-          b.value.compareTo(a.value));
+    final List<MapEntry<String, double>> sorted =
+        contributions.entries
+            .where((MapEntry<String, double> e) => e.value >= threshold)
+            .toList()
+          ..sort(
+            (MapEntry<String, double> a, MapEntry<String, double> b) =>
+                b.value.compareTo(a.value),
+          );
 
-    return sorted.take(count).map((MapEntry<String, double> e) => e.key).toList();
+    return sorted
+        .take(count)
+        .map((MapEntry<String, double> e) => e.key)
+        .toList();
   }
 
   @override
-  String toString() => 'UtilityScore(${value.toStringAsFixed(4)}, '
+  String toString() =>
+      'UtilityScore(${value.toStringAsFixed(4)}, '
       'top=${topReasons().join(", ")})';
 }
 
@@ -168,10 +175,14 @@ UtilityScore computeUtility({
     if (signals.isOutdated) 'outdated': weights.penaltyOutdated,
   };
 
-  final double positive =
-      contributions.values.fold<double>(0, (double a, double b) => a + b);
-  final double negative =
-      penalties.values.fold<double>(0, (double a, double b) => a + b);
+  final double positive = contributions.values.fold<double>(
+    0,
+    (double a, double b) => a + b,
+  );
+  final double negative = penalties.values.fold<double>(
+    0,
+    (double a, double b) => a + b,
+  );
 
   return UtilityScore(
     value: _clamp01(positive - negative),
@@ -187,7 +198,10 @@ double _clamp01(double v) => v.isNaN ? 0 : math.min(1.0, math.max(0.0, v));
 /// Two years is deliberate: a card that old is plausibly stale — people change
 /// jobs and businesses move — but it is still evidence, so the decay is gentle
 /// rather than a cliff.
-double freshnessFromAge(Duration age, {Duration halfLife = const Duration(days: 730)}) {
+double freshnessFromAge(
+  Duration age, {
+  Duration halfLife = const Duration(days: 730),
+}) {
   if (age.isNegative) return 1;
   final double halfLives = age.inSeconds / halfLife.inSeconds;
   return math.pow(0.5, halfLives).toDouble();

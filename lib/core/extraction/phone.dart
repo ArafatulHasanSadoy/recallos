@@ -98,9 +98,7 @@ abstract final class PhoneExtractor {
   /// Runs of characters that could plausibly be a number. Deliberately loose —
   /// candidates are validated afterwards, and missing a number costs more than
   /// testing a few extra strings.
-  static final RegExp _candidate = RegExp(
-    r'[+]?[\d০-৯][\d০-৯\s\-.()/]{5,}',
-  );
+  static final RegExp _candidate = RegExp(r'[+]?[\d০-৯][\d০-৯\s\-.()/]{5,}');
 
   /// Separates several numbers written into one field: "01711-223344, 01911-556677".
   static final RegExp _splitters = RegExp(r'[,;/]|\s+(?:and|&|or)\s+');

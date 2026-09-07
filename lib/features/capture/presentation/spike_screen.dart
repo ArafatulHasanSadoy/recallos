@@ -101,9 +101,9 @@ class _SpikeScreenState extends State<SpikeScreen> {
     // it copyable rather than just readable.
     await Clipboard.setData(ClipboardData(text: out.path));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Path copied to clipboard')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Path copied to clipboard')));
   }
 
   @override
@@ -240,12 +240,7 @@ class _CardComparison extends StatelessWidget {
             for (final SpikeCardResult r in card.results) ...<Widget>[
               Row(
                 children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      r.engineId,
-                      style: AppText.micro(c),
-                    ),
-                  ),
+                  Expanded(child: Text(r.engineId, style: AppText.micro(c))),
                   Text(
                     '${r.durationMs}ms · ${r.blockCount} blocks',
                     style: AppText.small(c),
@@ -260,8 +255,9 @@ class _CardComparison extends StatelessWidget {
               if (r.fields.isNotEmpty)
                 Text(
                   r.fields.entries
-                      .map((MapEntry<String, String> e) =>
-                          '${e.key}: ${e.value}')
+                      .map(
+                        (MapEntry<String, String> e) => '${e.key}: ${e.value}',
+                      )
                       .join('\n'),
                   style: AppText.small(c),
                 ),

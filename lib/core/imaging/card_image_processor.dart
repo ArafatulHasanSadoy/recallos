@@ -109,8 +109,10 @@ PreparedImage prepareCardImage(CardImageRequest request) {
     return PreparedImage(imagePath: imagePath);
   }
 
-  final String thumbPath =
-      p.join(request.targetDir, '${request.baseName}_thumb.jpg');
+  final String thumbPath = p.join(
+    request.targetDir,
+    '${request.baseName}_thumb.jpg',
+  );
   File(thumbPath).writeAsBytesSync(
     img.encodeJpg(_within(shaped, request.thumbEdge), quality: 80),
   );
@@ -250,7 +252,10 @@ img.Image _trimBackground(img.Image src) {
 /// either way there is no border worth trimming and guessing would be worse
 /// than leaving the image alone.
 _Rgb? _cornerColour(img.Image src) {
-  final int patch = math.max(4, (math.min(src.width, src.height) * 0.04).round());
+  final int patch = math.max(
+    4,
+    (math.min(src.width, src.height) * 0.04).round(),
+  );
 
   final List<_Rgb> corners = <_Rgb>[
     _median(src, 0, 0, patch),
@@ -356,6 +361,14 @@ img.Image _within(img.Image src, int maxEdge) {
   if (longest <= maxEdge) return src;
 
   return src.width >= src.height
-      ? img.copyResize(src, width: maxEdge, interpolation: img.Interpolation.average)
-      : img.copyResize(src, height: maxEdge, interpolation: img.Interpolation.average);
+      ? img.copyResize(
+          src,
+          width: maxEdge,
+          interpolation: img.Interpolation.average,
+        )
+      : img.copyResize(
+          src,
+          height: maxEdge,
+          interpolation: img.Interpolation.average,
+        );
 }

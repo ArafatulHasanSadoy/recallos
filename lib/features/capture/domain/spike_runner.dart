@@ -31,13 +31,13 @@ class SpikeCardResult {
   bool get isTotalFailure => blockCount == 0;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'engine': engineId,
-        'durationMs': durationMs,
-        'plainText': plainText,
-        'fields': fields,
-        'blockCount': blockCount,
-        'failure': failure,
-      };
+    'engine': engineId,
+    'durationMs': durationMs,
+    'plainText': plainText,
+    'fields': fields,
+    'blockCount': blockCount,
+    'failure': failure,
+  };
 }
 
 /// Every engine's output for one card.
@@ -55,9 +55,9 @@ class SpikeCard {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'image': imageName,
-        'results': results.map((SpikeCardResult r) => r.toJson()).toList(),
-      };
+    'image': imageName,
+    'results': results.map((SpikeCardResult r) => r.toJson()).toList(),
+  };
 }
 
 /// Runs every OCR strategy over the same images so they can be compared.
@@ -75,8 +75,7 @@ class SpikeCard {
 /// runs anywhere. So this exports JSON, and `tool/spike/score.dart` grades it
 /// on a laptop where iterating is fast.
 class SpikeRunner {
-  SpikeRunner({OcrEngine? latin})
-      : _latin = latin ?? MlKitOcrEngine();
+  SpikeRunner({OcrEngine? latin}) : _latin = latin ?? MlKitOcrEngine();
 
   final OcrEngine _latin;
 
@@ -119,8 +118,9 @@ class SpikeRunner {
   Future<SpikeCardResult> _runOne(OcrEngine engine, File image) async {
     try {
       final OcrResult result = await engine.recognize(image);
-      final CardExtraction extraction =
-          CardFieldExtractor.extract(result.blocks);
+      final CardExtraction extraction = CardFieldExtractor.extract(
+        result.blocks,
+      );
 
       return SpikeCardResult(
         engineId: engine.id,

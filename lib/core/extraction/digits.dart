@@ -42,15 +42,25 @@ abstract final class Digits {
   /// buys a little recall and costs a lot of precision — and a silently wrong
   /// phone number is the failure mode that loses a user for good.
   static const Map<String, String> _confusables = <String, String>{
-    'O': '0', 'o': '0', 'D': '0', 'Q': '0',
-    'I': '1', 'l': '1', '|': '1', 'i': '1',
-    'Z': '2', 'z': '2',
+    'O': '0',
+    'o': '0',
+    'D': '0',
+    'Q': '0',
+    'I': '1',
+    'l': '1',
+    '|': '1',
+    'i': '1',
+    'Z': '2',
+    'z': '2',
     'A': '4',
-    'S': '5', 's': '5',
-    'G': '6', 'b': '6',
+    'S': '5',
+    's': '5',
+    'G': '6',
+    'b': '6',
     'T': '7',
     'B': '8',
-    'g': '9', 'q': '9',
+    'g': '9',
+    'q': '9',
   };
 
   /// Repairs letters that should have been digits.
@@ -72,12 +82,13 @@ abstract final class Digits {
   /// Used to decide whether a token is number-shaped enough to be worth
   /// repairing. A token that is mostly letters is a word, not a mangled number.
   static double digitRatio(String input) {
-    final String stripped =
-        input.replaceAll(RegExp(r'[\s\-().+/]'), '');
+    final String stripped = input.replaceAll(RegExp(r'[\s\-().+/]'), '');
     if (stripped.isEmpty) return 0;
 
-    final int digits =
-        stripped.split('').where((String c) => _isAsciiDigit(c)).length;
+    final int digits = stripped
+        .split('')
+        .where((String c) => _isAsciiDigit(c))
+        .length;
     return digits / stripped.length;
   }
 

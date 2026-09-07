@@ -26,8 +26,9 @@ class OrganizationScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<OrgDetail?> detail =
-        ref.watch(organizationDetailProvider(orgId));
+    final AsyncValue<OrgDetail?> detail = ref.watch(
+      organizationDetailProvider(orgId),
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -213,8 +214,10 @@ class _Branch extends StatelessWidget {
     return PressFade(
       onTap: () => unawaited(
         launchUrl(
-          Uri.https('www.google.com', '/maps/search/',
-              <String, String>{'api': '1', 'query': address}),
+          Uri.https('www.google.com', '/maps/search/', <String, String>{
+            'api': '1',
+            'query': address,
+          }),
           mode: LaunchMode.externalApplication,
         ),
       ),
@@ -229,7 +232,10 @@ class _Branch extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Text(address, style: AppText.rowTitle(c).copyWith(fontSize: 16)),
+                  Text(
+                    address,
+                    style: AppText.rowTitle(c).copyWith(fontSize: 16),
+                  ),
                   const SizedBox(height: 2),
                   MetaLabel('Map', color: c.ochreInk),
                 ],

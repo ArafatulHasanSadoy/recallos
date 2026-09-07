@@ -22,8 +22,8 @@ class WordPieceTokenizer {
     required this._punctuation,
     required this._whitespace,
     required this._formatControls,
-  })  : _vocab = vocab,
-        _unkId = vocab[unkToken] ?? 0;
+  }) : _vocab = vocab,
+       _unkId = vocab[unkToken] ?? 0;
 
   /// Builds from the assets emitted by the export script.
   ///
@@ -54,15 +54,16 @@ class WordPieceTokenizer {
       whitespace: _intSet(cfg['whitespace']),
       formatControls: _intSet(cfg['formatControls']),
       unkToken: cfg['unkToken'] as String? ?? '[UNK]',
-      continuingSubwordPrefix: cfg['continuingSubwordPrefix'] as String? ?? '##',
+      continuingSubwordPrefix:
+          cfg['continuingSubwordPrefix'] as String? ?? '##',
       maxInputCharsPerWord: cfg['maxInputCharsPerWord'] as int? ?? 100,
     );
   }
 
   static Set<int> _intSet(Object? raw) => <int>{
-        for (final Object? v in (raw as List<dynamic>? ?? const <dynamic>[]))
-          v! as int,
-      };
+    for (final Object? v in (raw as List<dynamic>? ?? const <dynamic>[]))
+      v! as int,
+  };
 
   final Map<String, int> _vocab;
 
@@ -218,7 +219,7 @@ class WordPieceTokenizer {
         final String candidate = start == 0
             ? String.fromCharCodes(chars.sublist(start, end))
             : '$continuingSubwordPrefix'
-                '${String.fromCharCodes(chars.sublist(start, end))}';
+                  '${String.fromCharCodes(chars.sublist(start, end))}';
 
         if (_vocab.containsKey(candidate)) {
           match = candidate;

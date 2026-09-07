@@ -13,15 +13,9 @@ library;
 
 import '../db/enums.dart';
 
-
-
 /// One reachable endpoint, in the shape the serialiser needs.
 class VCardContact {
-  const VCardContact({
-    required this.kind,
-    required this.value,
-    this.label,
-  });
+  const VCardContact({required this.kind, required this.value, this.label});
 
   final ContactKind kind;
   final String value;
@@ -63,8 +57,8 @@ String buildVCard(VCardData data) {
 
   final String name = data.displayName.trim().isEmpty
       ? (data.organization?.trim().isNotEmpty ?? false
-          ? data.organization!.trim()
-          : 'Unnamed contact')
+            ? data.organization!.trim()
+            : 'Unnamed contact')
       : data.displayName.trim();
 
   out.write('FN:${_escape(name)}\r\n');
@@ -82,7 +76,9 @@ String buildVCard(VCardData data) {
     switch (c.kind) {
       case ContactKind.phone:
       case ContactKind.whatsapp:
-        out.write('TEL;TYPE=${_telType(c.label)}:${_escape(c.value.trim())}\r\n');
+        out.write(
+          'TEL;TYPE=${_telType(c.label)}:${_escape(c.value.trim())}\r\n',
+        );
       case ContactKind.email:
         out.write('EMAIL;TYPE=INTERNET:${_escape(c.value.trim())}\r\n');
       case ContactKind.website:
@@ -110,8 +106,7 @@ String buildVCard(VCardData data) {
 }
 
 /// Serialises several contacts into one importable file.
-String buildVCards(Iterable<VCardData> all) =>
-    all.map(buildVCard).join();
+String buildVCards(Iterable<VCardData> all) => all.map(buildVCard).join();
 
 bool _has(String? s) => s != null && s.trim().isNotEmpty;
 
@@ -132,8 +127,10 @@ String _telType(String? label) {
 /// carries the name as printed either way — which is what almost every
 /// contacts app actually displays.
 String _structuredName(String name) {
-  final List<String> parts =
-      name.split(RegExp(r'\s+')).where((String p) => p.isNotEmpty).toList();
+  final List<String> parts = name
+      .split(RegExp(r'\s+'))
+      .where((String p) => p.isNotEmpty)
+      .toList();
   if (parts.length < 2) return '${_escape(name)};;;;';
   final String family = parts.removeLast();
   return '${_escape(family)};${_escape(parts.join(" "))};;;';

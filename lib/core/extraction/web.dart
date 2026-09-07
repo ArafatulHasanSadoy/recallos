@@ -60,10 +60,31 @@ abstract final class WebExtractor {
   /// Used to decide whether a bare token like `medicabooks.com.bd` is a domain.
   /// Multi-part suffixes are listed first so the longest match wins.
   static const List<String> knownSuffixes = <String>[
-    'com.bd', 'net.bd', 'org.bd', 'edu.bd', 'gov.bd', 'ac.bd', 'mil.bd',
-    'co.uk', 'co.in',
-    'bd', 'com', 'net', 'org', 'info', 'biz', 'io', 'co', 'xyz', 'app',
-    'dev', 'shop', 'store', 'online', 'agency', 'in',
+    'com.bd',
+    'net.bd',
+    'org.bd',
+    'edu.bd',
+    'gov.bd',
+    'ac.bd',
+    'mil.bd',
+    'co.uk',
+    'co.in',
+    'bd',
+    'com',
+    'net',
+    'org',
+    'info',
+    'biz',
+    'io',
+    'co',
+    'xyz',
+    'app',
+    'dev',
+    'shop',
+    'store',
+    'online',
+    'agency',
+    'in',
   ];
 
   static final RegExp _email = RegExp(
@@ -135,7 +156,8 @@ abstract final class WebExtractor {
     }
 
     final String domain = normalized.substring(at + 1);
-    if (!domain.contains('.') || domain.startsWith('.') ||
+    if (!domain.contains('.') ||
+        domain.startsWith('.') ||
         domain.endsWith('.')) {
       return EmailMatch(
         raw: raw,
@@ -148,9 +170,8 @@ abstract final class WebExtractor {
 
     // A plausible public suffix is what separates a real address from OCR noise
     // that happens to contain an @.
-    final bool plausible = knownSuffixes.any(
-          (String s) => domain.endsWith('.$s'),
-        ) ||
+    final bool plausible =
+        knownSuffixes.any((String s) => domain.endsWith('.$s')) ||
         RegExp(r'\.[a-z]{2,}$').hasMatch(domain);
 
     return EmailMatch(

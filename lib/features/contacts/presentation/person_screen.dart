@@ -21,8 +21,9 @@ class PersonScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<PersonDetail?> detail =
-        ref.watch(personDetailProvider(personId));
+    final AsyncValue<PersonDetail?> detail = ref.watch(
+      personDetailProvider(personId),
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -102,10 +103,7 @@ class _Body extends StatelessWidget {
             ),
             const SizedBox(width: Gap.md),
             Expanded(
-              child: Text(
-                detail.person.displayName,
-                style: AppText.title(c),
-              ),
+              child: Text(detail.person.displayName, style: AppText.title(c)),
             ),
           ],
         ),
@@ -235,8 +233,7 @@ class _RoleBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(role.orgName, style: AppText.rowSerif(c)),
-          if (role.title != null)
-            Text(role.title!, style: AppText.small(c)),
+          if (role.title != null) Text(role.title!, style: AppText.small(c)),
           if (role.contacts.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: Gap.sm, bottom: Gap.xs),

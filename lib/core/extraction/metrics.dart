@@ -92,7 +92,8 @@ class FieldScore {
   int get support => truePositives + falseNegatives;
 
   @override
-  String toString() => '$fieldKey  P=${precision.toStringAsFixed(3)}  '
+  String toString() =>
+      '$fieldKey  P=${precision.toStringAsFixed(3)}  '
       'R=${recall.toStringAsFixed(3)}  F1=${f1.toStringAsFixed(3)}  '
       'n=$support';
 }
@@ -157,14 +158,17 @@ class FieldScorer {
   /// Unweighted averaging would let a rare field swing the headline number.
   double weightedF1() {
     final List<FieldScore> all = scores();
-    final int total =
-        all.fold<int>(0, (int sum, FieldScore s) => sum + s.support);
+    final int total = all.fold<int>(
+      0,
+      (int sum, FieldScore s) => sum + s.support,
+    );
     if (total == 0) return 0;
 
     return all.fold<double>(
-      0,
-      (double sum, FieldScore s) => sum + s.f1 * s.support,
-    ) / total;
+          0,
+          (double sum, FieldScore s) => sum + s.f1 * s.support,
+        ) /
+        total;
   }
 }
 
@@ -211,8 +215,10 @@ class EngineReport {
   double get p90DurationMs {
     if (_durationsMs.isEmpty) return 0;
     final List<int> sorted = List<int>.from(_durationsMs)..sort();
-    final int index =
-        ((sorted.length - 1) * 0.9).round().clamp(0, sorted.length - 1);
+    final int index = ((sorted.length - 1) * 0.9).round().clamp(
+      0,
+      sorted.length - 1,
+    );
     return sorted[index].toDouble();
   }
 
@@ -225,10 +231,14 @@ class EngineReport {
       ..writeln('Engine: $engine')
       ..writeln('Cards: $_cards')
       ..writeln('Mean CER: ${meanCer.toStringAsFixed(3)}')
-      ..writeln('Total-failure rate: '
-          '${(totalFailureRate * 100).toStringAsFixed(1)}%')
-      ..writeln('Latency: mean ${meanDurationMs.round()}ms, '
-          'p90 ${p90DurationMs.round()}ms')
+      ..writeln(
+        'Total-failure rate: '
+        '${(totalFailureRate * 100).toStringAsFixed(1)}%',
+      )
+      ..writeln(
+        'Latency: mean ${meanDurationMs.round()}ms, '
+        'p90 ${p90DurationMs.round()}ms',
+      )
       ..writeln('')
       ..writeln('Fields (all cards):');
     for (final FieldScore s in overall.scores()) {
@@ -237,10 +247,14 @@ class EngineReport {
     b
       ..writeln('  weighted F1: ${overall.weightedF1().toStringAsFixed(3)}')
       ..writeln('')
-      ..writeln('Latin-only cards:  weighted F1 = '
-          '${latinCards.weightedF1().toStringAsFixed(3)}')
-      ..writeln('Bengali cards:     weighted F1 = '
-          '${bengaliCards.weightedF1().toStringAsFixed(3)}');
+      ..writeln(
+        'Latin-only cards:  weighted F1 = '
+        '${latinCards.weightedF1().toStringAsFixed(3)}',
+      )
+      ..writeln(
+        'Bengali cards:     weighted F1 = '
+        '${bengaliCards.weightedF1().toStringAsFixed(3)}',
+      );
     return b.toString();
   }
 }

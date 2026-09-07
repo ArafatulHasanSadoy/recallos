@@ -78,10 +78,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 children: <Widget>[
                   Pocket(
                     height: 54,
-                    padding: const EdgeInsets.only(
-                      left: Gap.md,
-                      right: Gap.sm,
-                    ),
+                    padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
                     trailing: _filter.isEmpty
                         ? null
                         : PressFade(
@@ -94,8 +91,11 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                             child: SizedBox(
                               width: 40,
                               height: 40,
-                              child: Icon(Icons.close,
-                                  size: 18, color: c.inkMuted),
+                              child: Icon(
+                                Icons.close,
+                                size: 18,
+                                color: c.inkMuted,
+                              ),
                             ),
                           ),
                     child: Row(
@@ -106,7 +106,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           child: TextField(
                             controller: _controller,
                             onChanged: (String v) => setState(
-                                () => _filter = v.trim().toLowerCase()),
+                              () => _filter = v.trim().toLowerCase(),
+                            ),
                             cursorColor: c.ochre,
                             cursorWidth: 2,
                             style: AppText.rowTitle(c).copyWith(
@@ -121,8 +122,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                               focusedBorder: InputBorder.none,
                               contentPadding: EdgeInsets.zero,
                               hintText: 'Find a person or company',
-                              hintStyle:
-                                  AppText.body(c).copyWith(fontSize: 15),
+                              hintStyle: AppText.body(c).copyWith(fontSize: 15),
                             ),
                           ),
                         ),
@@ -149,12 +149,16 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                   final List<PersonSummary> shownPeople = _filter.isEmpty
                       ? all
                       : all
-                          .where((PersonSummary p) =>
-                              p.displayName.toLowerCase().contains(_filter) ||
-                              (p.subtitle ?? '')
-                                  .toLowerCase()
-                                  .contains(_filter))
-                          .toList();
+                            .where(
+                              (PersonSummary p) =>
+                                  p.displayName.toLowerCase().contains(
+                                    _filter,
+                                  ) ||
+                                  (p.subtitle ?? '').toLowerCase().contains(
+                                    _filter,
+                                  ),
+                            )
+                            .toList();
 
                   // A card with a shop name but no legible person on it still
                   // leaves a company worth reaching, so companies get their
@@ -164,18 +168,21 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                   final List<OrgSummary> shownOrgs = _filter.isEmpty
                       ? allOrgs
                       : allOrgs
-                          .where((OrgSummary o) =>
-                              o.name.toLowerCase().contains(_filter) ||
-                              (o.subtitle ?? '')
-                                  .toLowerCase()
-                                  .contains(_filter))
-                          .toList();
+                            .where(
+                              (OrgSummary o) =>
+                                  o.name.toLowerCase().contains(_filter) ||
+                                  (o.subtitle ?? '').toLowerCase().contains(
+                                    _filter,
+                                  ),
+                            )
+                            .toList();
 
                   if (all.isEmpty && allOrgs.isEmpty) {
                     return const EmptyState(
                       label: 'No contacts yet',
                       title: 'Nobody in here yet',
-                      body: 'People and companies appear as soon as a scanned '
+                      body:
+                          'People and companies appear as soon as a scanned '
                           'card names one.',
                     );
                   }
@@ -217,8 +224,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           shownOrgs.length == 1 ? 'company' : 'companies',
                           count: shownOrgs.length,
                         ),
-                        for (final OrgSummary o in shownOrgs)
-                          _OrgRow(org: o),
+                        for (final OrgSummary o in shownOrgs) _OrgRow(org: o),
                       ],
                     ],
                   );
@@ -239,8 +245,7 @@ class _DuplicateBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppColors c = AppColors.of(context);
-    final int pairs =
-        ref.watch(duplicateCandidatesProvider).value?.length ?? 0;
+    final int pairs = ref.watch(duplicateCandidatesProvider).value?.length ?? 0;
     if (pairs == 0) return const SizedBox.shrink();
 
     return Padding(
@@ -317,11 +322,11 @@ class _OrgRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _ContactRow(
-        leading: const OrgGlyph(),
-        title: org.name,
-        subtitle: org.subtitle,
-        onTap: () => context.push(Routes.organization(org.id)),
-      );
+    leading: const OrgGlyph(),
+    title: org.name,
+    subtitle: org.subtitle,
+    onTap: () => context.push(Routes.organization(org.id)),
+  );
 }
 
 class _ContactRow extends StatelessWidget {
@@ -378,7 +383,10 @@ class _ContactRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (trail != null) ...<Widget>[const SizedBox(width: Gap.sm), trail],
+            if (trail != null) ...<Widget>[
+              const SizedBox(width: Gap.sm),
+              trail,
+            ],
             const SizedBox(width: Gap.sm),
             Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
           ],
