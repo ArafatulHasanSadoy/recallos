@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,9 +9,10 @@ import '../../../../core/db/database.dart';
 import '../../../../core/db/enums.dart';
 import '../../../../core/extraction/phone.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/ui/card_face.dart';
+import '../../../../core/ui/primitives.dart';
 import '../../../../router.dart';
 import '../../../capture/data/card_repository.dart';
-import '../../../cards/presentation/widgets/wallet_card.dart';
 import '../../data/contact_export.dart';
 
 /// The endpoints on a person or a company, each with the one action that
@@ -37,54 +40,66 @@ class _EndpointRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final String canonical = contact.normalizedValue ?? contact.value;
     final bool isPhone = contact.kind == ContactKind.phone;
+    // A landline WhatsApp link opens to an error, which reads as the app being
+    // broken — so the caps line says what can actually be done with this
+    // endpoint, and nothing more.
+    final bool mobile = isPhone && PhoneExtractor.isMobile(canonical);
+    final List<String> actions = isPhone
+        ? <String>['Call', if (mobile) 'WhatsApp']
+        : <String>['Email'];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Gap.xs),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            isPhone ? Icons.call_outlined : Icons.mail_outlined,
-            size: 20,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: Gap.sm),
-          Expanded(
-            child: Text(
-              contact.value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge,
-            ),
-          ),
-          if (isPhone)
-            IconButton(
-              tooltip: 'Call',
-              icon: const Icon(Icons.call),
-              onPressed: () =>
-                  _open(context, Uri(scheme: 'tel', path: canonical)),
-            ),
-          // A landline WhatsApp link opens to an error, which reads as the app
-          // being broken — so it is offered only where it can work.
-          if (isPhone && PhoneExtractor.isMobile(canonical))
-            IconButton(
-              tooltip: 'WhatsApp',
-              icon: const Icon(Icons.chat_outlined),
-              onPressed: () => _open(
-                context,
-                Uri.parse('https://wa.me/${canonical.replaceAll("+", "")}'),
+    return PressFade(
+      onTap: () => unawaited(
+        _open(
+          context,
+          isPhone
+              ? Uri(scheme: 'tel', path: canonical)
+              : Uri(scheme: 'mailto', path: canonical),
+        ),
+      ),
+      onLongPress: mobile
+          ? () => unawaited(
+                _open(
+                  context,
+                  Uri.parse(
+                    'https://wa.me/${canonical.replaceAll("+", "")}',
+                  ),
+                ),
+              )
+          : null,
+      semanticLabel: '${contact.value}, ${actions.join(" or ")}',
+      child: Container(
+        constraints: const BoxConstraints(minHeight: kMinTarget),
+        padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    contact.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.rowTitle(c).copyWith(fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  MetaLabel(actions.join(' · '), color: c.ochreInk),
+                ],
               ),
             ),
-          if (!isPhone)
-            IconButton(
-              tooltip: 'Email',
-              icon: const Icon(Icons.mail),
-              onPressed: () =>
-                  _open(context, Uri(scheme: 'mailto', path: canonical)),
+            const SizedBox(width: Gap.sm),
+            Icon(
+              isPhone ? Icons.call_outlined : Icons.mail_outlined,
+              size: 19,
+              color: c.inkMuted,
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -111,24 +126,24 @@ class CardStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return SizedBox(
-      height: 150,
+      height: 96,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: cardIds.length,
-        separatorBuilder: (_, _) => const SizedBox(width: Gap.md),
+        separatorBuilder: (_, _) => const SizedBox(width: Gap.sm + 2),
         itemBuilder: (BuildContext context, int i) {
           final int id = cardIds[i];
           final AsyncValue<CardDetail?> card = ref.watch(cardDetailProvider(id));
           return card.maybeWhen(
             data: (CardDetail? d) => d == null
                 ? const SizedBox.shrink()
-                : GestureDetector(
+                : PressFade(
                     onTap: () => context.push(Routes.card(id)),
-                    child: AspectRatio(
-                      aspectRatio: WalletCard.aspectRatio,
-                      child: WalletCard(
-                        imagePath: d.card.thumbPath ?? d.card.imagePath,
-                      ),
+                    child: CardFace(
+                      imagePath: d.card.thumbPath ?? d.card.imagePath,
+                      // The real card proportion, so the strip reads as paper.
+                      size: const Size(148, 93),
+                      radius: 10,
                     ),
                   ),
             orElse: () => const SizedBox(width: 1),

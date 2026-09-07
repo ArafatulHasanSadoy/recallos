@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/db/database.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/primitives.dart';
+import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
 import '../data/contact_export.dart';
 import '../data/identity_repository.dart';
@@ -25,46 +30,66 @@ class OrganizationScreen extends ConsumerWidget {
         ref.watch(organizationDetailProvider(orgId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Company'),
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ScreenHeader(
+              title: 'Company',
+              onBack: () => context.pop(),
+              actions: <Widget>[
+                RoundIconButton(
+                  icon: Icons.person_add_alt,
+                  tooltip: 'Save to contacts',
+                  onTap: () => exportContact(
+                    context,
+                    () =>
+                        ref.read(contactExportProvider).saveOrganization(orgId),
+                  ),
+                ),
+                RoundIconButton(
+                  icon: Icons.share_outlined,
+                  tooltip: 'Share',
+                  onTap: () => exportContact(
+                    context,
+                    () => ref
+                        .read(contactExportProvider)
+                        .saveOrganization(orgId, share: true),
+                  ),
+                ),
+              ],
+            ),
+            Expanded(
+              child: detail.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: Gap.lg),
+                  child: GhostStack(count: 1),
+                ),
+                error: (Object e, _) => EmptyState(
+                  label: 'Not available',
+                  title: 'Could not open this company',
+                  body: '$e',
+                ),
+                data: (OrgDetail? d) => d == null
+                    ? const EmptyState(
+                        label: 'Gone',
+                        title: 'This company is no longer here',
+                        body: 'The cards behind it may have been deleted.',
+                      )
+                    : _Body(detail: d),
+              ),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Save to contacts',
-            icon: const Icon(Icons.person_add_alt),
-            onPressed: () => exportContact(
-              context,
-              () => ref.read(contactExportProvider).saveOrganization(orgId),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Share',
-            icon: const Icon(Icons.share_outlined),
-            onPressed: () => exportContact(
-              context,
-              () => ref
-                  .read(contactExportProvider)
-                  .saveOrganization(orgId, share: true),
-            ),
-          ),
-        ],
-      ),
-      body: detail.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (Object e, _) =>
-            Center(child: Text('Could not open this company.\n$e')),
-        data: (OrgDetail? d) => d == null
-            ? const Center(child: Text('This company is no longer here.'))
-            : _Body(detail: d),
       ),
     );
   }
 }
 
+/// The mirror of Person. Every section is conditional on its own list, and
+/// there is deliberately no stat strip and no note aggregation — the graph
+/// does not model org→notes, so anything of that shape would be invented.
 class _Body extends StatelessWidget {
   const _Body({required this.detail});
 
@@ -72,72 +97,149 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final Organization org = detail.organization;
 
     return ListView(
-      padding: const EdgeInsets.all(Gap.md),
+      padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.xl),
       children: <Widget>[
-        Text(
-          org.name,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+        Row(
+          children: <Widget>[
+            const OrgGlyph(radius: 22),
+            const SizedBox(width: Gap.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(org.name, style: AppText.title(c)),
+                  if (org.website != null)
+                    Text(
+                      org.website!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.small(c).copyWith(color: c.ochreInk),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
-        if (org.website != null) ...<Widget>[
-          const SizedBox(height: Gap.xs),
-          Text(
-            org.website!,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.primary),
-          ),
-        ],
         const SizedBox(height: Gap.lg),
 
+        // A list, not a line: a company can have branches.
         if (detail.branches.isNotEmpty) ...<Widget>[
-          Text('Address', style: theme.textTheme.titleMedium),
+          SectionHeader(
+            'Address',
+            count: detail.branches.length > 1 ? detail.branches.length : null,
+          ),
           const SizedBox(height: Gap.sm),
           for (final OrgBranch b in detail.branches)
-            if (b.address != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: Gap.xs),
-                child: Text(b.address!, style: theme.textTheme.bodyLarge),
-              ),
+            if (b.address != null) _Branch(address: b.address!),
           const SizedBox(height: Gap.lg),
         ],
 
         if (detail.contacts.isNotEmpty) ...<Widget>[
-          Text('Contact', style: theme.textTheme.titleMedium),
+          const SectionHeader('Contact'),
           const SizedBox(height: Gap.sm),
           Endpoints(contacts: detail.contacts),
           const SizedBox(height: Gap.lg),
         ],
 
         if (detail.people.isNotEmpty) ...<Widget>[
-          Text(
+          SectionHeader(
             detail.people.length == 1 ? 'Person here' : 'People here',
-            style: theme.textTheme.titleMedium,
+            count: detail.people.length > 1 ? detail.people.length : null,
           ),
           const SizedBox(height: Gap.sm),
           for (final PersonSummary p in detail.people)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.person_outline),
-              title: Text(p.displayName),
-              subtitle: p.subtitle == null ? null : Text(p.subtitle!),
+            PressFade(
               onTap: () => context.push(Routes.person(p.id)),
+              semanticLabel: p.displayName,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: kMinTarget),
+                padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+                child: Row(
+                  children: <Widget>[
+                    InitialsAvatar(
+                      initials: contactInitials(p.displayName),
+                      seed: p.id,
+                    ),
+                    const SizedBox(width: Gap.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            p.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.rowTitle(c),
+                          ),
+                          if (p.subtitle != null)
+                            Text(p.subtitle!, style: AppText.small(c)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+                  ],
+                ),
+              ),
             ),
           const SizedBox(height: Gap.lg),
         ],
 
         if (detail.cardIds.isNotEmpty) ...<Widget>[
-          Text(
+          SectionHeader(
             detail.cardIds.length == 1 ? 'From this card' : 'From these cards',
-            style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: Gap.sm),
           CardStrip(cardIds: detail.cardIds),
         ],
       ],
+    );
+  }
+}
+
+/// One branch address, with the map action that reaches it.
+class _Branch extends StatelessWidget {
+  const _Branch({required this.address});
+
+  final String address;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return PressFade(
+      onTap: () => unawaited(
+        launchUrl(
+          Uri.https('www.google.com', '/maps/search/',
+              <String, String>{'api': '1', 'query': address}),
+          mode: LaunchMode.externalApplication,
+        ),
+      ),
+      semanticLabel: '$address, open in maps',
+      child: Container(
+        constraints: const BoxConstraints(minHeight: kMinTarget),
+        padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(address, style: AppText.rowTitle(c).copyWith(fontSize: 16)),
+                  const SizedBox(height: 2),
+                  MetaLabel('Map', color: c.ochreInk),
+                ],
+              ),
+            ),
+            const SizedBox(width: Gap.sm),
+            Icon(Icons.map_outlined, size: 19, color: c.inkMuted),
+          ],
+        ),
+      ),
     );
   }
 }

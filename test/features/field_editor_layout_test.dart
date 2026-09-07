@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
 import 'package:recallos/features/cards/presentation/widgets/editable_field_list.dart';
 
@@ -84,6 +85,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
+          theme: AppTheme.light(),
           home: Scaffold(
             body: ListView(
               children: <Widget>[
@@ -117,7 +119,7 @@ void main() {
 
     // Everything the editor offers has to actually be on screen and separate.
     expect(find.text('What is this?'), findsOneWidget);
-    expect(find.text('Or take it from the card'), findsOneWidget);
+    expect(find.text('OR TAKE IT FROM THE CARD'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

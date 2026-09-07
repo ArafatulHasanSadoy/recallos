@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/db/enums.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/card_face.dart';
+import '../../../core/ui/primitives.dart';
+import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
 import '../../contacts/data/identity_repository.dart';
@@ -77,82 +82,111 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final AsyncValue<List<CardSummary>> queue =
         ref.watch(needsAttentionProvider);
     final List<CardSummary> deleted =
         ref.watch(deletedCardsProvider).value ?? const <CardSummary>[];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Needs attention'),
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
       body: SafeArea(
-        child: queue.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (Object e, _) => Center(child: Text('Could not open the queue.\n$e')),
-          data: (List<CardSummary> cards) {
-            if (cards.isEmpty && deleted.isEmpty) return const _AllClear();
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ScreenHeader(
+              title: 'Needs attention',
+              onBack: () => context.pop(),
+            ),
+            Expanded(
+              child: queue.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: Gap.lg),
+                  child: GhostStack(count: 2),
+                ),
+                error: (Object e, _) => EmptyState(
+                  label: 'Not available',
+                  title: 'Could not open the queue',
+                  body: '$e',
+                ),
+                data: (List<CardSummary> cards) {
+                  if (cards.isEmpty && deleted.isEmpty) {
+                    return const EmptyState(
+                      label: 'All clear',
+                      title: 'Every card read cleanly',
+                      body: 'Cards that go wrong show up here, with a way to '
+                          'read them again.',
+                    );
+                  }
 
-            return ListView(
-              padding: const EdgeInsets.all(Gap.md),
-              children: <Widget>[
-                if (cards.isNotEmpty) ...<Widget>[
-                  Text(
-                    cards.length == 1
-                        ? '1 card did not read cleanly'
-                        : '${cards.length} cards did not read cleanly',
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: Gap.xs),
-                  Text(
-                    'Open one to fix it by hand, or try reading them all again '
-                    '— the same card often reads better on a second run.',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: Gap.md),
-                  FilledButton.icon(
-                    onPressed: _retrying ? null : () => _retryAll(cards),
-                    icon: _retrying
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: Text(_progress ?? 'Try reading them again'),
-                  ),
-                  const SizedBox(height: Gap.md),
-                  for (final CardSummary c in cards) _QueueRow(card: c),
-                ],
-                if (deleted.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: Gap.lg),
-                  Text('Recently deleted', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: Gap.xs),
-                  Text(
-                    'Deleted, but still on the phone. These are cards whose '
-                    'undo window was interrupted.',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: Gap.sm),
-                  for (final CardSummary c in deleted) _DeletedRow(card: c),
-                ],
-              ],
-            );
-          },
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      Gap.lg,
+                      0,
+                      Gap.lg,
+                      Gap.xl,
+                    ),
+                    children: <Widget>[
+                      if (cards.isNotEmpty) ...<Widget>[
+                        Text(
+                          cards.length == 1
+                              ? 'One card did not\nread cleanly'
+                              : '${cards.length} cards did not\nread cleanly',
+                          style: AppText.title(c),
+                        ),
+                        const SizedBox(height: Gap.sm),
+                        Text(
+                          'Open one to fix it by hand, or try reading them all '
+                          'again — the same card often reads better on a '
+                          'second run.',
+                          style: AppText.body(c),
+                        ),
+                        const SizedBox(height: Gap.md),
+                        // Sequential, and the label carries its own progress.
+                        OutlinePill(
+                          label: _progress ?? 'Try reading them again',
+                          icon: Icons.refresh,
+                          height: 54,
+                          onTap: _retrying ? null : () => _retryAll(cards),
+                        ),
+                        const SizedBox(height: Gap.lg),
+                        for (final CardSummary card in cards)
+                          _QueueRow(card: card),
+                      ],
+                      if (deleted.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Gap.lg),
+                        SectionHeader(
+                          'Recently deleted',
+                          count: deleted.length,
+                        ),
+                        const SizedBox(height: Gap.xs),
+                        Text(
+                          'Deleted, but still on the phone. Nothing here is '
+                          'gone until you say so.',
+                          style: AppText.body(c),
+                        ),
+                        const SizedBox(height: Gap.md),
+                        for (final CardSummary card in deleted)
+                          _DeletedRow(card: card),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
+/// One card that did not read.
+///
+/// Exactly two states off `card.status`, because they need different things
+/// from the user: nothing read at all is vermilion, a partial read is ochre.
+/// No per-field guess and no dismiss — the row pushes to card detail, where
+/// the field list is the repair tool.
 class _QueueRow extends StatelessWidget {
   const _QueueRow({required this.card});
 
@@ -160,32 +194,73 @@ class _QueueRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final bool nothing = card.status == ExtractionStatus.failed;
+    final Color rail = nothing ? c.vermilion : c.ochre;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: Gap.sm),
-      child: ListTile(
-        leading: Icon(
-          nothing ? Icons.error_outline : Icons.help_outline,
-          color: nothing ? theme.colorScheme.error : theme.colorScheme.tertiary,
-        ),
-        title: Text(
-          card.title ?? 'Unread card',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          // Says which of the two problems this is, because they need
-          // different things from the user.
-          nothing
-              ? 'Nothing was read from this card'
-              : 'Only part of this card was read',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.chevron_right),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Gap.sm),
+      child: PressFade(
         onTap: () => context.push(Routes.card(card.id)),
+        semanticLabel: card.title ?? 'Unread card',
+        child: Container(
+          decoration: AppDecoration.card(
+            c,
+            isDark: isDarkTheme(context),
+            lifted: false,
+          ),
+          child: IntrinsicHeight(
+            child: Row(
+              children: <Widget>[
+                // The cap rail: the state, read before any of the words.
+                Container(
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: rail,
+                    borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(AppRadius.card),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(Gap.sm + 2),
+                  child: CardFace(
+                    imagePath: card.displayPath,
+                    size: const Size(74, 46),
+                    radius: 7,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        card.title ?? 'Unread card',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.rowTitle(c),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        nothing
+                            ? 'Nothing was read from this card'
+                            : 'Only part of this card was read',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.small(c).copyWith(color: rail),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: Gap.sm + 2),
+                  child: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -198,22 +273,37 @@ class _DeletedRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
 
     // Actions under the text rather than beside it. Two of them in a trailing
     // slot leave the title about a third of the row, and the title is how you
     // recognise the card you are trying to get back.
-    return Card(
-      margin: const EdgeInsets.only(bottom: Gap.sm),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.sm, Gap.xs),
+    //
+    // The row is desaturated rather than tinted: it sits on the pocket colour
+    // instead of paper, which is what says "not in the wallet" without a grey
+    // filter over a photograph.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Gap.sm),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(Gap.sm + 2, Gap.sm + 2, Gap.sm, Gap.xs),
+        decoration: BoxDecoration(
+          color: c.pocket.withValues(alpha: 0.55),
+          borderRadius: AppRadius.cardR,
+          border: Border.all(color: c.hairline),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(Icons.delete_outline,
-                    color: theme.colorScheme.onSurfaceVariant),
+                Opacity(
+                  opacity: 0.65,
+                  child: CardFace(
+                    imagePath: card.displayPath,
+                    size: const Size(74, 46),
+                    radius: 7,
+                  ),
+                ),
                 const SizedBox(width: Gap.md),
                 Expanded(
                   child: Column(
@@ -223,15 +313,14 @@ class _DeletedRow extends ConsumerWidget {
                         card.title ?? 'Unread card',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium,
+                        style: AppText.rowTitle(c),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         card.note ?? card.subtitle ?? 'No details read',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                        style: AppText.small(c),
                       ),
                     ],
                   ),
@@ -241,23 +330,39 @@ class _DeletedRow extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
-                TextButton(
-                  onPressed: () => _confirmPurge(context, ref),
-                  child: Text(
-                    'Delete for good',
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
+                // Destructive copy is vermilion text, never a filled red
+                // button — and this is the one delete with no undo, so it
+                // keeps its confirm.
+                TextAction(
+                  label: 'Delete for good',
+                  tint: c.vermilion,
+                  onTap: () => unawaited(_confirmPurge(context, ref)),
                 ),
                 const SizedBox(width: Gap.xs),
-                FilledButton.tonal(
-                  onPressed: () async {
+                PressFade(
+                  onTap: () async {
                     await ref.read(cardRepositoryProvider).restore(card.id);
                     // Back in the library means back in the graph too.
                     await ref
                         .read(identityRepositoryProvider)
                         .promote(card.id);
                   },
-                  child: const Text('Restore'),
+                  scale: 0.94,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Gap.md,
+                      vertical: Gap.sm + 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.card,
+                      borderRadius: AppRadius.chipR,
+                      border: Border.all(color: c.hairline),
+                    ),
+                    child: Text(
+                      'Restore',
+                      style: AppText.button(c, on: c.ink).copyWith(fontSize: 14),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -292,35 +397,5 @@ class _DeletedRow extends ConsumerWidget {
 
     await ref.read(identityRepositoryProvider).detach(card.id);
     await ref.read(cardRepositoryProvider).purge(card.id);
-  }
-}
-
-class _AllClear extends StatelessWidget {
-  const _AllClear();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(Gap.lg),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(Icons.check_circle_outline,
-                size: 56, color: theme.colorScheme.primary),
-            const SizedBox(height: Gap.md),
-            Text('Nothing needs attention', style: theme.textTheme.titleMedium),
-            const SizedBox(height: Gap.xs),
-            Text(
-              'Every saved card read cleanly.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

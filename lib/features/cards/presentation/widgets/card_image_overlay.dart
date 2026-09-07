@@ -4,6 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/ui/primitives.dart';
+
 /// Parses a stored `"left,top,right,bottom"` region into a [Rect].
 ///
 /// Coordinates are in the pixel space of the image OCR was run against, which
@@ -122,21 +125,29 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final Size? size = _imageSize;
 
     if (_failed) {
       return Container(
         height: widget.maxHeight,
         alignment: Alignment.center,
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: const Icon(Icons.image_not_supported_outlined),
+        decoration: BoxDecoration(
+          color: c.pocket,
+          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
+        ),
+        child: Icon(Icons.badge_outlined, size: 22, color: c.inkFaint),
       );
     }
     if (size == null) {
-      return SizedBox(
+      // Rule 5: no spinner. The photo is about to be here, so its own shape
+      // stands in for it — the same trick the wallet uses while it loads.
+      return Container(
         height: widget.maxHeight,
-        child: const Center(child: CircularProgressIndicator()),
+        decoration: BoxDecoration(
+          color: c.pocket,
+          borderRadius: BorderRadius.circular(CardImageOverlay._radius),
+        ),
       );
     }
 
@@ -145,19 +156,20 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: widget.maxHeight),
       child: DecoratedBox(
-        // The same radius, hairline and shadow as a list tile's WalletCard, so
-        // the header reads as the same object the user tapped.
-        decoration: BoxDecoration(
+        // The same paper as a wallet tile, so the header reads as the object
+        // the user tapped rather than as a picture of it.
+        //
+        // No border and no fill of its own. The photograph fills this box
+        // edge to edge, so a hairline around it is a line drawn on top of a
+        // card that already has its own edge — under the old Material colours
+        // that was `surfaceContainerHighest`, a near-white, and it showed as a
+        // white frame around every scan on capture review and card detail.
+        decoration: AppDecoration.card(
+          c,
+          isDark: isDarkTheme(context),
+        ).copyWith(
+          border: null,
           borderRadius: BorderRadius.circular(CardImageOverlay._radius),
-          color: theme.colorScheme.surfaceContainerHighest,
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(CardImageOverlay._radius),
@@ -178,7 +190,9 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
                     painter: _RegionPainter(
                       region: region,
                       imageSize: size,
-                      colour: theme.colorScheme.primary,
+                      // Rule 2: ochre is a marker, and boxing the printing a
+                      // value was read from is exactly what it marks.
+                      colour: c.ochre,
                     ),
                   ),
               ],

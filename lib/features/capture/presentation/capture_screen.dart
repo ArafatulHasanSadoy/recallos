@@ -12,7 +12,8 @@ import '../../../core/imaging/card_image_processor.dart';
 import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../cards/presentation/widgets/card_image_overlay.dart';
+import '../../../core/ui/primitives.dart';
+import '../../cards/presentation/widgets/card_sides_view.dart';
 import '../../cards/presentation/widgets/editable_field_list.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
@@ -195,14 +196,26 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
         thumbPath: prepared.thumbPath,
       );
 
-      // The plugin's cache has served its purpose now that the pixels are ours.
-      unawaited(CunningDocumentScanner.cleanCache());
+      // The plugin's cache has served its purpose now that the pixels are
+      // ours. Guarded, not fired off bare: unawaited, a throw here is an
+      // unhandled async error that no catch can reach, reported long after the
+      // capture it belongs to succeeded.
+      unawaited(_cleanScannerCache());
       return File(prepared.imagePath);
     } on Object {
       // A card must never be lost to an image step. Fall back to the full-size
       // copy already saved — same pixels, so regions still line up — and carry
       // on to OCR.
       return pending.image;
+    }
+  }
+
+  /// Drops the scanner's copy. Failing to tidy up is not a failed capture.
+  Future<void> _cleanScannerCache() async {
+    try {
+      await CunningDocumentScanner.cleanCache();
+    } on Object {
+      // The leftover is the plugin's own cache file; the OS reclaims it.
     }
   }
 
@@ -222,6 +235,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     final String? note = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
       builder: (BuildContext context) => _NotePrompt(emphasised: nothingFound),
     );
     // Dismissed the sheet without deciding — keep them on the review screen.
@@ -249,108 +264,343 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final int? cardId = _cardId;
     final File? image = _image;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? _) {
-        if (!didPop) unawaited(_discardAndLeave());
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Scan'),
-          // A back arrow rather than a close cross, so every screen in the app
-          // has the same way out. Leaving here still discards the scan — the
-          // card is only committed by Save.
-          leading: IconButton(
-            tooltip: 'Back',
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _saving ? null : _discardAndLeave,
-          ),
-        ),
-        body: image == null
-            ? const Center(child: CircularProgressIndicator())
-            : SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    // Pinned rather than scrolled away, because the whole point
-                    // of the highlight is being able to check a value against
-                    // the printing while editing it.
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Gap.md,
-                        vertical: Gap.sm,
+    // Frame 03/04: capture is always dark, whatever the app theme is set to.
+    // A bright chrome around a camera preview ruins the exposure read, and the
+    // review screen inherits it so the two halves of one task do not flip
+    // brightness between them.
+    return Theme(
+      data: AppTheme.capture(),
+      child: Builder(
+        builder: (BuildContext context) {
+          final AppColors c = AppColors.of(context);
+
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (bool didPop, Object? _) {
+              if (!didPop) unawaited(_discardAndLeave());
+            },
+            child: Scaffold(
+              backgroundColor: c.page,
+              body: SafeArea(
+                child: image == null
+                    ? _Viewfinder(onBack: _saving ? null : _discardAndLeave)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          ScreenHeader(
+                            title: 'Step 2 of 2',
+                            onBack: _saving ? null : _discardAndLeave,
+                            actions: <Widget>[
+                              TextAction(
+                                label: 'Retake',
+                                tint: c.inkMuted,
+                                enabled: !(_loading || _saving),
+                                onTap: _capture,
+                              ),
+                            ],
+                          ),
+                          // Pinned rather than scrolled away: tapping a field
+                          // boxes its region on the printing, and that check is
+                          // the reason this screen exists.
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              Gap.lg,
+                              0,
+                              Gap.lg,
+                              Gap.sm,
+                            ),
+                            child: Consumer(
+                              builder:
+                                  (BuildContext context, WidgetRef ref, _) =>
+                                      CardSidesView(
+                                cardId: cardId,
+                                front: image,
+                                backPath: cardId == null
+                                    ? null
+                                    : ref
+                                        .watch(cardDetailProvider(cardId))
+                                        .value
+                                        ?.card
+                                        .backImagePath,
+                                highlight: _highlight,
+                              ),
+                            ),
+                          ),
+                          if (_loading)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: Gap.lg,
+                              ),
+                              child: _ReadingRail(colors: c),
+                            ),
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                Gap.lg,
+                                Gap.sm,
+                                Gap.lg,
+                                0,
+                              ),
+                              child: Text(
+                                _error!,
+                                style: AppText.small(c)
+                                    .copyWith(color: c.vermilion),
+                              ),
+                            ),
+                          Expanded(
+                            child: cardId == null
+                                ? const SizedBox.shrink()
+                                : _ReviewBody(
+                                    cardId: cardId,
+                                    onRegionChanged: (String? rect) =>
+                                        setState(() => _highlight = rect),
+                                  ),
+                          ),
+                          SafeArea(
+                            top: false,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                Gap.lg,
+                                Gap.sm,
+                                Gap.lg,
+                                Gap.md,
+                              ),
+                              // Equal halves, and the right-hand label says
+                              // "Save card" — the field editor has a Save of
+                              // its own and one bare "Save" is what made people
+                              // end the scan while correcting a value.
+                              child: Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: OutlinePill(
+                                      label: 'Retake',
+                                      icon: Icons.refresh,
+                                      height: 58,
+                                      onTap: (_loading || _saving)
+                                          ? null
+                                          : _capture,
+                                    ),
+                                  ),
+                                  const SizedBox(width: Gap.sm + 2),
+                                  Expanded(
+                                    // Enabled even when nothing was extracted.
+                                    // A saved photo plus a note beats the paper
+                                    // card the user was about to lose.
+                                    child: InkPill(
+                                      label: _saving ? 'Saving…' : 'Save card',
+                                      icon: Icons.check,
+                                      height: 58,
+                                      onTap: (_loading ||
+                                              _saving ||
+                                              cardId == null)
+                                          ? null
+                                          : _save,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      child: CardImageOverlay(
-                        image: image,
-                        highlight: _highlight,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Frame 03. What is on screen while the OS scanner is coming up.
+///
+/// The brackets and the sweep are the app's own, not the scanner's — the
+/// plugin takes over the whole window a moment later, and a blank frame in
+/// between reads as the camera having failed.
+class _Viewfinder extends StatefulWidget {
+  const _Viewfinder({required this.onBack});
+
+  final VoidCallback? onBack;
+
+  @override
+  State<_Viewfinder> createState() => _ViewfinderState();
+}
+
+class _ViewfinderState extends State<_Viewfinder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _sweep = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _sweep.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return Column(
+      children: <Widget>[
+        ScreenHeader(title: 'Front of card', onBack: widget.onBack),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+              child: AspectRatio(
+                aspectRatio: 1.586,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          borderRadius: AppRadius.cardR,
+                        ),
                       ),
                     ),
-                    if (_loading) const LinearProgressIndicator(),
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Gap.md,
-                          vertical: Gap.sm,
-                        ),
-                        child: Text(
-                          _error!,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: theme.colorScheme.error),
+                    for (final Alignment corner in <Alignment>[
+                      Alignment.topLeft,
+                      Alignment.topRight,
+                      Alignment.bottomLeft,
+                      Alignment.bottomRight,
+                    ])
+                      Align(
+                        alignment: corner,
+                        child: _Bracket(corner: corner, colors: c),
+                      ),
+                    // Stops the moment there is something to review, because a
+                    // line still sweeping over a finished scan reads as "still
+                    // working".
+                    Positioned.fill(
+                      child: AnimatedBuilder(
+                        animation: _sweep,
+                        builder: (BuildContext context, _) => Align(
+                          alignment: Alignment(0, _sweep.value * 2 - 1),
+                          child: Container(
+                            height: 2,
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: Gap.lg,
+                            ),
+                            decoration: BoxDecoration(
+                              color: c.ochre,
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: c.ochre.withValues(alpha: 0.55),
+                                  blurRadius: 14,
+                                  spreadRadius: 3,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    Expanded(
-                      child: cardId == null
-                          ? const SizedBox.shrink()
-                          : _ReviewBody(
-                              cardId: cardId,
-                              onRegionChanged: (String? rect) =>
-                                  setState(() => _highlight = rect),
-                            ),
                     ),
                   ],
                 ),
               ),
-        bottomNavigationBar: image == null
-            ? null
-            : SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(Gap.md),
-                  // Equal halves. Both carry their symbol — a refresh arrow for
-                  // retake, a tick for save — so the action reads at a glance
-                  // before the label does.
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: (_loading || _saving) ? null : _capture,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Retake'),
-                        ),
-                      ),
-                      const SizedBox(width: Gap.sm),
-                      Expanded(
-                        // Enabled even when nothing was extracted. A saved photo
-                        // plus a note beats the paper card the user was about to
-                        // lose, so a bad scan must never be a dead end.
-                        child: FilledButton.icon(
-                          onPressed: (_loading || _saving || cardId == null)
-                              ? null
-                              : _save,
-                          icon: const Icon(Icons.check),
-                          label: Text(_saving ? 'Saving…' : 'Save'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: Gap.xl),
+          child: Text('Hold steady — finding the edges',
+              style: AppText.small(c)),
+        ),
+      ],
+    );
+  }
+}
+
+/// One corner bracket: two borders on a box, no CustomPaint needed.
+class _Bracket extends StatelessWidget {
+  const _Bracket({required this.corner, required this.colors});
+
+  final Alignment corner;
+  final AppColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool top = corner.y < 0;
+    final bool left = corner.x < 0;
+    final BorderSide side = BorderSide(color: colors.ochre, width: 3);
+
+    return Container(
+      width: 30,
+      height: 30,
+      margin: const EdgeInsets.all(Gap.md),
+      decoration: BoxDecoration(
+        border: Border(
+          top: top ? side : BorderSide.none,
+          bottom: top ? BorderSide.none : side,
+          left: left ? side : BorderSide.none,
+          right: left ? BorderSide.none : side,
+        ),
+        borderRadius: BorderRadius.only(
+          topLeft: top && left ? const Radius.circular(8) : Radius.zero,
+          topRight: top && !left ? const Radius.circular(8) : Radius.zero,
+          bottomLeft: !top && left ? const Radius.circular(8) : Radius.zero,
+          bottomRight: !top && !left ? const Radius.circular(8) : Radius.zero,
+        ),
       ),
     );
   }
+}
+
+/// Reading progress, as a rail rather than a bar.
+///
+/// Rule 5 rules out a spinner; a Material `LinearProgressIndicator` brings its
+/// own track colour and rounded caps that belong to a different app.
+class _ReadingRail extends StatefulWidget {
+  const _ReadingRail({required this.colors});
+
+  final AppColors colors;
+
+  @override
+  State<_ReadingRail> createState() => _ReadingRailState();
+}
+
+class _ReadingRailState extends State<_ReadingRail>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 2,
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (BuildContext context, _) => LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) => Stack(
+              children: <Widget>[
+                Container(height: 2, color: widget.colors.hairline),
+                Positioned(
+                  left: (box.maxWidth + 90) * _c.value - 90,
+                  child: Container(
+                    width: 90,
+                    height: 2,
+                    color: widget.colors.ochre,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 /// What the card yielded, and the means to fix it.
@@ -362,22 +612,25 @@ class _ReviewBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
 
     return ref.watch(cardDetailProvider(cardId)).when(
           loading: () => const SizedBox.shrink(),
-          error: (Object e, _) => Center(child: Text('Could not read that back.\n$e')),
+          error: (Object e, _) => Center(
+            child: Text('Could not read that back.\n$e',
+                style: AppText.body(c)),
+          ),
           data: (CardDetail? detail) {
             if (detail == null) return const SizedBox.shrink();
 
             return ListView(
-              padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+              padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
               children: <Widget>[
-                Text(
+                SectionHeader(
                   detail.fields.isEmpty
                       ? 'Nothing read yet'
                       : 'Found on the card',
-                  style: theme.textTheme.titleMedium,
+                  count: detail.fields.isEmpty ? null : detail.fields.length,
                 ),
                 const SizedBox(height: Gap.sm),
                 EditableFieldList(
@@ -386,13 +639,11 @@ class _ReviewBody extends ConsumerWidget {
                 ),
                 if (detail.unassignedText.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Gap.lg),
-                  Text('Other text on the card',
-                      style: theme.textTheme.titleMedium),
+                  const SectionHeader('Other text on the card'),
                   const SizedBox(height: Gap.sm),
                   Text(
-                    detail.unassignedText.join('\n'),
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    detail.unassignedText.join(' · '),
+                    style: AppText.body(c).copyWith(color: c.inkFaint),
                   ),
                 ],
                 const SizedBox(height: Gap.xl),
@@ -403,12 +654,14 @@ class _ReviewBody extends ConsumerWidget {
   }
 }
 
-/// The "why are you saving this?" sheet.
+/// The "why are you saving this?" sheet — frame 04b.
+///
+/// Fired by Save card, not an inline composer on the review screen. The
+/// [emphasised] branch is the frame's vermilion pill and harder second
+/// sentence, and it appears only when extraction found little or nothing.
 class _NotePrompt extends StatefulWidget {
   const _NotePrompt({required this.emphasised});
 
-  /// Set when extraction found little or nothing, in which case the note is not
-  /// a nice-to-have — it is the only thing that will make this card findable.
   final bool emphasised;
 
   @override
@@ -426,50 +679,100 @@ class _NotePromptState extends State<_NotePrompt> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
+
     return Padding(
       padding: EdgeInsets.only(
-        left: Gap.md,
-        right: Gap.md,
+        left: Gap.lg,
+        right: Gap.lg,
         top: Gap.lg,
-        bottom: MediaQuery.of(context).viewInsets.bottom + Gap.md,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + Gap.lg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text('Why are you saving this?',
-              style: theme.textTheme.headlineSmall),
-          const SizedBox(height: Gap.xs),
+          if (widget.emphasised) ...<Widget>[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Gap.sm + 2,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: c.vermilion.withValues(alpha: 0.14),
+                  borderRadius: AppRadius.chipR,
+                ),
+                child: MicroLabel('Nothing was readable', color: c.vermilion),
+              ),
+            ),
+            const SizedBox(height: Gap.md),
+          ],
+          // Rule 3: the app asking the user, so it is the serif italic.
+          Text(
+            'Why are you saving this?',
+            style: AppText.displayAsk(c).copyWith(fontSize: 30, height: 1.1),
+          ),
+          const SizedBox(height: Gap.sm),
           Text(
             widget.emphasised
                 ? 'Not much was readable on this card, so this note is how '
                     "you'll find it later."
                 : "You'll search by this later, so write it how you'd say it.",
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: AppText.body(c),
           ),
           const SizedBox(height: Gap.md),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            maxLines: 3,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              hintText: 'e.g. cheap t-shirt printing, did our fest shirts',
+          Pocket(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Gap.md,
+              vertical: Gap.sm + 2,
             ),
-            onSubmitted: (String v) => Navigator.of(context).pop(v),
+            child: TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLines: 3,
+              minLines: 2,
+              cursorColor: c.ochre,
+              cursorWidth: 2,
+              textCapitalization: TextCapitalization.sentences,
+              style: AppText.rowTitle(c).copyWith(
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                fontVariations: AppFonts.weight(400),
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: 'cheap t-shirt printing, did our fest shirts',
+                hintStyle: AppText.body(c).copyWith(fontSize: 15),
+              ),
+              onSubmitted: (String v) => Navigator.of(context).pop(v),
+            ),
           ),
           const SizedBox(height: Gap.md),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(_controller.text),
-            child: const Text('Save card'),
+          InkPill(
+            label: 'Save card',
+            height: 58,
+            onTap: () => Navigator.of(context).pop(_controller.text),
           ),
-          TextButton(
-            // Still saves — the card and its fields are already on disk. This
-            // only declines to add a note.
-            onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('Skip for now'),
+          const SizedBox(height: Gap.sm),
+          // Still saves — the card and its fields are already on disk. This
+          // only declines to add a note.
+          PressFade(
+            onTap: () => Navigator.of(context).pop(''),
+            child: SizedBox(
+              height: kMinTarget,
+              child: Center(
+                child: Text(
+                  'Skip for now',
+                  style: AppText.button(c, on: c.inkMuted),
+                ),
+              ),
+            ),
           ),
         ],
       ),

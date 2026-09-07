@@ -5,10 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/primitives.dart';
+import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
-import '../../cards/presentation/widgets/wallet_card.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../data/search_repository.dart';
 
@@ -78,8 +79,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _run(String query) async {
-    final List<SearchHit> hits =
-        await ref.read(searchRepositoryProvider).search(query);
+    final List<SearchHit> hits = await ref
+        .read(searchRepositoryProvider)
+        .search(query);
     if (!mounted || _query != query) return;
     setState(() {
       _hits = hits;
@@ -89,10 +91,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Removes a card, with a way back.
   ///
-  /// Two-stage: hide it immediately so the list responds, then destroy it only
-  /// once the undo window closes untouched. Deleting something the user walked
-  /// across a market to photograph should not be one mis-swipe away from
-  /// permanent.
+  /// Two-stage, and neither stage destroys anything. The swipe hides it and
+  /// offers an immediate undo; letting that window close leaves it in Recently
+  /// deleted rather than purging it. Deleting something the user walked across
+  /// a market to photograph should not be one mis-swipe and five seconds away
+  /// from permanent — only an explicit "Delete for good" does that.
   Future<void> _delete(CardSummary card) async {
     final CardRepository repo = ref.read(cardRepositoryProvider);
     await repo.softDelete(card.id);
@@ -104,8 +107,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Drop it from the visible results too, or a deleted card lingers on screen
     // until the next keystroke.
     if (mounted && _hits.isNotEmpty) {
-      setState(() =>
-          _hits = _hits.where((SearchHit h) => h.card.id != card.id).toList());
+      setState(
+        () =>
+            _hits = _hits.where((SearchHit h) => h.card.id != card.id).toList(),
+      );
     }
     if (!mounted) return;
 
@@ -134,9 +139,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (_query.isNotEmpty) unawaited(_run(_query));
       return;
     }
-    // Undo window closed untouched — now it really goes, image and index rows
-    // included. The graph came down with the soft delete above.
-    await repo.purge(card.id);
+    // Undo window closed untouched. The card stays soft-deleted and shows up
+    // under Recently deleted, where it can be restored or destroyed on
+    // purpose.
+    //
+    // It used to be purged right here. Five seconds is long enough to catch a
+    // mis-swipe and nowhere near long enough to notice you deleted the wrong
+    // card — and the destruction was total: photo, fields, index rows. The bin
+    // already had the screen, the Restore button and the "Delete for good"
+    // confirm; all that was missing was anything ever reaching it.
   }
 
   /// Puts a card back, and the person and company behind it with it.
@@ -147,232 +158,358 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final AsyncValue<List<CardSummary>> saved = ref.watch(savedCardsProvider);
+    final bool searchingNow = _query.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Contacts',
-            onPressed: () => context.push(Routes.contacts),
-            icon: const Icon(Icons.people_outline),
-          ),
-          // The repair queue announces itself with a banner when it has
-          // something in it, but "Recently deleted" lives there too and has to
-          // be reachable on the day nothing is wrong — which is exactly the
-          // day someone deletes a card by mistake.
-          PopupMenuButton<String>(
-            onSelected: (String route) => context.push(route),
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
-                value: Routes.needsAttention,
-                child: ListTile(
-                  leading: Icon(Icons.rule_outlined),
-                  title: Text('Needs attention'),
-                ),
-              ),
-              // Phase 0 scaffolding — remove with the spike screen itself.
-              const PopupMenuItem<String>(
-                value: Routes.spike,
-                child: ListTile(
-                  leading: Icon(Icons.science_outlined),
-                  title: Text('OCR spike'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+      // No AppBar. Frame 01 puts the wordmark and two round buttons in the
+      // page itself, so the display line can start high enough to breathe.
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(Gap.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const SizedBox(height: Gap.lg),
-              Text(
-                'What do you need?',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
+        bottom: false,
+        child: Stack(
+          children: <Widget>[
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const _HomeHeader(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      const SizedBox(height: Gap.lg),
+                      // Rule 3: the serif italic is the app asking, and this is
+                      // the question the whole product is built around.
+                      Text('What do you\nneed?', style: AppText.displayAsk(c)),
+                      const SizedBox(height: Gap.lg),
+                      _SearchPocket(
+                        controller: _controller,
+                        onChanged: _onQueryChanged,
+                        onClear: () {
+                          _controller.clear();
+                          _onQueryChanged('');
+                        },
+                        hasQuery: searchingNow,
+                      ),
+                      // Only while browsing. During a search the user is
+                      // answering a question, and a queue of unrelated repairs
+                      // is an interruption rather than a prompt.
+                      if (!searchingNow) const _AttentionRow(),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: Gap.md),
-              TextField(
-                controller: _controller,
-                onChanged: _onQueryChanged,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: 'e.g. cheap t-shirt print, low quantity',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
+                const SizedBox(height: Gap.md),
+                Expanded(
+                  child: searchingNow
+                      ? _SearchResults(
+                          query: _query,
+                          hits: _hits,
+                          searching: _searching,
+                          onClear: () {
                             _controller.clear();
                             _onQueryChanged('');
                           },
+                        )
+                      : saved.when(
+                          loading: () => const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 22),
+                            child: GhostStack(),
+                          ),
+                          error: (Object e, _) => EmptyState(
+                            label: 'Could not open',
+                            title: 'The wallet did not open',
+                            body: '$e',
+                          ),
+                          data: (List<CardSummary> cards) => cards.isEmpty
+                              ? EmptyState(
+                                  label: 'Wallet empty',
+                                  title: 'Nothing in the wallet yet',
+                                  body:
+                                      'Scan the first card and say one line '
+                                      'about why it mattered.',
+                                  actionLabel: 'Scan a card',
+                                  onAction: () => context.push(Routes.capture),
+                                )
+                              : _Library(cards: cards, onDelete: _delete),
                         ),
                 ),
+              ],
+            ),
+            // The stack runs off the bottom of the screen rather than stopping
+            // at a hard edge, so the wallet reads as deeper than the viewport.
+            const Positioned(left: 0, right: 0, bottom: 0, child: StackFade()),
+            // Rule: this is a Positioned child of the body, never a
+            // floatingActionButton — a Material FAB brings its own elevation
+            // curve, its own shape and a ripple.
+            Positioned(
+              left: Gap.lg,
+              right: Gap.lg,
+              bottom: 34,
+              child: InkPill(
+                label: 'Scan a card',
+                icon: Icons.document_scanner_outlined,
+                height: 58,
+                onTap: () => context.push(Routes.capture),
               ),
-              // Only while browsing the library. During a search the user is
-              // answering a question, and a queue of unrelated repairs is an
-              // interruption rather than a prompt.
-              if (_query.isEmpty) const _AttentionBanner(),
-              const SizedBox(height: Gap.lg),
-              Expanded(
-                child: _query.isNotEmpty
-                    ? _SearchResults(
-                        query: _query,
-                        hits: _hits,
-                        searching: _searching,
-                        onDelete: _delete,
-                      )
-                    : saved.when(
-                        loading: () =>
-                            const Center(child: CircularProgressIndicator()),
-                        error: (Object e, _) => Center(
-                          child: Text(
-                            'Could not open your saved cards.\n$e',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(color: theme.colorScheme.error),
-                          ),
-                        ),
-                        data: (List<CardSummary> cards) => cards.isEmpty
-                            ? const _EmptyState()
-                            : _CardList(cards: cards, onDelete: _delete),
-                      ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(Routes.capture),
-        icon: const Icon(Icons.document_scanner_outlined),
-        label: const Text('Scan'),
       ),
     );
   }
 }
 
-class _SearchResults extends StatelessWidget {
-  const _SearchResults({
-    required this.query,
-    required this.hits,
-    required this.searching,
-    required this.onDelete,
-  });
-
-  final String query;
-  final List<SearchHit> hits;
-  final bool searching;
-  final Future<void> Function(CardSummary) onDelete;
+/// The wordmark, and the two ways out of this screen.
+///
+/// Replaces the `AppBar` and its `PopupMenuButton`. The mark is the logo's
+/// folded card at 22px; the wordmark is Archivo bold, uppercase, wide-tracked,
+/// and never set in the serif.
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
 
-    if (searching && hits.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (hits.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(Gap.lg),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(Icons.search_off,
-                  size: 48, color: theme.colorScheme.outline),
-              const SizedBox(height: Gap.md),
-              Text('Nothing matched “$query”',
-                  style: theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center),
-              const SizedBox(height: Gap.xs),
-              Text(
-                'Try describing what you needed them for.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Gap.lg, Gap.md, Gap.md, 0),
+      child: Row(
+        children: <Widget>[
+          _Mark(colors: c),
+          const SizedBox(width: Gap.sm + 2),
+          Text(
+            'RECALLOS',
+            style: AppText.micro(
+              c,
+            ).copyWith(fontSize: 12, letterSpacing: 2.6, color: c.inkMuted),
           ),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 88),
-      itemCount: hits.length,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
-      itemBuilder: (BuildContext context, int i) => _CardTile(
-        card: hits[i].card,
-        hit: hits[i],
-        onDelete: onDelete,
+          const Spacer(),
+          _RoundButton(
+            icon: Icons.people_outline,
+            tooltip: 'Contacts',
+            onTap: () => context.push(Routes.contacts),
+          ),
+          const SizedBox(width: Gap.sm),
+          _RoundButton(
+            icon: Icons.tune,
+            tooltip: 'Settings',
+            onTap: () => context.push(Routes.settings),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _CardList extends StatelessWidget {
-  const _CardList({required this.cards, required this.onDelete});
+/// The logo mark: a card with its corner turned back.
+///
+/// Drawn rather than loaded. At 22px an SVG or a PNG would cost a decode and a
+/// cache entry to produce eleven pixels of ochre.
+class _Mark extends StatelessWidget {
+  const _Mark({required this.colors});
+
+  final AppColors colors;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 22,
+    height: 18,
+    child: CustomPaint(painter: _MarkPainter(colors)),
+  );
+}
+
+class _MarkPainter extends CustomPainter {
+  const _MarkPainter(this.colors);
+
+  final AppColors colors;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double fold = 7;
+    final Path body = Path()
+      ..moveTo(0, 3)
+      ..lineTo(size.width - fold, 3)
+      ..lineTo(size.width, 3 + fold)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(body, Paint()..color = colors.ink);
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width - fold, 3)
+        ..lineTo(size.width, 3 + fold)
+        ..lineTo(size.width - fold, 3 + fold)
+        ..close(),
+      Paint()..color = colors.ochre,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MarkPainter old) => old.colors.ink != colors.ink;
+}
+
+/// A 36px round icon button with a 52px tap target.
+///
+/// The visible circle is smaller than the target on purpose: the accessibility
+/// floor is 52, and shrinking the target to match the art is how icon buttons
+/// become the thing people blame when they miss.
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return PressFade(
+      onTap: onTap,
+      scale: 0.92,
+      semanticLabel: tooltip,
+      child: SizedBox(
+        width: kMinTarget,
+        height: kMinTarget,
+        child: Center(
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: c.hairline),
+            ),
+            child: Icon(icon, size: 18, color: c.ink),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The search field, recessed.
+///
+/// Rule 1. This is a [Pocket] rather than a `TextField` with a border, and the
+/// caret is the one place ochre appears on this screen at rest.
+class _SearchPocket extends StatelessWidget {
+  const _SearchPocket({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+    required this.hasQuery,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final bool hasQuery;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return Pocket(
+      height: 54,
+      padding: const EdgeInsets.only(left: Gap.md, right: Gap.sm),
+      trailing: hasQuery
+          ? PressFade(
+              onTap: onClear,
+              scale: 0.9,
+              semanticLabel: 'Clear the search',
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(Icons.close, size: 18, color: c.inkMuted),
+              ),
+            )
+          : null,
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.search, size: 19, color: c.inkMuted),
+          const SizedBox(width: Gap.sm + 2),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              cursorColor: c.ochre,
+              cursorWidth: 2,
+              style: AppText.rowTitle(c).copyWith(
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                fontVariations: AppFonts.weight(400),
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: 'cheap t-shirt print, low qty',
+                hintStyle: AppText.body(c).copyWith(fontSize: 15),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The library: a section header, then the stack.
+class _Library extends StatelessWidget {
+  const _Library({required this.cards, required this.onDelete});
 
   final List<CardSummary> cards;
   final Future<void> Function(CardSummary) onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListView.separated(
-      // Padded so the last row clears the floating action button.
-      padding: const EdgeInsets.only(bottom: 88),
-      itemCount: cards.length + 1,
-      separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
-      itemBuilder: (BuildContext context, int i) {
-        if (i == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: Gap.xs),
-            child: Text(
-              cards.length == 1 ? '1 card saved' : '${cards.length} cards saved',
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          );
-        }
-        return _CardTile(card: cards[i - 1], onDelete: onDelete);
-      },
+    return SingleChildScrollView(
+      // Clears the scan pill and the fade under it.
+      padding: const EdgeInsets.only(bottom: 132),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 26),
+            child: SectionHeader('In your wallet', count: cards.length),
+          ),
+          const SizedBox(height: Gap.md),
+          CardStack(
+            count: cards.length,
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            builder: (BuildContext context, int i) =>
+                _SwipeableTile(card: cards[i], onDelete: onDelete),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _CardTile extends StatelessWidget {
-  const _CardTile({required this.card, required this.onDelete, this.hit});
+/// One tile, with the swipe-to-delete behind it.
+///
+/// The `Dismissible` and the reveal underneath are unchanged from before the
+/// redesign — that logic is right, and the reveal being the exact shape of the
+/// tile leaving it is what makes the gesture read as the card sliding off
+/// rather than a red rectangle appearing.
+class _SwipeableTile extends StatelessWidget {
+  const _SwipeableTile({required this.card, required this.onDelete});
 
   final CardSummary card;
-  final SearchHit? hit;
   final Future<void> Function(CardSummary) onDelete;
-
-  /// [WalletCard]'s own corner. The tile and the delete panel it slides off
-  /// share it so the two edges stay parallel through the whole gesture.
-  static const double _radius = 16;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final SearchHit? h = hit;
-
-    // Behind the tile rather than in `Dismissible.background`, which clips its
-    // background to a hard rectangle at the tile's edge — leaving a square red
-    // corner beside the card's round one, and a wedge of empty page between
-    // them. Uncovered by the tile itself, the seam is the card's own curve.
     return Stack(
       children: <Widget>[
-        // Held a hair inside the tile, so the tile's antialiased edge has
-        // page behind it rather than red, and no pink fringe outlines a card
-        // that is sitting still.
         const Positioned.fill(
           left: 1,
           top: 1,
@@ -380,78 +517,172 @@ class _CardTile extends StatelessWidget {
           bottom: 1,
           child: _DeleteReveal(),
         ),
-        _dismissible(context, theme, h),
+        Dismissible(
+          key: ValueKey<int>(card.id),
+          direction: DismissDirection.endToStart,
+          onDismissed: (_) => unawaited(onDelete(card)),
+          child: WalletCardTile(
+            title: card.title ?? 'Unread card',
+            subtitle: card.note ?? card.subtitle ?? 'No details read',
+            imagePath: card.displayPath,
+            hasNote: card.note != null && card.note!.trim().isNotEmpty,
+            heroTag: 'card-${card.id}',
+            meta: card.needsAttention
+                ? MetaLabel(
+                    'Needs attention',
+                    color: AppColors.of(context).vermilion,
+                  )
+                : MetaLabel(_age(card.capturedAt)),
+            onTap: () => context.push(Routes.card(card.id)),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _dismissible(BuildContext context, ThemeData theme, SearchHit? h) {
-    return Dismissible(
-      key: ValueKey<int>(card.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => unawaited(onDelete(card)),
-      child: Material(
-        // Opaque, and rounded to the same corner as the reveal behind it. A
-        // transparent tile lets the red show through the lines under the card
-        // while it slides, so the thing being swiped stops reading as a card
-        // and starts reading as a rectangle.
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(_radius),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(_radius),
-          onTap: () => context.push(Routes.card(card.id)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              WalletCard(
-                imagePath: card.displayPath,
-                needsAttention: card.needsAttention,
-                heroTag: 'card-${card.id}',
-              ),
-              const SizedBox(height: Gap.sm),
-              Padding(
-                // The reveal runs the full height of the tile, so the lines
-                // under the card need the same inset as the card's own corner
-                // to sit inside it rather than on its edge.
-                padding: const EdgeInsets.fromLTRB(Gap.xs, 0, Gap.xs, Gap.sm),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      card.title ?? 'Unread card',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    Text(
-                      // The note is what the user will actually recognise the
-                      // card by, so it wins over the extracted fields when
-                      // there is one.
-                      card.note ?? card.subtitle ?? 'No details read',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                    if (h != null && h.reasons.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Gap.xs),
-                      Text(
-                        // Derived from the signals that actually ranked this,
-                        // not written after the fact by a model.
-                        h.matchedOnMeaningOnly
-                            ? 'Similar meaning'
-                            : 'Matched ${h.reasons.join(" · ")}',
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: theme.colorScheme.primary),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+  /// "3D", "1W", "2MO" — the frames use an age, not a date. A date on every
+  /// row is precision nobody asked for; how long ago is what places a card in
+  /// memory.
+  static String _age(DateTime at) {
+    final Duration since = DateTime.now().difference(at);
+    if (since.inDays >= 365) return '${since.inDays ~/ 365}Y';
+    if (since.inDays >= 30) return '${since.inDays ~/ 30}MO';
+    if (since.inDays >= 7) return '${since.inDays ~/ 7}W';
+    if (since.inDays >= 1) return '${since.inDays}D';
+    if (since.inHours >= 1) return '${since.inHours}H';
+    return 'JUST NOW';
+  }
+}
+
+/// Answers, not possessions.
+///
+/// Rule 4: results un-stack. Physical overlap means "my wallet"; flat,
+/// separated cards mean "a computed answer", and the difference is the only
+/// thing telling the user which of the two they are looking at.
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({
+    required this.query,
+    required this.hits,
+    required this.searching,
+    required this.onClear,
+  });
+
+  final String query;
+  final List<SearchHit> hits;
+  final bool searching;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    if (searching && hits.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 22),
+        child: GhostStack(count: 2),
+      );
+    }
+    if (hits.isEmpty) {
+      return EmptyState(
+        label: 'No results',
+        title: 'Nothing matched that',
+        body:
+            'Try what you needed them for, not their name. '
+            '“cheap printing, small run”.',
+        actionLabel: 'Clear the search',
+        onAction: onClear,
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 132),
+      itemCount: hits.length + 2,
+      separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
+      itemBuilder: (BuildContext context, int i) {
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
+            child: SectionHeader(
+              hits.length == 1 ? '1 answer' : '${hits.length} answers',
+              trailing: MicroLabel('By relevance'),
+            ),
+          );
+        }
+        if (i == hits.length + 1) {
+          return Padding(
+            padding: const EdgeInsets.only(top: Gap.sm),
+            child: Text(
+              'Ranked on your notes first, then the printed fields.',
+              textAlign: TextAlign.center,
+              style: AppText.small(c).copyWith(color: c.inkFaint),
+            ),
+          );
+        }
+        return _SearchHitCard(hit: hits[i - 1]);
+      },
+    );
+  }
+}
+
+/// One answer, with the arithmetic that produced it shown honestly.
+class _SearchHitCard extends StatelessWidget {
+  const _SearchHitCard({required this.hit});
+
+  final SearchHit hit;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final CardSummary card = hit.card;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        WalletCardTile(
+          flat: true,
+          title: card.title ?? 'Unread card',
+          subtitle: card.note ?? card.subtitle ?? 'No details read',
+          imagePath: card.displayPath,
+          hasNote: card.note != null && card.note!.trim().isNotEmpty,
+          heroTag: 'card-${card.id}',
+          meta: MetaLabel(
+            // Straight from the signals that actually ranked this. Never
+            // prose, never written after the fact.
+            hit.matchedOnMeaningOnly
+                ? 'Similar meaning'
+                : hit.reasons.join(' · '),
+            color: c.ochreInk,
           ),
+          onTap: () => context.push(Routes.card(card.id)),
+        ),
+        const SizedBox(height: Gap.sm),
+        // The bar is honest: its width is the real rank, not a decoration.
+        _ScoreBar(score: hit.score),
+      ],
+    );
+  }
+}
+
+class _ScoreBar extends StatelessWidget {
+  const _ScoreBar({required this.score});
+
+  final double score;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) => Stack(
+          children: <Widget>[
+            Container(height: 2, color: c.hairline),
+            Container(
+              height: 2,
+              width: box.maxWidth * score.clamp(0.06, 1),
+              color: c.ochre,
+            ),
+          ],
         ),
       ),
     );
@@ -459,36 +690,27 @@ class _CardTile extends StatelessWidget {
 }
 
 /// What a swipe uncovers: a panel the exact shape of the tile leaving it.
-///
-/// Drawn under every row at rest and hidden by the opaque tile on top, so that
-/// the shape uncovering it is the tile's own rounded edge.
 class _DeleteReveal extends StatelessWidget {
   const _DeleteReveal();
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
+
     return ExcludeSemantics(
       child: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
         decoration: BoxDecoration(
-          color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(_CardTile._radius),
+          color: c.vermilion,
+          borderRadius: AppRadius.cardR,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
-              Icons.delete_outline,
-              color: theme.colorScheme.onErrorContainer,
-            ),
+            Icon(Icons.delete_outline, color: c.onInk, size: 19),
             const SizedBox(width: Gap.sm),
-            Text(
-              'Delete',
-              style: theme.textTheme.labelLarge
-                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
-            ),
+            Text('Delete', style: AppText.button(c, on: c.onInk)),
           ],
         ),
       ),
@@ -500,84 +722,62 @@ class _DeleteReveal extends StatelessWidget {
 ///
 /// A failed scan looks exactly like a good one in the library — same tile,
 /// same size — so without this the cards that went wrong are invisible unless
-/// somebody thinks to go looking. Permanent chrome would be worse: a button
-/// that says "nothing is wrong" on most days trains people to ignore it.
-class _AttentionBanner extends ConsumerWidget {
-  const _AttentionBanner();
+/// somebody thinks to go looking. Permanent chrome would be worse: a row that
+/// says "nothing is wrong" on most days trains people to ignore it. The header
+/// button is the way in on those days.
+class _AttentionRow extends ConsumerWidget {
+  const _AttentionRow();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
-    final int waiting =
-        ref.watch(needsAttentionProvider).value?.length ?? 0;
+    final AppColors c = AppColors.of(context);
+    final int waiting = ref.watch(needsAttentionProvider).value?.length ?? 0;
     if (waiting == 0) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: Gap.md),
-      child: Material(
-        color: theme.colorScheme.tertiaryContainer,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => context.push(Routes.needsAttention),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: Gap.md, vertical: Gap.sm),
-            child: Row(
-              children: <Widget>[
-                Icon(Icons.error_outline,
-                    color: theme.colorScheme.onTertiaryContainer),
-                const SizedBox(width: Gap.sm),
-                Expanded(
-                  child: Text(
-                    waiting == 1
-                        ? '1 card needs attention'
-                        : '$waiting cards need attention',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onTertiaryContainer,
+      child: PressFade(
+        onTap: () => context.push(Routes.needsAttention),
+        child: Container(
+          height: kMinTarget,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          decoration: BoxDecoration(
+            color: c.vermilion.withValues(alpha: 0.10),
+            borderRadius: AppRadius.pocketR,
+            border: Border.all(color: c.vermilion.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            children: <Widget>[
+              // The dot with a soft ring, not a warning triangle: this is a
+              // count of things to look at, not an error.
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: c.vermilion,
+                  shape: BoxShape.circle,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: c.vermilion.withValues(alpha: 0.35),
+                      blurRadius: 0,
+                      spreadRadius: 3,
                     ),
-                  ),
+                  ],
                 ),
-                Icon(Icons.chevron_right,
-                    color: theme.colorScheme.onTertiaryContainer),
-              ],
-            ),
+              ),
+              const SizedBox(width: Gap.md),
+              Expanded(
+                child: Text(
+                  waiting == 1
+                      ? '1 card needs attention'
+                      : '$waiting cards need attention',
+                  style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
+            ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(
-            Icons.style_outlined,
-            size: 56,
-            color: theme.colorScheme.outline,
-          ),
-          const SizedBox(height: Gap.md),
-          Text(
-            'Nothing saved yet',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: Gap.xs),
-          Text(
-            'Scan a card and tell RecallOS why it matters.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
       ),
     );
   }

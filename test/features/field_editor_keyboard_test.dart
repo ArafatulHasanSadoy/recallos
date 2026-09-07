@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/theme/app_theme.dart';
+import 'package:recallos/core/ui/primitives.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
 import 'package:recallos/features/cards/presentation/widgets/editable_field_list.dart';
 
@@ -49,6 +51,7 @@ void main() {
       ProviderScope(
         overrides: [databaseProvider.overrideWithValue(db)],
         child: MaterialApp(
+          theme: AppTheme.light(),
           home: Scaffold(
             body: SingleChildScrollView(
               child: EditableFieldList(
@@ -66,14 +69,36 @@ void main() {
   TextInputType keyboardOf(WidgetTester tester) =>
       tester.widget<TextField>(find.byType(TextField)).keyboardType;
 
+  /// Opens a field for editing. The editor is a modal sheet, so this has to
+  /// let the sheet finish arriving before anything inside it can be found.
+  Future<void> openField(WidgetTester tester, String value) async {
+    await tester.tap(find.text(value));
+    await tester.pumpAndSettle();
+  }
+
+  /// Taps one of the "What is this?" chips.
+  ///
+  /// Scrolled into view first: every field key gets a chip, and on a 600px
+  /// test viewport they run past the bottom of the sheet. Matched on the chip
+  /// rather than on its text, or a row's own label in the list behind would
+  /// be an equally good match. [SelectChip] is the design system's own; the
+  /// Material `ChoiceChip` this used to find brought an outline and a ripple
+  /// that belong to a different app.
+  Future<void> tapLabel(WidgetTester tester, String key) async {
+    final Finder chip = find.widgetWithText(SelectChip, fieldLabel(key));
+    await tester.ensureVisible(chip);
+    await tester.pumpAndSettle();
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('an email field opens on a letter keyboard',
       (WidgetTester tester) async {
     final CardDetail detail =
         await seed(FieldKeys.email, 'someone@example.com');
     await pump(tester, detail);
 
-    await tester.tap(find.text('someone@example.com'));
-    await tester.pump();
+    await openField(tester, 'someone@example.com');
 
     expect(keyboardOf(tester), TextInputType.emailAddress);
   });
@@ -83,8 +108,7 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
-    await tester.pump();
+    await openField(tester, '01711363991');
 
     expect(keyboardOf(tester), TextInputType.phone);
   });
@@ -96,12 +120,10 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
-    await tester.pump();
+    await openField(tester, '01711363991');
     expect(keyboardOf(tester), TextInputType.phone);
 
-    await tester.tap(find.text(fieldLabel(FieldKeys.email)));
-    await tester.pump();
+    await tapLabel(tester, FieldKeys.email);
 
     expect(keyboardOf(tester), TextInputType.emailAddress,
         reason: 'the keyboard has to follow the label');
@@ -115,12 +137,10 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
-    await tester.pump();
+    await openField(tester, '01711363991');
     final Key? before = tester.widget<TextField>(find.byType(TextField)).key;
 
-    await tester.tap(find.text(fieldLabel(FieldKeys.personName)));
-    await tester.pump();
+    await tapLabel(tester, FieldKeys.personName);
     final Key? after = tester.widget<TextField>(find.byType(TextField)).key;
 
     expect(after, isNot(before));
@@ -133,13 +153,16 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
-    await tester.pump();
+    await openField(tester, '01711363991');
+    // Scrolled into view first, for the same reason the chips are: the sheet
+    // scrolls, and on a 600px test viewport the value field sits below the
+    // fold. Tapping an off-screen widget quietly does nothing.
+    await tester.ensureVisible(find.byType(TextField));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(TextField));
     await tester.pump();
 
-    await tester.tap(find.text(fieldLabel(FieldKeys.email)));
-    await tester.pumpAndSettle();
+    await tapLabel(tester, FieldKeys.email);
 
     expect(
       tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
@@ -152,15 +175,13 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.personName, 'Asif Ahmed');
     await pump(tester, detail);
 
-    await tester.tap(find.text('Asif Ahmed'));
-    await tester.pump();
+    await openField(tester, 'Asif Ahmed');
     expect(
       tester.widget<TextField>(find.byType(TextField)).textCapitalization,
       TextCapitalization.words,
     );
 
-    await tester.tap(find.text(fieldLabel(FieldKeys.email)));
-    await tester.pump();
+    await tapLabel(tester, FieldKeys.email);
     expect(
       tester.widget<TextField>(find.byType(TextField)).textCapitalization,
       TextCapitalization.none,

@@ -141,14 +141,35 @@ class _SpikeScreenState extends State<SpikeScreen> {
               ),
             ],
             const SizedBox(height: Gap.md),
-            if (_running) LinearProgressIndicator(value: _progress),
+            // A determinate rail rather than a Material bar: this one has a
+            // real fraction to show, which is the only kind of progress the
+            // design allows on screen at all.
+            if (_running)
+              SizedBox(
+                height: 2,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) => Stack(
+                    children: <Widget>[
+                      Container(
+                        height: 2,
+                        color: AppColors.of(context).hairline,
+                      ),
+                      Container(
+                        height: 2,
+                        width: box.maxWidth * _progress.clamp(0, 1),
+                        color: AppColors.of(context).ochre,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             const SizedBox(height: Gap.sm),
-            Text(_status, style: Theme.of(context).textTheme.bodySmall),
+            Text(_status, style: AppText.small(AppColors.of(context))),
             if (_exportPath != null) ...<Widget>[
               const SizedBox(height: Gap.sm),
               SelectableText(
                 _exportPath!,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: AppText.small(AppColors.of(context)),
               ),
             ],
             const SizedBox(height: Gap.md),
@@ -173,7 +194,7 @@ class _AvailabilityBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final List<String> missing = availability.entries
         .where((MapEntry<String, bool> e) => !e.value)
         .map((MapEntry<String, bool> e) => e.key)
@@ -182,20 +203,18 @@ class _AvailabilityBanner extends StatelessWidget {
     if (missing.isEmpty) {
       return Text(
         'All engines available.',
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.primary),
+        style: AppText.small(c).copyWith(color: c.ochreInk),
       );
     }
     return Card(
-      color: theme.colorScheme.errorContainer,
+      color: c.vermilion.withValues(alpha: 0.12),
       child: Padding(
         padding: const EdgeInsets.all(Gap.sm),
         child: Text(
           'Unavailable: ${missing.join(", ")}.\n'
           'Bengali results will be empty until the language data is bundled — '
           'see assets/tessdata/README.md.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onErrorContainer),
+          style: AppText.small(c).copyWith(color: c.vermilion),
         ),
       ),
     );
@@ -209,14 +228,14 @@ class _CardComparison extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(Gap.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(card.imageName, style: theme.textTheme.titleSmall),
+            Text(card.imageName, style: AppText.rowTitle(c)),
             const SizedBox(height: Gap.sm),
             for (final SpikeCardResult r in card.results) ...<Widget>[
               Row(
@@ -224,20 +243,19 @@ class _CardComparison extends StatelessWidget {
                   Expanded(
                     child: Text(
                       r.engineId,
-                      style: theme.textTheme.labelLarge,
+                      style: AppText.micro(c),
                     ),
                   ),
                   Text(
                     '${r.durationMs}ms · ${r.blockCount} blocks',
-                    style: theme.textTheme.bodySmall,
+                    style: AppText.small(c),
                   ),
                 ],
               ),
               if (r.failure != null)
                 Text(
                   r.failure!,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.error),
+                  style: AppText.small(c).copyWith(color: c.vermilion),
                 ),
               if (r.fields.isNotEmpty)
                 Text(
@@ -245,7 +263,7 @@ class _CardComparison extends StatelessWidget {
                       .map((MapEntry<String, String> e) =>
                           '${e.key}: ${e.value}')
                       .join('\n'),
-                  style: theme.textTheme.bodySmall,
+                  style: AppText.small(c),
                 ),
               const SizedBox(height: Gap.sm),
             ],

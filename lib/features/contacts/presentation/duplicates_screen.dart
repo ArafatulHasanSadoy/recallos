@@ -1,10 +1,14 @@
-import 'dart:io';
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/card_face.dart';
+import '../../../core/ui/primitives.dart';
+import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
 import '../data/identity_repository.dart';
 import 'widgets/contact_widgets.dart';
@@ -22,42 +26,70 @@ class DuplicatesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final AsyncValue<List<DuplicatePair>> pairs =
         ref.watch(duplicateCandidatesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Possible duplicates'),
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
       body: SafeArea(
-        child: pairs.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (Object e, _) =>
-              Center(child: Text('Could not open this list.\n$e')),
-          data: (List<DuplicatePair> all) {
-            if (all.isEmpty) return const _NothingToReview();
-
-            return ListView(
-              padding: const EdgeInsets.all(Gap.md),
-              children: <Widget>[
-                Text(
-                  'Nothing here has been combined or deleted. RecallOS only '
-                  'joins two records when they share a number or an email — '
-                  'everything else is your call.',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ScreenHeader(
+              title: 'Possible duplicates',
+              onBack: () => context.pop(),
+            ),
+            Expanded(
+              child: pairs.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: Gap.lg),
+                  child: GhostStack(count: 2),
                 ),
-                const SizedBox(height: Gap.md),
-                for (final DuplicatePair pair in all) _PairCard(pair: pair),
-              ],
-            );
-          },
+                error: (Object e, _) => EmptyState(
+                  label: 'Not available',
+                  title: 'Could not open this list',
+                  body: '$e',
+                ),
+                data: (List<DuplicatePair> all) {
+                  if (all.isEmpty) {
+                    return const EmptyState(
+                      label: 'Nothing to review',
+                      title: 'Nothing to review',
+                      body: 'Records that share a number or an email are '
+                          'combined on their own. This list is only for the '
+                          'ones that need your judgement.',
+                    );
+                  }
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      Gap.lg,
+                      0,
+                      Gap.lg,
+                      Gap.xl,
+                    ),
+                    children: <Widget>[
+                      Text(
+                        'Possible duplicates',
+                        style: AppText.title(c),
+                      ),
+                      const SizedBox(height: Gap.sm),
+                      Text(
+                        'Nothing here has been combined or deleted. RecallOS '
+                        'only joins two records when they share a number or '
+                        'an email — everything else is your call.',
+                        style: AppText.body(c),
+                      ),
+                      const SizedBox(height: Gap.lg),
+                      for (final DuplicatePair pair in all)
+                        _PairCard(pair: pair),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -91,57 +123,57 @@ class _PairCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: Gap.md),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Gap.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.md, 0, Gap.md, Gap.xs),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(_heading, style: theme.textTheme.titleMedium),
-                  if (pair.signals.isNotEmpty)
-                    Text(
-                      // Says what it noticed rather than asserting a verdict.
-                      'Matched on ${pair.signals.join(" and ")}',
-                      style: theme.textTheme.labelLarge
-                          ?.copyWith(color: theme.colorScheme.primary),
-                    ),
-                ],
-              ),
-            ),
-            if (pair.kind == DuplicateKind.card)
-              _CardSides(pair: pair)
-            else ...<Widget>[
-              _Side(side: pair.a, kind: pair.kind),
-              _Side(side: pair.b, kind: pair.kind),
-            ],
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Gap.sm, Gap.xs, Gap.sm, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  TextButton(
-                    onPressed: () => _keepSeparate(ref),
-                    child: Text(_negative),
-                  ),
-                  const SizedBox(width: Gap.xs),
-                  FilledButton(
-                    onPressed: () => _confirm(context, ref),
-                    child: Text(_affirmative),
-                  ),
-                ],
-              ),
+      padding: const EdgeInsets.all(Gap.md),
+      decoration: AppDecoration.card(c, isDark: isDarkTheme(context)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(_heading, style: AppText.rowSerif(c)),
+          if (pair.signals.isNotEmpty) ...<Widget>[
+            const SizedBox(height: Gap.xs),
+            // Says what it noticed, never a verdict and never an invented
+            // reason.
+            MicroLabel(
+              'Matched on ${pair.signals.join(" and ")}',
+              color: c.ochreInk,
             ),
           ],
-        ),
+          const SizedBox(height: Gap.md),
+          if (pair.kind == DuplicateKind.card)
+            _CardSides(pair: pair)
+          else ...<Widget>[
+            _Side(side: pair.a, kind: pair.kind),
+            _Side(side: pair.b, kind: pair.kind),
+          ],
+          const SizedBox(height: Gap.md),
+          // Every label changes with the kind — Same person / Different
+          // people, Same company / Different companies, Delete one / Keep
+          // both. Never a generic "Merge".
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinePill(
+                  label: _negative,
+                  height: 52,
+                  onTap: () => unawaited(_keepSeparate(ref)),
+                ),
+              ),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: InkPill(
+                  label: _affirmative,
+                  height: 52,
+                  onTap: () => unawaited(_confirm(context, ref)),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -242,38 +274,52 @@ class _Side extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final bool isPerson = kind == DuplicateKind.person;
 
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: isPerson
-            ? theme.colorScheme.secondaryContainer
-            : theme.colorScheme.tertiaryContainer,
-        child: isPerson
-            ? Text(
-                contactInitials(side.title),
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
-              )
-            : Icon(
-                Icons.storefront_outlined,
-                color: theme.colorScheme.onTertiaryContainer,
-              ),
-      ),
-      title: Text(side.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: side.subtitle == null
-          ? null
-          : Text(side.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: side.detail == null
-          ? null
-          : Text(
-              side.detail!,
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+    return PressFade(
       onTap: () => context.push(
         isPerson ? Routes.person(side.id) : Routes.organization(side.id),
+      ),
+      semanticLabel: side.title,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: kMinTarget),
+        padding: const EdgeInsets.symmetric(vertical: Gap.sm),
+        child: Row(
+          children: <Widget>[
+            if (isPerson)
+              InitialsAvatar(
+                initials: contactInitials(side.title),
+                seed: side.id,
+              )
+            else
+              const OrgGlyph(),
+            const SizedBox(width: Gap.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    side.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.rowTitle(c),
+                  ),
+                  if (side.subtitle != null)
+                    Text(
+                      side.subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.small(c),
+                    ),
+                ],
+              ),
+            ),
+            if (side.detail != null) MetaLabel(side.detail!),
+            const SizedBox(width: Gap.sm),
+            Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+          ],
+        ),
       ),
     );
   }
@@ -291,82 +337,47 @@ class _CardSides extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Gap.md),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(child: _CardFace(side: pair.a, label: 'Kept')),
-          const SizedBox(width: Gap.md),
-          Expanded(child: _CardFace(side: pair.b, label: 'Newer')),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(child: _CardPhoto(side: pair.a, label: 'Kept')),
+        const SizedBox(width: Gap.md),
+        Expanded(child: _CardPhoto(side: pair.b, label: 'Newer')),
+      ],
     );
   }
 }
 
-class _CardFace extends StatelessWidget {
-  const _CardFace({required this.side, required this.label});
+class _CardPhoto extends StatelessWidget {
+  const _CardPhoto({required this.side, required this.label});
 
   final DuplicateSide side;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final AppColors c = AppColors.of(context);
     final String? path = side.imagePath;
 
-    return GestureDetector(
+    return PressFade(
       onTap: () => context.push(Routes.card(side.id)),
+      semanticLabel: label,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 1.586,
-              child: path != null && File(path).existsSync()
-                  ? Image.file(File(path), fit: BoxFit.cover)
-                  : ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
-            ),
+          // The real card proportion. This is the decision surface, so the
+          // photographs have to be comparable at a glance.
+          AspectRatio(
+            aspectRatio: 1.586,
+            child: CardFace(imagePath: path, radius: 10),
           ),
-          const SizedBox(height: Gap.xs),
-          Text(
-            '$label · ${side.detail ?? ""}',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NothingToReview extends StatelessWidget {
-  const _NothingToReview();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(Gap.lg),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(Icons.done_all, size: 56, color: theme.colorScheme.primary),
-            const SizedBox(height: Gap.md),
-            Text('Nothing to review', style: theme.textTheme.titleMedium),
-            const SizedBox(height: Gap.xs),
-            Text(
-              'Records that share a number or an email are combined on their '
-              'own. This list is only for the ones that need your judgement.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+          const SizedBox(height: Gap.sm),
+          MetaLabel(label),
+          if (side.detail != null) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(side.detail!, style: AppText.small(c)),
           ],
-        ),
+        ],
       ),
     );
   }
