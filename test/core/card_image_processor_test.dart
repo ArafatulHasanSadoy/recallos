@@ -29,13 +29,19 @@ void main() {
     return path;
   }
 
-  PreparedImage run(String source, {int maxEdge = 1600, int thumbEdge = 1000}) =>
+  PreparedImage run(
+    String source, {
+    int maxEdge = 1600,
+    int thumbEdge = 1000,
+    bool thumbnail = true,
+  }) =>
       prepareCardImage(CardImageRequest(
         sourcePath: source,
         targetDir: dir.path,
         baseName: 'card_1',
         maxEdge: maxEdge,
         thumbEdge: thumbEdge,
+        thumbnail: thumbnail,
       ));
 
   img.Image read(String path) => img.decodeImage(File(path).readAsBytesSync())!;
@@ -247,7 +253,7 @@ void main() {
 
     test('the thumbnail is the same shape as the card', () {
       final PreparedImage out = run(sourceImage(1700, 1000));
-      expect(aspectOf(out.thumbPath), closeTo(aspectOf(out.imagePath), 0.02));
+      expect(aspectOf(out.thumbPath!), closeTo(aspectOf(out.imagePath), 0.02));
     });
 
     test('a receipt keeps its proportions', () {
@@ -277,15 +283,34 @@ void main() {
 
   test('writes a smaller thumbnail alongside', () {
     final PreparedImage out = run(sourceImage(3000, 2000));
-    final img.Image thumb = read(out.thumbPath);
+    final img.Image thumb = read(out.thumbPath!);
 
     expect(thumb.width, 1000);
     expect(out.thumbPath, isNot(out.imagePath));
-    expect(File(out.thumbPath).lengthSync(), greaterThan(0));
+    expect(File(out.thumbPath!).lengthSync(), greaterThan(0));
     // The whole point is that a list row decodes far less than the card does.
     expect(
-      File(out.thumbPath).lengthSync(),
+      File(out.thumbPath!).lengthSync(),
       lessThan(File(out.imagePath).lengthSync()),
+    );
+  });
+
+  // The back of a card is stored this way: nothing lists it, so a thumbnail
+  // for it would be a second encode and a file nothing ever opens.
+  test('writes no thumbnail when one was not asked for', () {
+    final PreparedImage out = run(sourceImage(3000, 2000), thumbnail: false);
+
+    expect(out.thumbPath, isNull);
+    expect(File(out.imagePath).existsSync(), isTrue);
+    // Not merely unreported — not written. An unreported file would still be
+    // taking up space, and nothing would ever clean it up.
+    expect(
+      Directory(dir.path)
+          .listSync()
+          .whereType<File>()
+          .where((File f) => f.path.contains('_thumb'))
+          .toList(),
+      isEmpty,
     );
   });
 

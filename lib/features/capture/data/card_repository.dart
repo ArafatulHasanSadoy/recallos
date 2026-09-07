@@ -175,7 +175,7 @@ class CardRepository {
   Future<void> attachImages({
     required int cardId,
     required String imagePath,
-    required String thumbPath,
+    String? thumbPath,
   }) async {
     final CardRow? card = await (_db.select(_db.cards)
           ..where(($CardsTable c) => c.id.equals(cardId)))
@@ -192,6 +192,65 @@ class CardRepository {
     if (card.imagePath != imagePath) {
       await _deleteFile(card.imagePath);
     }
+  }
+
+  /// Stores the back of the card.
+  ///
+  /// Separate from [attachImages] because the two sides are captured in
+  /// separate sessions and mean different things. The front is the card: it is
+  /// what OCR read, what the field regions are measured against, and what the
+  /// library shows. The back is a picture kept beside it — no text is
+  /// extracted from it, nothing is indexed off it, and no field points into
+  /// it.
+  ///
+  /// That asymmetry is deliberate rather than unfinished. `card_fields` and
+  /// `ocr_blocks` record a `region_rect` in one image's pixel space and carry
+  /// no side, so a value read from the back would highlight a box on the
+  /// front — silently, throwing nothing. Until those rows can say which side
+  /// they came from, the honest thing is to keep the back's text out of them.
+  ///
+  /// Re-capturing replaces: the previous back is deleted rather than
+  /// accumulating a file per attempt.
+  Future<void> attachBackImage({
+    required int cardId,
+    required String backImagePath,
+  }) async {
+    final CardRow? card = await (_db.select(_db.cards)
+          ..where(($CardsTable c) => c.id.equals(cardId)))
+        .getSingleOrNull();
+    if (card == null) return;
+
+    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+        .write(CardsCompanion(
+      backImagePath: Value<String?>(backImagePath),
+      updatedAt: Value<DateTime>(DateTime.now()),
+    ));
+
+    final String? previous = card.backImagePath;
+    if (previous != null && previous != backImagePath) {
+      await _deleteFile(previous);
+    }
+  }
+
+  /// Drops the back, image and all.
+  ///
+  /// The counterpart to [attachBackImage]: a back photographed by mistake — a
+  /// blank side, the desk, the wrong card — should be removable without
+  /// deleting the card it is attached to.
+  Future<void> removeBackImage(int cardId) async {
+    final CardRow? card = await (_db.select(_db.cards)
+          ..where(($CardsTable c) => c.id.equals(cardId)))
+        .getSingleOrNull();
+    if (card == null) return;
+
+    await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+        .write(CardsCompanion(
+      backImagePath: const Value<String?>(null),
+      updatedAt: Value<DateTime>(DateTime.now()),
+    ));
+
+    final String? previous = card.backImagePath;
+    if (previous != null) await _deleteFile(previous);
   }
 
   /// Folds OCR output into an existing card.
@@ -368,9 +427,12 @@ class CardRepository {
     if (card != null) {
       await _deleteFile(card.imagePath);
       // The thumbnail goes too, or every deleted card leaves one behind on a
-      // phone that was short of space to begin with.
+      // phone that was short of space to begin with. So does the back, which
+      // is a full-size image and the largest thing a card can leave behind.
       final String? thumb = card.thumbPath;
       if (thumb != null) await _deleteFile(thumb);
+      final String? back = card.backImagePath;
+      if (back != null) await _deleteFile(back);
     }
 
     await _db.transaction(() async {

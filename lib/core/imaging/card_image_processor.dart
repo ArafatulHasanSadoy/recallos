@@ -10,7 +10,7 @@ import 'card_geometry.dart';
 /// What one capture produced: the image everything else works from, and a
 /// smaller copy for list rows.
 class PreparedImage {
-  const PreparedImage({required this.imagePath, required this.thumbPath});
+  const PreparedImage({required this.imagePath, this.thumbPath});
 
   /// The card itself, capped at [CardImageRequest.maxEdge].
   ///
@@ -21,7 +21,10 @@ class PreparedImage {
 
   /// A smaller copy for the library list, where a dozen full-size decodes would
   /// exhaust the heap on a cheap phone.
-  final String thumbPath;
+  ///
+  /// Null when the caller asked for no thumbnail — see
+  /// [CardImageRequest.thumbnail].
+  final String? thumbPath;
 }
 
 /// Everything [prepareCardImage] needs, in one sendable object.
@@ -32,6 +35,7 @@ class CardImageRequest {
     required this.baseName,
     this.maxEdge = 1600,
     this.thumbEdge = 1000,
+    this.thumbnail = true,
   });
 
   final String sourcePath;
@@ -49,6 +53,14 @@ class CardImageRequest {
   /// Long edge of the thumbnail. Large by thumbnail standards because these are
   /// full-width card art in the library, not 56 px squares.
   final int thumbEdge;
+
+  /// Whether to write the thumbnail at all.
+  ///
+  /// The back of a card never appears in the library list — the list shows one
+  /// tile per card, and that tile is the front — so a thumbnail for it is a
+  /// second encode and a second file that nothing will ever read. On the
+  /// phones this app is aimed at, both are worth not spending.
+  final bool thumbnail;
 }
 
 class CardImageException implements Exception {
@@ -58,7 +70,8 @@ class CardImageException implements Exception {
   String toString() => 'CardImageException: $reason';
 }
 
-/// Downscales a captured card and writes a thumbnail beside it.
+/// Downscales a captured card and, unless told otherwise, writes a thumbnail
+/// beside it.
 ///
 /// Synchronous and free of any Flutter import, so it can be handed straight to
 /// `Isolate.run` — decoding and resizing a full-resolution photo on the UI
@@ -87,12 +100,17 @@ PreparedImage prepareCardImage(CardImageRequest request) {
   final img.Image shaped = _unstretch(_trimBackground(upright));
 
   final String imagePath = p.join(request.targetDir, '${request.baseName}.jpg');
-  final String thumbPath =
-      p.join(request.targetDir, '${request.baseName}_thumb.jpg');
 
   File(imagePath).writeAsBytesSync(
     img.encodeJpg(_within(shaped, request.maxEdge), quality: 85),
   );
+
+  if (!request.thumbnail) {
+    return PreparedImage(imagePath: imagePath);
+  }
+
+  final String thumbPath =
+      p.join(request.targetDir, '${request.baseName}_thumb.jpg');
   File(thumbPath).writeAsBytesSync(
     img.encodeJpg(_within(shaped, request.thumbEdge), quality: 80),
   );

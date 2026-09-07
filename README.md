@@ -17,7 +17,7 @@ Background research: `ChatGPT-CSE499A Senior Project Guide.md`.
 
 Phase 0 complete, plus the embedding layer and the identity graph. Scaffold,
 database, extraction, OCR, embeddings, hybrid ranking and contacts are in
-place; both platforms build release. 260 tests pass. **The Phase 0 OCR gate has
+place; both platforms build release. 387 tests pass. **The Phase 0 OCR gate has
 not been run against real cards yet** — that is the next step.
 
 Scope is **Latin script only**. Bangla and Banglish are deferred; see
@@ -210,6 +210,14 @@ implementations over the same dataset and report the difference.
   compiles a Rust core through Native Assets, so every build machine would need
   `rustup`. A WordPiece tokeniser and a matrix reader are ~250 lines, and
   correctness is pinned by a parity test against the Python reference.
+- **The back of a card is kept, not read.** Both sides are photographed and
+  stored, but only the front goes through OCR. `card_fields` and `ocr_blocks`
+  record a `region_rect` in one image's pixel space and carry no column saying
+  which side it belongs to, so a value read from the back would highlight a box
+  on the front — silently, throwing nothing, on the one screen whose job is
+  letting you check a value against the printing. Reading the back needs that
+  column first. Most backs are a logo and a tagline, so the trade is cheap.
+
 - **`minSdk 26`** — ML Kit GenAI's floor. Android 8.0 shipped in 2017, so
   coverage is effectively total.
 
@@ -220,7 +228,7 @@ flutter test
 flutter analyze
 ```
 
-260 tests. **Run the OCR gate against a release build, not a debug one.**
+387 tests. **Run the OCR gate against a release build, not a debug one.**
 Minification is not cosmetic here: R8 renamed ML Kit's component registrars,
 which are looked up reflectively by name, and OCR returned zero blocks in
 release while working perfectly in debug — silently, with no error surfaced to

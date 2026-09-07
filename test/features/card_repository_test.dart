@@ -514,6 +514,89 @@ void main() {
     });
   });
 
+  group('the back of the card', () {
+    late CardRepository repo;
+    late Directory dir;
+
+    setUp(() async {
+      repo = CardRepository(db);
+      dir = await Directory.systemTemp.createTemp('recallos_backs');
+    });
+    tearDown(() async => dir.delete(recursive: true));
+
+    File write(String name) {
+      final File file = File(p.join(dir.path, name));
+      file.writeAsStringSync(name);
+      return file;
+    }
+
+    Future<int> cardWithFront() async {
+      final File front = write('front.jpg');
+      return db.into(db.cards).insert(
+            CardsCompanion.insert(
+              imagePath: front.path,
+              capturedAt: DateTime(2026, 8, 23),
+            ),
+          );
+    }
+
+    test('attaches a back without disturbing the front', () async {
+      final int id = await cardWithFront();
+      final CardRow before = await load(id);
+      final File back = write('back.jpg');
+
+      await repo.attachBackImage(cardId: id, backImagePath: back.path);
+
+      final CardRow after = await load(id);
+      expect(after.backImagePath, back.path);
+      // The front is what OCR read and what every region is measured against.
+      // Adding a back must not touch it.
+      expect(after.imagePath, before.imagePath);
+      expect(File(before.imagePath).existsSync(), isTrue);
+    });
+
+    test('re-taking the back replaces it rather than accumulating', () async {
+      final int id = await cardWithFront();
+      final File first = write('back_1.jpg');
+      final File second = write('back_2.jpg');
+
+      await repo.attachBackImage(cardId: id, backImagePath: first.path);
+      await repo.attachBackImage(cardId: id, backImagePath: second.path);
+
+      expect((await load(id)).backImagePath, second.path);
+      // Otherwise every retry of a badly cropped back leaves a full-size photo
+      // on disk with nothing pointing at it.
+      expect(first.existsSync(), isFalse);
+      expect(second.existsSync(), isTrue);
+    });
+
+    test('removing the back deletes the photo and keeps the card', () async {
+      final int id = await cardWithFront();
+      final File back = write('back.jpg');
+      await repo.attachBackImage(cardId: id, backImagePath: back.path);
+
+      await repo.removeBackImage(id);
+
+      final CardRow after = await load(id);
+      expect(after.backImagePath, isNull);
+      expect(back.existsSync(), isFalse);
+      // Removing a side is not removing the card.
+      expect(File(after.imagePath).existsSync(), isTrue);
+    });
+
+    test('purging takes the back with it', () async {
+      final int id = await cardWithFront();
+      final File back = write('back.jpg');
+      await repo.attachBackImage(cardId: id, backImagePath: back.path);
+
+      await repo.purge(id);
+
+      // The largest thing a deleted card can leave behind: a second full-size
+      // image, which nothing else in the schema points at.
+      expect(back.existsSync(), isFalse);
+    });
+  });
+
   group('discarding an abandoned scan', () {
     test('removes the card and everything hanging off it', () async {
       final int id = await createPending();
