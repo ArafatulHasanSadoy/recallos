@@ -173,4 +173,38 @@ void main() {
       expect(PhoneExtractor.extractAll(''), isEmpty);
     });
   });
+
+  // The national form is what the user sees. A digit in it that the card never
+  // printed is an inference and has to be labelled as one; a printed number
+  // that was merely reformatted must not be.
+  group('PhoneExtractor — restoring a digit is not reformatting', () {
+    bool restores(String raw) {
+      final PhoneMatch m = PhoneExtractor.parse(raw)!;
+      expect(m.isValid, isTrue, reason: '$raw should parse');
+      return PhoneExtractor.restoresDigit(m.raw, m.e164);
+    }
+
+    test('a country code in place of the trunk zero is formatting', () {
+      expect(restores('+880 1711-223344'), isFalse);
+      expect(restores('+88 01711-223344'), isFalse);
+      expect(restores('8801711223344'), isFalse);
+      expect(restores('00880 1711 223344'), isFalse);
+    });
+
+    test('separators around a local number are formatting', () {
+      expect(restores('01711-223344'), isFalse);
+      expect(restores('01711223344'), isFalse);
+      expect(restores('(02) 9123456'), isFalse);
+    });
+
+    test('a foreign number shown as dialled is formatting', () {
+      expect(restores('+44 20 7946 0958'), isFalse);
+    });
+
+    test('a leading zero the card lost is a restoration', () {
+      expect(restores('1711223344'), isTrue);
+      expect(restores('1711-223344'), isTrue);
+      expect(restores('9123456'), isTrue);
+    });
+  });
 }

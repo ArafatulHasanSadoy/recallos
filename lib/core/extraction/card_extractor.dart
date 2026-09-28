@@ -360,9 +360,15 @@ abstract final class CardFieldExtractor {
         // Show the dialable form. When OCR lost the leading zero the parser
         // still resolves the number correctly, and the display should reflect
         // what the user needs rather than what the engine misread.
-        final String display = p.isValid && p.e164.isNotEmpty
+        final bool resolved = p.isValid && p.e164.isNotEmpty;
+        final String display = resolved
             ? PhoneExtractor.formatNational(p.e164)
             : raw;
+        // Reformatting "+880 1711-223344" as "01711223344" is not a
+        // restoration: every digit shown was printed. Only a digit the card
+        // never carried counts, or a printed number reads as a guess.
+        final bool restored =
+            resolved && PhoneExtractor.restoresDigit(raw, p.e164);
 
         out.add(
           ExtractedField(
@@ -376,12 +382,12 @@ abstract final class CardFieldExtractor {
                 p.issue?.name ??
                 (p.repaired
                     ? 'ocr_repaired'
-                    : display == raw
-                    ? null
-                    : 'digit_restored'),
+                    : restored
+                    ? 'digit_restored'
+                    : null),
             // Restoring a digit is an inference, so it gets confirmed like any
             // other guess.
-            needsReview: p.needsReview || display != raw,
+            needsReview: p.needsReview || restored,
             sourceBlockIndices: <int>[i],
           ),
         );

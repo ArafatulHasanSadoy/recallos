@@ -1785,8 +1785,8 @@ class IdentityRepository {
             //
             // The test is the canonical form, deliberately, and not
             // `validationIssue == null`. Most issues are *notes on a value
-            // that is fine*: `digit_restored` means the number was reformatted
-            // for display, `ocr_repaired` that a digit was inferred. Both
+            // that is fine*: `digit_restored` means a digit the card lost was
+            // put back, `ocr_repaired` that a misread one was corrected. Both
             // carry a good E.164. Filtering on the issue instead threw away
             // every repaired number on the card — which is most of them.
             if (f.normalizedValue != null)

@@ -238,6 +238,45 @@ void main() {
     });
   });
 
+  // "Provenance travels with every fact": a number printed in international
+  // form and shown in national form is still the number on the card. Only a
+  // digit the card never carried is an inference.
+  group('CardFieldExtractor — reformatted versus restored phones', () {
+    ExtractedField phoneFrom(String line) => CardFieldExtractor.extract(
+          <OcrBlock>[block(line, top: 10, height: 16)],
+        ).firstOfKey(FieldKeys.phone)!;
+
+    test('an international print shown nationally is not a restoration', () {
+      final ExtractedField phone = phoneFrom('+880 1711-223344');
+
+      expect(phone.value, '01711223344');
+      expect(phone.normalizedValue, '+8801711223344');
+      expect(phone.issue, isNull);
+      expect(phone.needsReview, isFalse);
+      // What the card printed survives next to the display form.
+      expect(phone.rawText, '+880 1711-223344');
+    });
+
+    test('a lost leading zero is restored and flagged for review', () {
+      final ExtractedField phone = phoneFrom('1711223344');
+
+      expect(phone.value, '01711223344');
+      expect(phone.normalizedValue, '+8801711223344');
+      expect(phone.issue, 'digit_restored');
+      expect(phone.needsReview, isTrue);
+      expect(phone.rawText, '1711223344');
+    });
+
+    test('a local number with separators is not a restoration', () {
+      final ExtractedField phone = phoneFrom('01711-223344');
+
+      expect(phone.value, '01711223344');
+      expect(phone.issue, isNull);
+      expect(phone.needsReview, isFalse);
+      expect(phone.rawText, '01711-223344');
+    });
+  });
+
   // A brand word set large over a smaller descriptor is one business name
   // printed as two lines. Read separately, the keyword test picks the
   // descriptor as the company — it beats the size ranking outright — and the

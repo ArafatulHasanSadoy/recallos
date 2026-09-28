@@ -146,10 +146,10 @@ void main() {
 
     test('a repaired number is still a way to reach somebody', () async {
       // `digit_restored` and `ocr_repaired` are notes on a value that came out
-      // fine — the number was reformatted, or a digit inferred — and both
-      // carry a good E.164. An earlier filter keyed on the issue rather than
-      // the canonical form and discarded every one of them, which on a real
-      // card is most of the numbers on it.
+      // fine — a lost digit was put back, or a misread one corrected — and
+      // both carry a good E.164. An earlier filter keyed on the issue rather
+      // than the canonical form and discarded every one of them, which on a
+      // real card is most of the numbers on it.
       final int cardId = await db.into(db.cards).insert(
             CardsCompanion.insert(
               imagePath: '/tmp/cards/repaired.jpg',
@@ -177,7 +177,7 @@ void main() {
       await identity.promote(cardId);
 
       expect(await points(), hasLength(1),
-          reason: 'a reformatted number is not a rejected one');
+          reason: 'a restored number is not a rejected one');
       expect((await points()).single.normalizedValue, '+8801819104376');
     });
   });

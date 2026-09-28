@@ -287,6 +287,30 @@ abstract final class PhoneExtractor {
     return national.isEmpty ? e164 : '0$national';
   }
 
+  /// True when [formatNational] of [e164] shows a digit that [raw] never
+  /// printed — the leading zero OCR dropped from `1714066410`, say.
+  ///
+  /// Everything else that separates the two is formatting: spaces, dashes and
+  /// brackets, and a country code printed where the trunk zero goes.
+  /// `+880 1711-223344` and `01711223344` are the same digits dialled two
+  /// ways, and calling the second a restoration would present a printed number
+  /// as an inference.
+  ///
+  /// Comparing national significant numbers alone is not enough: `1711223344`
+  /// and `+8801711223344` share one, yet the zero the user will see was not on
+  /// the card. The printed side has to carry a prefix of its own.
+  static bool restoresDigit(String raw, String e164) {
+    final String printed = Digits.digitsOnly(Digits.toLatin(raw));
+    final String shown = Digits.digitsOnly(formatNational(e164));
+    if (printed == shown) return false;
+
+    // A foreign number is shown as dialled, so any difference is a real one.
+    if (!shown.startsWith('0')) return true;
+    final String national = shown.substring(1);
+    return printed != '$_countryCode$national' &&
+        printed != '00$_countryCode$national';
+  }
+
   /// True when [e164] is a Bangladeshi mobile — the only numbers WhatsApp
   /// actions should be offered for.
   static bool isMobile(String e164) {
