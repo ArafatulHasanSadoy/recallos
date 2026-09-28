@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/extraction/phone.dart';
 import 'package:recallos/core/intelligence/ocr_engine.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
 
@@ -187,6 +188,181 @@ void main() {
       await attach();
 
       expect(await db.select(db.cardFields).get(), hasLength(1));
+    });
+  });
+
+  // Cards scanned before `PhoneExtractor.restoresDigit` carry "digit restored"
+  // on any phone whose dialable form differed from the printed text — a
+  // country code or a dash was enough. The label is stored, so these are rows
+  // written the way the old rule wrote them, repaired in place.
+  group('repairing stored "digit restored" labels', () {
+    late CardRepository repo;
+    late int cardId;
+
+    setUp(() async {
+      repo = CardRepository(db);
+      cardId = await createPending();
+    });
+
+    Future<CardField> field(int id) => (db.select(db.cardFields)
+          ..where(($CardFieldsTable f) => f.id.equals(id)))
+        .getSingle();
+
+    /// A phone row and the block it was read from, as the old rule left them.
+    Future<int> stored(
+      String printed, {
+      required String e164,
+      String issue = 'digit_restored',
+      FactSource source = FactSource.printed,
+      bool verified = false,
+      bool linked = true,
+    }) async {
+      final int id = await db.into(db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: FieldKeys.phone,
+              value: PhoneExtractor.formatNational(e164),
+              normalizedValue: Value<String?>(e164),
+              source: source,
+              verifiedByUser: Value<bool>(verified),
+              validationIssue: Value<String?>(issue),
+            ),
+          );
+      await db.into(db.ocrBlocks).insert(
+            OcrBlocksCompanion.insert(
+              cardId: cardId,
+              blockText: printed,
+              rect: '0,0,1,1',
+              confidence: 0.9,
+              script: 'latin',
+              assignedFieldKey:
+                  Value<String?>(linked ? FieldKeys.phone : null),
+              fieldId: Value<int?>(linked ? id : null),
+            ),
+          );
+      return id;
+    }
+
+    test('a printed number shown in its dialable form is on the card again',
+        () async {
+      // The shape of "Test Card Printing Ltd" in the device's wallet, stored
+      // through the real save path so the blocks point at their fields the way
+      // they do on the phone.
+      final List<OcrBlock> blocks = <OcrBlock>[
+        _line('Test Card Printing Ltd', top: 10, height: 40),
+        _line('+880 1711-223344', top: 200, height: 16),
+        _line('1714066410', top: 240, height: 16),
+      ];
+      await repo.attachExtraction(
+        cardId: cardId,
+        result: OcrResult(
+          blocks: blocks,
+          engine: 'test',
+          duration: const Duration(milliseconds: 20),
+        ),
+        extraction: CardFieldExtractor.extract(blocks),
+      );
+      // What the old rule stored on both.
+      await (db.update(db.cardFields)
+            ..where(($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone)))
+          .write(const CardFieldsCompanion(
+        validationIssue: Value<String?>('digit_restored'),
+      ));
+
+      expect(await repo.repairDigitRestoredLabels(), 1);
+
+      final List<CardField> phones = await (db.select(db.cardFields)
+            ..where(($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone)))
+          .get();
+      final CardField printed = phones.firstWhere(
+        (CardField f) => f.normalizedValue == '+8801711223344',
+      );
+      expect(printed.validationIssue, isNull);
+      expect(printed.source, FactSource.printed);
+      // Only the label moves; what the user sees and dials does not.
+      expect(printed.value, '01711223344');
+
+      // The zero this one never printed is still an inference.
+      final CardField lost = phones.firstWhere(
+        (CardField f) => f.normalizedValue == '+8801714066410',
+      );
+      expect(lost.validationIssue, 'digit_restored');
+      expect(lost.value, '01714066410');
+    });
+
+    test('separators and a written-out country code are formatting', () async {
+      final int dashed = await stored('01711-223344', e164: '+8801711223344');
+      final int intl =
+          await stored('00880 1911 556677', e164: '+8801911556677');
+
+      expect(await repo.repairDigitRestoredLabels(), 2);
+      expect((await field(dashed)).validationIssue, isNull);
+      expect((await field(intl)).validationIssue, isNull);
+    });
+
+    test('finds its own number in a block that prints two', () async {
+      // Keyed on the stored E.164, not on the first number in the block: the
+      // first here is printed in full, the second lost its zero.
+      final int second = await stored(
+        '+880 1711-223344, 1911556677',
+        e164: '+8801911556677',
+      );
+
+      expect(await repo.repairDigitRestoredLabels(), 0);
+      expect((await field(second)).validationIssue, 'digit_restored');
+    });
+
+    test('leaves a row alone when there is nothing to judge it by', () async {
+      final int orphan = await stored(
+        '+880 1711-223344',
+        e164: '+8801711223344',
+        linked: false,
+      );
+      // The block no longer parses to the stored number.
+      final int moved = await stored(
+        '+880 1811-998877',
+        e164: '+8801911556677',
+      );
+
+      expect(await repo.repairDigitRestoredLabels(), 0);
+      expect((await field(orphan)).validationIssue, 'digit_restored');
+      expect((await field(moved)).validationIssue, 'digit_restored');
+    });
+
+    test('touches nothing a person settled or another rule decided', () async {
+      final int confirmed = await stored(
+        '+880 1711-223344',
+        e164: '+8801711223344',
+        verified: true,
+      );
+      final int typed = await stored(
+        '+880 1911-556677',
+        e164: '+8801911556677',
+        source: FactSource.user,
+      );
+      final int repaired = await stored(
+        '+880 1811-998877',
+        e164: '+8801811998877',
+        issue: 'ocr_repaired',
+      );
+
+      expect(await repo.repairDigitRestoredLabels(), 0);
+      expect((await field(confirmed)).validationIssue, 'digit_restored');
+      expect((await field(typed)).validationIssue, 'digit_restored');
+      expect((await field(repaired)).validationIssue, 'ocr_repaired');
+    });
+
+    test('runs once', () async {
+      final int first = await stored('01711-223344', e164: '+8801711223344');
+      expect(await repo.repairDigitRestoredLabels(), 1);
+
+      // Anything labelled after the repair was labelled by the new rule, so a
+      // second launch has no business second-guessing it.
+      final int later = await stored('01911-556677', e164: '+8801911556677');
+      expect(await repo.repairDigitRestoredLabels(), 0);
+
+      expect((await field(first)).validationIssue, isNull);
+      expect((await field(later)).validationIssue, 'digit_restored');
     });
   });
 
@@ -624,6 +800,79 @@ void main() {
       expect(await db.select(db.cards).get(), isEmpty);
       expect(await db.select(db.cardFields).get(), isEmpty);
       expect(await db.select(db.ocrBlocks).get(), isEmpty);
+    });
+  });
+
+  // The note used to be writable exactly once, in the save sheet. "Skip for
+  // now" was therefore permanent, and a note typed in a hurry at an event
+  // could never be corrected — on the one field that makes a card findable by
+  // need.
+  group('the note after saving', () {
+    late CardRepository repo;
+    setUp(() => repo = CardRepository(db));
+
+    Future<List<Note>> notesOf(int cardId) => (db.select(db.notes)
+          ..where(($NotesTable n) =>
+              n.subjectType.equals('card') & n.subjectId.equals(cardId)))
+        .get();
+
+    test('a card saved without a note can be given one', () async {
+      final int id = await createPending();
+
+      await repo.setNote(cardId: id, body: '  printing guy from CSE fest  ');
+
+      final List<Note> notes = await notesOf(id);
+      expect(notes, hasLength(1));
+      expect(notes.single.body, 'printing guy from CSE fest');
+    });
+
+    test('editing replaces the note rather than adding a second', () async {
+      final int id = await createPending();
+      await repo.addNote(cardId: id, body: 'tshirt');
+
+      await repo.setNote(cardId: id, body: 'cheap t-shirt printing, low MOQ');
+
+      final List<Note> notes = await notesOf(id);
+      expect(notes, hasLength(1));
+      expect(notes.single.body, 'cheap t-shirt printing, low MOQ');
+    });
+
+    test('clearing the text removes the note', () async {
+      final int id = await createPending();
+      await repo.addNote(cardId: id, body: 'tshirt');
+
+      await repo.setNote(cardId: id, body: '   ');
+
+      expect(await notesOf(id), isEmpty);
+    });
+
+    test('the open card sees the edit without being reopened', () async {
+      // watchCard names `notes` in its readsFrom; if it did not, the edit
+      // would be written and never reach the screen.
+      final int id = await createPending();
+      await repo.addNote(cardId: id, body: 'tshirt');
+
+      final Stream<CardDetail?> stream = repo.watchCard(id);
+      final Future<void> sawEdit = stream.firstWhere(
+        (CardDetail? d) =>
+            d != null && d.notes.any((Note n) => n.body == 'printing'),
+      );
+      await repo.setNote(cardId: id, body: 'printing');
+
+      await sawEdit.timeout(const Duration(seconds: 2));
+    });
+
+    test('the edit is recorded as an interaction', () async {
+      final int id = await createPending();
+
+      await repo.setNote(cardId: id, body: 'printing');
+
+      final List<Interaction> edits = await (db.select(db.interactions)
+            ..where(($InteractionsTable i) =>
+                i.subjectId.equals(id) &
+                i.kind.equalsValue(InteractionKind.edited)))
+          .get();
+      expect(edits, hasLength(1));
     });
   });
 }

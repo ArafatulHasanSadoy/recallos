@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
@@ -10,6 +11,9 @@ import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/extraction/field_validator.dart';
+import '../../../core/extraction/phone.dart';
+import '../../../core/imaging/photo_keyring.dart';
+import '../../../core/imaging/photo_vault.dart';
 import '../../../core/intelligence/ocr_engine.dart' as ocr;
 
 final databaseProvider = Provider<AppDatabase>((Ref ref) {
@@ -146,7 +150,13 @@ class CardRepository {
 
     final String name =
         'card_${DateTime.now().microsecondsSinceEpoch}${p.extension(source.path)}';
-    final File stored = await source.copy(p.join(cards.path, name));
+    // Sealed on the way in, off the UI thread: a full-resolution scan is
+    // megabytes, and this is the moment the user is watching.
+    final String target = p.join(cards.path, name);
+    final String from = source.path;
+    final Uint8List? key = await PhotoKeyring.instance.key;
+    await Isolate.run(() => sealCopySync(from, target, key));
+    final File stored = File(target);
 
     final int id = await _db
         .into(_db.cards)
@@ -508,6 +518,74 @@ class CardRepository {
         );
   }
 
+  /// Replaces the note on a saved card, adds one, or — given an empty body —
+  /// removes it.
+  ///
+  /// [addNote] only ever ran once, inside the capture flow, so a card saved
+  /// with "Skip for now" could never be given the one thing that makes it
+  /// findable by need, and a note written in a hurry at an event could never
+  /// be corrected. Callers re-index afterwards: the note is the most valuable
+  /// text search has.
+  Future<void> setNote({required int cardId, required String body}) async {
+    final String trimmed = body.trim();
+
+    await _db.transaction(() async {
+      final List<Note> existing =
+          await (_db.select(_db.notes)
+                ..where(
+                  ($NotesTable n) =>
+                      n.subjectType.equals('card') & n.subjectId.equals(cardId),
+                )
+                ..orderBy(<OrderClauseGenerator<$NotesTable>>[
+                  ($NotesTable n) => OrderingTerm(expression: n.id),
+                ]))
+              .get();
+
+      if (trimmed.isEmpty) {
+        await (_db.delete(_db.notes)..where(
+              ($NotesTable n) =>
+                  n.subjectType.equals('card') & n.subjectId.equals(cardId),
+            ))
+            .go();
+      } else if (existing.isEmpty) {
+        await _db
+            .into(_db.notes)
+            .insert(
+              NotesCompanion.insert(
+                subjectType: 'card',
+                subjectId: cardId,
+                body: Value<String?>(trimmed),
+              ),
+            );
+      } else {
+        // The first note is the one every screen shows; edit that one.
+        await (_db.update(_db.notes)
+              ..where(($NotesTable n) => n.id.equals(existing.first.id)))
+            .write(
+              NotesCompanion(
+                body: Value<String?>(trimmed),
+                updatedAt: Value<DateTime>(DateTime.now()),
+              ),
+            );
+      }
+
+      await _db
+          .into(_db.interactions)
+          .insert(
+            InteractionsCompanion.insert(
+              subjectType: 'card',
+              subjectId: cardId,
+              kind: InteractionKind.edited,
+              detail: Value<String?>(
+                trimmed.isEmpty ? 'note removed' : 'note edited',
+              ),
+            ),
+          );
+      await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+          .write(CardsCompanion(updatedAt: Value<DateTime>(DateTime.now())));
+    });
+  }
+
   /// Discards a card the user backed out of, and its image with it.
   ///
   /// Called when a scan is abandoned rather than saved. Without this, every
@@ -603,6 +681,104 @@ class CardRepository {
       for (final QueryRow row in rows)
         (id: row.read<int>('id'), path: row.read<String>('back_image_path')),
     ];
+  }
+
+  /// Marks [repairDigitRestoredLabels] as done. In `settings` rather than a
+  /// schema migration: nothing about the shape of the data changed, only a
+  /// rule that was applied to it — which is what that table is for.
+  static const String _digitRestoredRepairKey = 'phone_digit_restored_repair';
+
+  /// Takes "digit restored" off printed phone numbers that were only
+  /// reformatted.
+  ///
+  /// The label used to be set whenever the dialable form differed from the
+  /// text on the card, so "+880 1711-223344" shown as "01711223344" read as a
+  /// guess although every digit was printed. [PhoneExtractor.restoresDigit]
+  /// fixed that for new scans, but the label is stored at scan time, and only
+  /// the Needs Attention queue ever re-reads a card — so without this, the
+  /// cards somebody already has would carry the wrong chip for good.
+  ///
+  /// Each row is re-judged from its own OCR text rather than from its stored
+  /// value, because the value is the reformatted number and cannot say what
+  /// was printed. A row is left alone when there is no evidence to judge it
+  /// by: no block points at it, or its blocks no longer parse to its number.
+  /// Only a reading the extractor would now store with no issue at all
+  /// clears the label, so a number that did need repair never comes out
+  /// looking printed.
+  ///
+  /// Runs once, recorded in `settings`, and swallows its own failure: it is a
+  /// label, and a launch must not stop over it. A failed run commits nothing
+  /// and is tried again on the next one. Returns how many rows it cleared.
+  Future<int> repairDigitRestoredLabels() async {
+    try {
+      return await _db.transaction(() async {
+        final Setting? done =
+            await (_db.select(_db.settings)..where(
+                  ($SettingsTable s) => s.key.equals(_digitRestoredRepairKey),
+                ))
+                .getSingleOrNull();
+        if (done != null) return 0;
+
+        final List<CardField> flagged =
+            await (_db.select(_db.cardFields)..where(
+                  ($CardFieldsTable f) =>
+                      f.fieldKey.equals(FieldKeys.phone) &
+                      f.source.equalsValue(FactSource.printed) &
+                      f.verifiedByUser.equals(false) &
+                      f.validationIssue.equals('digit_restored'),
+                ))
+                .get();
+
+        int cleared = 0;
+        for (final CardField field in flagged) {
+          final String? e164 = field.normalizedValue;
+          if (e164 == null) continue;
+
+          final List<OcrBlockRow> blocks = await (_db.select(
+            _db.ocrBlocks,
+          )..where(($OcrBlocksTable b) => b.fieldId.equals(field.id))).get();
+          final List<PhoneMatch> readings = <PhoneMatch>[
+            for (final OcrBlockRow b in blocks)
+              ...PhoneExtractor.extractAll(
+                b.blockText,
+              ).where((PhoneMatch m) => m.e164 == e164),
+          ];
+          if (readings.isEmpty) continue;
+
+          final bool printed = readings.every(
+            (PhoneMatch m) =>
+                m.isValid &&
+                m.issue == null &&
+                !m.repaired &&
+                !PhoneExtractor.restoresDigit(m.raw, m.e164),
+          );
+          if (!printed) continue;
+
+          await (_db.update(
+            _db.cardFields,
+          )..where(($CardFieldsTable f) => f.id.equals(field.id))).write(
+            CardFieldsCompanion(
+              validationIssue: const Value<String?>(null),
+              updatedAt: Value<DateTime>(DateTime.now()),
+            ),
+          );
+          cleared++;
+        }
+
+        await _db
+            .into(_db.settings)
+            .insertOnConflictUpdate(
+              SettingsCompanion.insert(
+                key: _digitRestoredRepairKey,
+                value: '1',
+              ),
+            );
+        return cleared;
+      });
+    } on Object {
+      // Deliberately ignored; see above.
+      return 0;
+    }
   }
 
   /// Saved cards, newest first, as a live stream so the library updates itself.

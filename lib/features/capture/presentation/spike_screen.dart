@@ -67,7 +67,8 @@ class _SpikeScreenState extends State<SpikeScreen> {
       _cards = <SpikeCard>[];
       _progress = 0;
       _exportPath = null;
-      _status = 'Running ${picked.length} cards through 3 engines…';
+      _status = 'Running ${picked.length} cards through '
+          '${_runner.engines.length} engines…';
     });
 
     final List<SpikeCard> results = await _runner.run(
@@ -212,8 +213,8 @@ class _AvailabilityBanner extends StatelessWidget {
         padding: const EdgeInsets.all(Gap.sm),
         child: Text(
           'Unavailable: ${missing.join(", ")}.\n'
-          'Bengali results will be empty until the language data is bundled — '
-          'see assets/tessdata/README.md.',
+          'No engine in this build reads Bengali, so Bengali cards will '
+          'score empty — that is the finding, not a fault.',
           style: AppText.small(c).copyWith(color: c.vermilion),
         ),
       ),

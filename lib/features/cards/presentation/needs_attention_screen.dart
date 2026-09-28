@@ -160,8 +160,8 @@ class _NeedsAttentionScreenState extends ConsumerState<NeedsAttentionScreen> {
                         ),
                         const SizedBox(height: Gap.xs),
                         Text(
-                          'Deleted, but still on the phone. Nothing here is '
-                          'gone until you say so.',
+                          'Deleted cards wait here for 30 days, then are '
+                          'removed for good. Restore anything you want back.',
                           style: AppText.body(c),
                         ),
                         const SizedBox(height: Gap.md),

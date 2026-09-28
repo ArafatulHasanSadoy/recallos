@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show QueryRow;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/db/database.dart';
 import '../../../core/export/vcard.dart';
+import '../../../core/imaging/photo_keyring.dart';
+import '../../../core/imaging/photo_vault.dart';
+import '../../../core/storage/hand_offs.dart';
 import '../../capture/data/card_repository.dart';
 import '../../contacts/data/contact_export.dart';
 import '../../contacts/data/identity_repository.dart';
@@ -58,8 +61,9 @@ enum WalletExportResult {
 ///   room for: notes, provenance, which side of the card a value was read
 ///   from, OCR text. Nothing else preserves *why* a card mattered, which is
 ///   the whole premise of the app.
-/// - **`photos/`** — the card photographs, which are not in the database and
-///   are not encrypted (they are ordinary JPEGs in the documents directory).
+/// - **`photos/`** — the card photographs, opened from their sealed copies on
+///   the phone and written as ordinary JPEGs, because this archive is for
+///   other apps to read.
 ///
 /// It is deliberately not an importable backup. Restoring would need a merge
 /// policy for a database with an identity graph in it, and inventing one to
@@ -76,15 +80,11 @@ class WalletExport {
   ///
   /// `embeddings` is the big one — 256 floats per subject, recomputed from
   /// text the export already carries. `ranking_weights` is tuning, not data.
-  /// The FTS5 shadow tables are an index over `cards`, and restoring one by
-  /// hand is not a thing anybody does.
+  /// The search index is left out too, but not by name: see [_dumpTables].
   static const Set<String> _derived = <String>{
     'embeddings',
     'ranking_weights',
   };
-
-  static bool _isFtsShadow(String name) =>
-      name.startsWith('cards_fts') || name.endsWith('_fts');
 
   /// Builds the archive and opens the share sheet on it.
   Future<WalletExportResult> exportAll() async {
@@ -92,19 +92,26 @@ class WalletExport {
       final List<int>? bytes = await buildArchive();
       if (bytes == null) return WalletExportResult.empty;
 
-      // The cache, not documents: this file exists to be handed over and has
+      // The outbox, not documents: this file exists to be handed over and has
       // no reason to survive. share_plus exposes it through its own
       // FileProvider, so no storage permission is involved.
-      final Directory dir = await getTemporaryDirectory();
+      final Directory dir = await outboxDirectory();
       final File out = File(p.join(dir.path, _fileName()));
       await out.writeAsBytes(bytes);
 
-      await SharePlus.instance.share(
-        ShareParams(
-          files: <XFile>[XFile(out.path, mimeType: 'application/zip')],
-          subject: 'RecallOS wallet',
-        ),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: <XFile>[XFile(out.path, mimeType: 'application/zip')],
+            subject: 'RecallOS wallet',
+          ),
+        );
+      } finally {
+        // Every photograph in the clear, so not kept a moment longer than
+        // needed: share_plus hands over its own copy, which the launch sweep
+        // clears after a day (see `hand_offs.dart`).
+        await discardHandOff(out);
+      }
       return WalletExportResult.shared;
     } on Object {
       // An export that half-worked is worse than one that says it failed: the
@@ -139,11 +146,15 @@ class WalletExport {
     if (vcf.isNotEmpty) {
       archive.add(ArchiveFile.string('contacts.vcf', vcf));
     }
+    // Opened, not copied: the photographs are sealed on the phone, and this
+    // archive exists to be read by other apps — which is also why its README
+    // says it is not encrypted.
+    final Uint8List? photoKey = await PhotoKeyring.instance.key;
     for (final File photo in _photos(tables)) {
       archive.add(
         ArchiveFile.bytes(
           'photos/${p.basename(photo.path)}',
-          await photo.readAsBytes(),
+          openPhoto(photoKey, await photo.readAsBytes()),
         ),
       );
     }
@@ -152,14 +163,22 @@ class WalletExport {
 
   /// Every table that holds something the user put there.
   ///
-  /// Read from `sqlite_master` rather than a hand-written list, so a table
-  /// added in a later migration is exported without anybody remembering to
-  /// come back here. A forgotten table is a silently incomplete backup.
+  /// Read from the schema rather than a hand-written list, so a table added in
+  /// a later migration is exported without anybody remembering to come back
+  /// here. A forgotten table is a silently incomplete backup.
+  ///
+  /// `PRAGMA table_list` is asked rather than `sqlite_master` because it says
+  /// what each table *is*: the FTS5 index (`search_index`) reports as
+  /// `virtual`, and the five tables SQLite keeps behind it (`search_index_data`,
+  /// `_idx`, `_content`, `_docsize`, `_config`) as `shadow`. Only `table` is
+  /// user data. Guessing from names is what this used to do, and it looked
+  /// for `*_fts` while the index was called `search_index` — so every archive
+  /// carried a base64 dump of the whole index.
   Future<Map<String, List<Map<String, Object?>>>> _dumpTables() async {
     final List<QueryRow> names = await db
         .customSelect(
-          "SELECT name FROM sqlite_master WHERE type = 'table' "
-          "AND name NOT LIKE 'sqlite_%' ORDER BY name",
+          "SELECT name FROM pragma_table_list WHERE schema = 'main' "
+          "AND type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
         )
         .get();
 
@@ -167,7 +186,7 @@ class WalletExport {
         <String, List<Map<String, Object?>>>{};
     for (final QueryRow row in names) {
       final String table = row.read<String>('name');
-      if (_derived.contains(table) || _isFtsShadow(table)) continue;
+      if (_derived.contains(table)) continue;
       final List<QueryRow> rows = await db
           .customSelect('SELECT * FROM "$table"')
           .get();

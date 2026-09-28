@@ -1,6 +1,8 @@
 package com.recallos.recallos
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -40,6 +42,59 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // What a bug report needs: which build, on which phone. A channel
+        // rather than `package_info_plus` — three values do not justify a
+        // dependency and the permission audit every new one costs.
+        MethodChannel(engine.dartExecutor.binaryMessenger, APP_INFO_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "version" -> result.success(version())
+                    "restart" -> {
+                        result.success(null)
+                        restart()
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * Starts a fresh process on the launch screen.
+     *
+     * A restore is staged while the app runs and swapped in when the database
+     * is next opened — which, to be safe, has to be a process that has never
+     * opened it. Relaunching is how the user gets there without being told to
+     * swipe the app away and find it again.
+     */
+    private fun restart() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        window.decorView.postDelayed({
+            startActivity(intent)
+            Runtime.getRuntime().exit(0)
+        }, 150)
+    }
+
+    private fun version(): Map<String, Any> {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+        return mapOf(
+            "name" to (info.versionName ?: ""),
+            "code" to code,
+            "device" to "${Build.MANUFACTURER} ${Build.MODEL}",
+            "android" to Build.VERSION.RELEASE,
+        )
     }
 
     private fun openSecuritySettings(): Boolean {
@@ -59,5 +114,6 @@ class MainActivity : FlutterFragmentActivity() {
 
     private companion object {
         const val CHANNEL = "recallos/system_settings"
+        const val APP_INFO_CHANNEL = "recallos/app_info"
     }
 }

@@ -8,22 +8,21 @@ import '../text_intelligence.dart';
 
 /// Adds real embeddings to whatever engine handles generation.
 ///
-/// A decorator rather than another engine: generation and embedding come from
-/// completely different places on this stack. Generation is the platform's
-/// model when the device has one, keyword rules when it does not. Embedding is
-/// an 8 MB lookup table that works everywhere. Composing them keeps each class
-/// doing one thing:
+/// A decorator rather than another engine: classification and embedding come
+/// from completely different places on this stack. Classification is keyword
+/// rules today, and could be a model later; embedding is an 8 MB lookup table
+/// that works everywhere. Composing them keeps each class doing one thing:
 ///
 /// ```dart
 /// StaticEmbeddingIntelligence(
-///   inner: PlatformIntelligence(),   // generation, may be unavailable
-///   embedder: embedder,              // embeddings, always available
+///   inner: DeterministicIntelligence(),  // rules; swappable
+///   embedder: embedder,                  // embeddings, always available
 /// )
 /// ```
 ///
 /// The practical consequence is the point of the whole exercise: a cheap phone
 /// with no platform AI still gets full semantic search, because the half that
-/// matters for retrieval never depended on the model.
+/// matters for retrieval never depended on a model.
 class StaticEmbeddingIntelligence implements TextIntelligence {
   StaticEmbeddingIntelligence({required this.inner, required this.embedder});
 

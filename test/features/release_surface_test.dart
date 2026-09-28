@@ -24,30 +24,53 @@ void main() {
   String source(String path) => File(path).readAsStringSync();
 
   group('the developer spike screen never ships', () {
-    test('the /spike route is registered only in debug', () {
+    test('the /spike route is registered only when evaluation tools are on', () {
       final String router = source('lib/router.dart');
 
       expect(
         router,
-        contains(RegExp(r'if \(kDebugMode\)\s*\n?\s*GoRoute\(path: Routes\.spike')),
-        reason: 'the spike route must be behind kDebugMode — it reads the '
-            "user's gallery and writes raw OCR to a file",
+        contains(
+          RegExp(r'if \(kEvaluationTools\)\s*\n?\s*GoRoute\(path: Routes\.spike'),
+        ),
+        reason: 'the spike route must be behind kEvaluationTools — it reads '
+            "the user's gallery and writes raw OCR to a file",
       );
     });
 
-    test('the Development settings group is offered only in debug', () {
+    test('the Development settings group is offered only with the tools', () {
       final String settings =
           source('lib/features/settings/presentation/settings_screen.dart');
 
-      final int guard = settings.indexOf('if (kDebugMode) ...<Widget>[');
+      final int guard = settings.indexOf('if (kEvaluationTools) ...<Widget>[');
       final int group = settings.indexOf("label: 'Development'");
 
-      expect(guard, isNonNegative, reason: 'the kDebugMode guard is gone');
+      expect(guard, isNonNegative, reason: 'the kEvaluationTools guard is gone');
       expect(group, isNonNegative, reason: 'the Development group is gone');
       expect(
         guard,
         lessThan(group),
-        reason: 'the Development group must sit inside the kDebugMode guard',
+        reason: 'the Development group must sit inside the guard',
+      );
+    });
+
+    test('evaluation tools are debug, or an explicit benchmark build — never '
+        'on by default', () {
+      // The benchmark build is the one way the spike reaches a release APK:
+      // `--dart-define=RECALLOS_BENCH=true`, for measuring OCR under R8. That
+      // APK is never uploaded. What must hold is that a plain
+      // `flutter build appbundle` leaves the flag off — so no defaultValue,
+      // and the tools flag is exactly debug-or-bench.
+      final String flags = source('lib/core/build_flags.dart');
+
+      expect(
+        flags,
+        contains("const bool kBenchBuild = bool.fromEnvironment('RECALLOS_BENCH');"),
+        reason: 'kBenchBuild must read RECALLOS_BENCH with no default — a '
+            'defaultValue: true would put the spike in every Play build',
+      );
+      expect(
+        flags,
+        contains('const bool kEvaluationTools = kDebugMode || kBenchBuild;'),
       );
     });
   });
@@ -87,6 +110,26 @@ void main() {
       // the zero-egress claim ever had.
       expect(manifest, contains('android:allowBackup="false"'));
       expect(manifest, contains('android:fullBackupContent="false"'));
+    });
+  });
+
+  group('release signing', () {
+    test('a release build refuses the debug key unless explicitly allowed', () {
+      // It used to fall back silently: a bundle built on a machine without
+      // the upload key looked finished and failed only when Play rejected
+      // it. The refusal has to stay wired to the tasks that actually sign.
+      final String gradle = source('android/app/build.gradle.kts');
+
+      expect(gradle, contains('RECALLOS_ALLOW_DEBUG_SIGNING'));
+      expect(
+        gradle,
+        contains(
+          'val refuseReleaseSigning = !hasUploadKey && !allowDebugSigning',
+        ),
+      );
+      expect(gradle, contains('"signReleaseBundle"'));
+      expect(gradle, contains('"packageRelease"'));
+      expect(gradle, contains('if (refuseReleaseSigning)'));
     });
   });
 

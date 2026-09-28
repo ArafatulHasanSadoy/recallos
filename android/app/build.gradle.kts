@@ -9,17 +9,20 @@ plugins {
 // The upload key, read from `android/key.properties` — which is gitignored,
 // because it holds the passwords in the clear.
 //
-// A fresh clone has no `key.properties`, so this falls back to the debug key
-// rather than failing the build: `flutter run --release` has to keep working
-// for anyone who checks the project out, and for the release runs this project
-// leans on to catch R8 bugs. The fallback is *only* safe because Play refuses a
-// debug certificate outright — a debug-signed bundle cannot be uploaded by
-// accident, it is rejected at the door.
+// Without it a release build signs with the debug key — but only when asked
+// to, with RECALLOS_ALLOW_DEBUG_SIGNING=true. It used to fall back silently,
+// which was "safe" only because Play rejects a debug certificate at the door:
+// a bundle that looked finished, built from a laptop where the key file had
+// gone missing, failed only at upload time. Now it fails at build time and
+// says why. Local release runs (the R8 checks this project leans on) and CI,
+// neither of which is ever uploaded, set the variable.
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("key.properties")
     if (file.exists()) file.inputStream().use { load(it) }
 }
 val hasUploadKey = keystoreProperties.getProperty("storeFile") != null
+val allowDebugSigning = System.getenv("RECALLOS_ALLOW_DEBUG_SIGNING") == "true"
+val refuseReleaseSigning = !hasUploadKey && !allowDebugSigning
 
 android {
     namespace = "com.recallos.recallos"
@@ -33,9 +36,11 @@ android {
 
     defaultConfig {
         applicationId = "com.recallos.recallos"
-        // Pinned rather than inherited. ML Kit GenAI (Gemini Nano) requires
-        // API 26; ML Kit text recognition floors at 21. Android 8.0 shipped in
-        // 2017, so this still reaches effectively every phone in use.
+        // Pinned rather than inherited. It was 26 for ML Kit GenAI (Gemini
+        // Nano); that package was removed because nothing used it, and ML Kit
+        // text recognition alone floors at 21. It stays 26 because every
+        // device check so far ran on 26+, and Android 8.0 shipped in 2017 —
+        // this still reaches effectively every phone in use.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -70,6 +75,25 @@ android {
         }
     }
 }
+
+// Checked when the release artifact is actually signed, not when the build is
+// configured — so `flutter run` in debug, which configures the release build
+// type too, is never affected.
+tasks.matching { it.name == "packageRelease" || it.name == "signReleaseBundle" }
+    .configureEach {
+        doFirst {
+            if (refuseReleaseSigning) {
+                throw GradleException(
+                    "No upload key: android/key.properties is missing, so this " +
+                        "release build would be signed with the Android debug key, " +
+                        "which Google Play rejects. Create the upload key " +
+                        "(docs/RELEASE.md §1) — or, for a local test or CI build " +
+                        "that will never be uploaded, set " +
+                        "RECALLOS_ALLOW_DEBUG_SIGNING=true.",
+                )
+            }
+        }
+    }
 
 kotlin {
     compilerOptions {

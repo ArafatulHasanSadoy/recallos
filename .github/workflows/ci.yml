@@ -1,0 +1,63 @@
+# Runs on every push to main and every pull request.
+#
+# The same gate `CLAUDE.md` sets for reporting anything done — analyze clean,
+# tests green — plus the one check that has to read the built artifact: which
+# permissions the release bundle actually carries. Plugins merge permissions in
+# at build time, so the source manifest is not evidence (see docs/RELEASE.md).
+#
+# The bundle built here is debug-signed (there is no upload key in CI, by
+# design) and is never uploaded anywhere. It exists to be inspected.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Pinned to the version the app is developed and tested against.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      # Built exactly as a Play bundle is, minus the upload key: no
+      # RECALLOS_BENCH define, so the evaluation screen is compiled out.
+      # Release signing refuses the debug key unless told otherwise; this
+      # bundle is inspected, never uploaded, so it says so explicitly.
+      - name: Build the release bundle
+        env:
+          RECALLOS_ALLOW_DEBUG_SIGNING: 'true'
+        run: flutter build appbundle --release --dart-define=RECALLOS_COMMIT=${GITHUB_SHA::7}
+
+      - name: Fetch bundletool
+        run: >
+          curl -fsSL -o bundletool.jar
+          https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+
+      - name: Permissions in the bundle
+        run: BUNDLETOOL="java -jar bundletool.jar" tool/ci/check_permissions.sh

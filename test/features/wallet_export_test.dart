@@ -6,9 +6,12 @@ import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:recallos/core/backup/backup_crypto.dart';
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/imaging/photo_keyring.dart';
+import 'package:recallos/core/imaging/photo_vault.dart';
 import 'package:recallos/features/contacts/data/identity_repository.dart';
 import 'package:recallos/features/settings/data/wallet_export.dart';
 
@@ -181,6 +184,10 @@ void main() {
             as Map<String, Object?>;
     final Map<String, Object?> tables = parsed['tables']! as Map<String, Object?>;
 
+    // Deliberately not the exporter's own query (`pragma_table_list`): a test
+    // that shares the code's filter shares its bugs, which is how a guess at
+    // `*_fts` once passed here while the real index was `search_index`.
+    final Set<String> virtualTables = await _virtualTables(db);
     final List<String> live = (await db
             .customSelect(
               "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -188,7 +195,7 @@ void main() {
             )
             .get())
         .map((QueryRow r) => r.read<String>('name'))
-        .where((String n) => !n.startsWith('cards_fts') && !n.endsWith('_fts'))
+        .where((String n) => !_belongsToVirtualTable(n, virtualTables))
         .where((String n) => n != 'embeddings' && n != 'ranking_weights')
         .toList();
 
@@ -199,6 +206,56 @@ void main() {
         reason: '$table exists in the database but is missing from the export',
       );
     }
+  });
+
+  test('the search index is not exported, under any of its names', () async {
+    // The FTS5 index is derived from the cards and notes the archive already
+    // carries, and SQLite keeps it as one virtual table plus five shadow
+    // tables of binary segments. The exporter used to recognise it by a name
+    // it did not have, and every archive carried all six, base64-encoded.
+    await scan(name: 'Md Abul Bashar', phone: '01819104376');
+    await db.customStatement(
+      'INSERT INTO search_index(subject_type, subject_id, card_text, '
+      "note_text, canonical_en, tags) VALUES ('card', 1, 'Md Abul Bashar', "
+      "'', '', '')",
+    );
+
+    final Set<String> virtualTables = await _virtualTables(db);
+    expect(virtualTables, contains('search_index'),
+        reason: 'the fixture must actually have an index to leave out');
+
+    final Map<String, Object?> parsed =
+        jsonDecode(read(open((await export.buildArchive())!), 'wallet.json'))
+            as Map<String, Object?>;
+    final Map<String, Object?> tables = parsed['tables']! as Map<String, Object?>;
+
+    final List<String> leaked = tables.keys
+        .where((String t) => _belongsToVirtualTable(t, virtualTables))
+        .toList();
+    expect(leaked, isEmpty, reason: 'search-index tables in the archive: $leaked');
+    // The data the index was built from is still there.
+    expect(tables.keys, containsAll(<String>['cards', 'card_fields']));
+  });
+
+  test('sealed photographs are exported as the pictures themselves', () async {
+    // The phone's copies are sealed; this archive is for other apps, so it
+    // carries the JPEGs — and its README says it is not encrypted.
+    final Uint8List key = randomBytes(32);
+    PhotoKeyring.instance.debugUseKey(key);
+    addTearDown(() => PhotoKeyring.instance.debugUseKey(null));
+
+    final int id = await scan(name: 'Md Abul Bashar', phone: '01819104376');
+    final CardRow card = await (db.select(db.cards)
+          ..where(($CardsTable c) => c.id.equals(id)))
+        .getSingle();
+    final Uint8List plain = File(card.imagePath).readAsBytesSync();
+    writePhotoSync(card.imagePath, plain, key);
+
+    final Archive archive = open((await export.buildArchive())!);
+    final ArchiveFile photo = archive.files.firstWhere(
+      (ArchiveFile f) => f.name.startsWith('photos/'),
+    );
+    expect(photo.readBytes(), plain);
   });
 
   test('the schema version travels with the data', () async {
@@ -222,3 +279,18 @@ void main() {
     expect(readme.toLowerCase(), contains('not encrypted'));
   });
 }
+
+/// Every virtual table in the database, found by how it was created rather
+/// than by what it is called.
+Future<Set<String>> _virtualTables(AppDatabase db) async => (await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+        )
+        .get())
+    .map((QueryRow r) => r.read<String>('name'))
+    .toSet();
+
+/// A virtual table itself, or one of the shadow tables SQLite names after it.
+bool _belongsToVirtualTable(String table, Set<String> virtualTables) =>
+    virtualTables.any((String v) => table == v || table.startsWith('${v}_'));
