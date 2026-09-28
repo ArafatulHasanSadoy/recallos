@@ -20,18 +20,16 @@ is public and `docs/` is served on GitHub Pages. They live in the gitignored
 
 ### Repository state
 
-- Last commit: `b48d429` "Prepare the Play Store release surface" (2026-09-08),
-  level with `origin/main`.
-- **Uncommitted since 2026-09-08:** the profile / My Card feature
-  (`lib/features/profile/`, `lib/core/imaging/portrait_image.dart`, schema v9
-  with `profiles` + `profile_fields`, `describeFieldIssue`, four new test files).
+- 499A ends at `b48d429` "Prepare the Play Store release surface"
+  (2026-09-08), tagged `cse499b-start`.
+- 499B so far is seven commits on `main`, pushed 2026-09-29: My Card, F1–F4,
+  and the phone-number label fix.
 - `flutter analyze`: clean. `flutter test`: **580 pass** (2026-09-29, after
   F1–F4; 444 at the 499A baseline `b48d429`).
-- **Starting point:** `b48d429` (the last pushed commit) is to be tagged
-  `cse499b-start`. Everything after it — the profile work included — is 499B
-  work, so nothing uncommitted has to be split to draw the line. See §8.
-- **CI** exists from 2026-09-28 (`.github/workflows/ci.yml`) but has not run on
-  GitHub yet: it runs on the first push.
+- **Starting point:** everything after `cse499b-start` is 499B work
+  (`git log cse499b-start..main`).
+- **CI** (`.github/workflows/ci.yml`) runs on every push to `main`; its first
+  run was the 2026-09-29 push.
 
 ### What 499A built ✅
 
@@ -57,7 +55,7 @@ from OCR) — are correct for derived data and destructive for authored data.
 
 ### Known defects
 
-- [ ] **B1** Profile work uncommitted and `cse499b-start` not tagged — tests are green; the tag and commits are the owner's (§8).
+- [x] ✅ **B1** Profile work committed and `cse499b-start` tagged (2026-09-29).
 - [x] ✅ **B2** "Take a copy" no longer writes the search index into `wallet.json`. The
   exporter asks `pragma_table_list` which tables are real rather than guessing
   from names (it looked for `*_fts`; the index is `search_index`). The test now
@@ -402,9 +400,9 @@ are known. Revenue work runs from week 1, not after engineering.
 
 | Week of | Build | Release / evidence |
 |---|---|---|
-| 28 Sep | ✅ F1 · ✅ F2 | tag `cse499b-start`; Play account; upload key; group agreement |
+| 28 Sep | ✅ F1 · ✅ F2 | ✅ tag `cse499b-start`; Play account; upload key; group agreement |
 | 5 Oct | ✅ F3 backup/restore (done early, 29 Sep) | v1.0 (offline, free) → internal → **closed test starts the 14-day clock**; merchant profile; first interviews |
-| 12 Oct | F4 photo encryption; billing no-INTERNET spike | backup round-trip on the phone, *then* switch it to the upload key; OCR run |
+| 12 Oct | ✅ F4 photo encryption (done early, 29 Sep); billing no-INTERNET spike | backup round-trip on the phone, *then* switch it to the upload key; OCR run |
 | 19 Oct | A1 context + next action | apply for production access |
 | 26 Oct | A2 reminders + Today | retrieval query set |
 | 2 Nov | A3 intro · A4 QR · A5 Event Mode | design-partner sessions |
@@ -424,7 +422,7 @@ before anything else; from week 11 → reliability, evidence and the report only
 
 ## 8. Only the owner can do these
 
-- [ ] Tag `b48d429` as `cse499b-start` (`git tag cse499b-start b48d429`), then commit the current work — this project never commits from an agent. If a separate 499A submission exists, tag that commit too.
+- [x] ✅ Tagged `b48d429` as `cse499b-start` and committed the 499B work so far (2026-09-29, pushed at the owner's request). If a separate 499A submission exists, tag that commit too.
 - [ ] **A written agreement with the group partner** (and the university, if its rules need it) on ownership, revenue and maintenance **before anything is sold**.
 - [ ] Play Console account: 2-Step Verification, ID check, $25.
 - [ ] Choose Personal or Organization — a Personal account that sells anything shows its full address publicly.
