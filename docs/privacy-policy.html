@@ -43,7 +43,7 @@
 <main>
 
 <h1>RecallOS — Privacy Policy</h1>
-<p class="meta">Last updated 8 September 2026</p>
+<p class="meta">Last updated 29 September 2026</p>
 
 <p>RecallOS is a business-card wallet that runs entirely on your phone. You
 photograph a card, the app reads it, and you find the person later by what you
@@ -71,13 +71,24 @@ itself enforces.</p>
       websites and postal addresses read from those cards or corrected by you.</li>
   <li>The raw text the on-device reader extracted from each card.</li>
   <li>Notes you write about why a card mattered.</li>
+  <li>Your own card, if you make one: the name, contact details and one-line
+      description you type in, and a photo of you if you choose one. The photo
+      comes from Android's picker, which hands RecallOS only the single picture
+      you select — the app has no access to the rest of your gallery.</li>
 </ul>
 
 <p>Card details are stored in a database encrypted with SQLCipher (AES-256).
-The key is generated on your phone and held in the Android Keystore; it never
-leaves the device and is not known to anyone, including us. <strong>The card
-photographs themselves are not encrypted</strong> — they are ordinary image
-files in the app's private storage, which no other app can read.</p>
+The card photographs and your own card's photo are encrypted too, each file
+sealed with ChaCha20-Poly1305 under a second key. Both keys are generated on
+your phone and held in the Android Keystore; they never leave the device and
+are not known to anyone, including us.</p>
+
+<p>To read a card, the text-recognition step needs an ordinary image file, so
+RecallOS opens the photograph into a temporary copy in its own private storage,
+reads it, and deletes the copy straight away. The document scanner's own copy
+of the picture is deleted as soon as the card is saved. Files you export or
+share are removed from RecallOS's storage within a day of being handed to the
+app you chose.</p>
 
 <p>Android's automatic backup is switched off for RecallOS, so your wallet is
 not copied to Google Drive or transferred to a new phone.</p>
@@ -95,13 +106,12 @@ not copied to Google Drive or transferred to a new phone.</p>
 <p>RecallOS does not read your contacts, your location, your microphone, your
 files, or the other apps installed on your phone.</p>
 
-<h2>Text recognition and on-device intelligence</h2>
+<h2>Text recognition and search</h2>
 
 <p>Reading a card uses Google ML Kit's text recognition, which runs on your
-device with a model included in the app — no image or text is uploaded. On some
-recent phones, RecallOS can also use the phone's own built-in language model
-through Android's system services; that also runs on the device. RecallOS works
-fully without it.</p>
+device with a model included in the app — no image or text is uploaded.
+Searching by meaning uses a small word model that is also bundled inside the
+app. RecallOS does not use any generative AI, on the phone or anywhere else.</p>
 
 <p>The document-scanner screen is provided by Google Play services, which may
 download its scanner component the first time you use it. That is a Google Play
@@ -113,9 +123,15 @@ is involved in it.</p>
 <p>Only when you deliberately send it, and only where you send it:</p>
 
 <ul>
-  <li><strong>Sharing a contact</strong> — RecallOS writes a <code>.vcf</code>
-      contact file and hands it to Android's share sheet or your contacts app.
-      You choose the destination.</li>
+  <li><strong>Sharing a contact, or your own card</strong> — RecallOS writes a
+      <code>.vcf</code> contact file and hands it to Android's share sheet or
+      your contacts app. You choose the destination.</li>
+  <li><strong>Backing up your wallet</strong> — Settings → Back up the wallet
+      builds one file containing your cards, notes, people and photographs,
+      <strong>encrypted with a passphrase you choose</strong> (Argon2id and
+      ChaCha20-Poly1305), and hands it to the share sheet so you decide where
+      it goes. Without the passphrase nobody can open it — including us, and
+      including you: it cannot be reset.</li>
   <li><strong>Taking a copy of your wallet</strong> — the export in Settings
       builds one archive containing your cards, contacts, notes and photographs
       and hands it to the share sheet. <strong>That archive is not
@@ -131,7 +147,8 @@ app you picked.</p>
 <h2>What RecallOS does not have</h2>
 
 <ul>
-  <li>No accounts, sign-in, or user profiles.</li>
+  <li>No accounts or sign-in. Your own card is kept on the phone like
+      everything else, and is never uploaded.</li>
   <li>No analytics, telemetry, or usage tracking.</li>
   <li>No crash reporting.</li>
   <li>No advertising, and no advertising identifier.</li>
@@ -142,16 +159,19 @@ app you picked.</p>
 
 <p>Business cards carry other people's personal details, and you are the one
 holding them. RecallOS keeps that information on your device only and never
-shares it on your behalf. Deleting a card removes it from your wallet; the
-"Recently deleted" screen is where a deletion becomes permanent.</p>
+shares it on your behalf. Deleting a card moves it to "Recently deleted",
+where it waits for 30 days and is then removed permanently, photographs
+included; "Delete for good" on that screen removes it at once.</p>
 
 <h2>Deleting your data</h2>
 
 <p>Uninstalling RecallOS deletes everything: the database, the encryption key
 held in the Android Keystore, and the card photographs. There is no server copy,
 so there is nothing to request the deletion of and nobody to request it from.
-Because deletion is total and irreversible, take a copy first if you want to
-keep anything — Settings → Take a copy.</p>
+Because deletion is total and irreversible, back up first if you want to keep
+anything — Settings → Back up the wallet — and restore it later from
+Settings → Restore from a backup. Restoring replaces everything on the phone
+with the backup's contents.</p>
 
 <h2>Children</h2>
 

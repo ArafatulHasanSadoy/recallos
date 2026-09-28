@@ -1,344 +1,451 @@
-# RecallOS — where the project stands, and what to do next
+# RecallOS — where the project stands, and the CSE499B plan
 
-## Context
+**This file is the live plan and is kept up to date as work lands.** A row marked
+✅ was built, tested and walked on the phone; nothing is marked done because it
+was planned. Every claim below was re-checked against the code on 2026-09-28.
 
-The previous plan (`look-at-chatgpt-github-project-shiny-starfish.md`) lives in
-`~/.claude/plans/`, not in the repo — which is why it cannot be found from the
-project. It is also out of date: everything it listed as "next" is now built,
-and the largest body of work in the tree (the whole visual redesign) never
-appears in it at all.
+**2026-09-29:** reviewed against *RecallOS CSE499B Master Plan v1.0* (a
+separate 37-page plan written from the GitHub snapshot). Three decisions came
+out of it and are applied below: sell the people workflow first (Release A),
+verify the first purchase on the phone so `INTERNET` stays out, and tag
+`b48d429` as `cse499b-start`.
 
-This document replaces it. Every claim below was checked against the code on
-2026-09-07, not recalled.
+Pricing, revenue and competitor strategy are deliberately **not** here: this repo
+is public and `docs/` is served on GitHub Pages. They live in the gitignored
+`business/` folder.
 
-**This file is kept up to date as work lands.** Anything marked ✅ DONE below
-was built, tested and walked on the device — not planned.
+---
 
-### Play Store readiness (2026-09-08)
+## 1. Where things stand (2026-09-28)
 
-The app is being prepared for Google Play, targeting the **internal testing**
-track first. The full procedure lives in [`RELEASE.md`](RELEASE.md); this is
-what changed in the code.
+### Repository state
 
-| Was | Now |
+- Last commit: `b48d429` "Prepare the Play Store release surface" (2026-09-08),
+  level with `origin/main`.
+- **Uncommitted since 2026-09-08:** the profile / My Card feature
+  (`lib/features/profile/`, `lib/core/imaging/portrait_image.dart`, schema v9
+  with `profiles` + `profile_fields`, `describeFieldIssue`, four new test files).
+- `flutter analyze`: clean. `flutter test`: **580 pass** (2026-09-29, after
+  F1–F4; 444 at the 499A baseline `b48d429`).
+- **Starting point:** `b48d429` (the last pushed commit) is to be tagged
+  `cse499b-start`. Everything after it — the profile work included — is 499B
+  work, so nothing uncommitted has to be split to draw the line. See §8.
+- **CI** exists from 2026-09-28 (`.github/workflows/ci.yml`) but has not run on
+  GitHub yet: it runs on the first push.
+
+### What 499A built ✅
+
+| Area | What exists |
 |---|---|
-| Release signed with the **Android debug key** — Play rejects the upload outright | `signingConfigs` reads `android/key.properties`, falling back to debug when it is absent so a fresh clone still builds |
-| `RECORD_AUDIO` declared for a voice-note feature that does not exist | gone from the manifest and from `Info.plist`. The merger report confirmed it came only from our own file, so no `tools:node="remove"` was needed |
-| The developer **OCR spike** screen shipped to users, reading their gallery | route and Settings group both behind `kDebugMode` |
-| Settings said **"Your cards are encrypted"** — but the photographs are not | now "Your wallet is encrypted", with the gap named in the description |
-| README said the back of a card is "kept, not read" | corrected; back-side OCR shipped on 2026-09-07 |
-| No way to get a wallet off a phone except one contact at a time | **Take a copy** — see row 2 of the table below |
-| No `.aab` had ever been built | built and verified: no `INTERNET`, no `RECORD_AUDIO`, `targetSdk 36` |
+| Capture | Camera or gallery through the ML Kit document scanner; save-first (photo + row written before OCR); front **and back** read, `card_fields.side` / `ocr_blocks.side` (schema v8) |
+| Understanding | On-device ML Kit OCR (Latin); `card_extractor.dart` with BD phone rules, web/email validators; provenance on every fact (`FactSource`), confidence dot, side-aware highlight of where a field was read |
+| Review | Edit, relabel, tap an OCR block to assign it, retry-all queue for cards that need attention |
+| People | Identity graph (people, organisations, roles, contact points); platform domains never become a company; duplicate review with pointer-based, undoable merges |
+| Search | FTS5 + on-device Model2Vec embeddings + reciprocal-rank fusion + utility scoring, with a "why this matched" label |
+| Acting | Call, WhatsApp (mobiles only), email, map; vCard save and share without a contacts permission |
+| Privacy | No `INTERNET` in release; SQLCipher database with the key in the Keystore; biometric / device-credential lock; Android backup off |
+| Data | "Take a copy" — one zip with `contacts.vcf`, `wallet.json`, `photos/` (plaintext, export only) |
+| Profile (uncommitted) | Personal profile, typeset "My Card", handed over as a vCard |
+| Look | The wallet design system, bundled fonts, dark mode, onboarding, brand icons |
+| Release | Upload-key signing config, `.aab` verified once, privacy policy live at `https://arafatulhasansadoy.github.io/recallos/privacy-policy.html` |
 
-**Verified on the artifact, not the source.** `flutter build appbundle`, then
-`bundletool build-apks --mode=universal` and `aapt dump permissions` on the
-result: `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, AICore `BIND_SERVICE`,
-and the app's own dynamic-receiver permission. Nothing else.
+**A decision worth keeping.** The profile got its own tables (schema v9) rather
+than an `isSelf` row in `people`. A self-row would have had to be excluded from
+seven separate mechanisms, and two of them — `_dropImplausiblePeople` (deletes
+names that fail `looksLikePersonName`) and `_syncPersonName` (overwrites a name
+from OCR) — are correct for derived data and destructive for authored data.
 
-`test/features/release_surface_test.dart` pins all of it. Those assertions read
-source rather than running it, deliberately: both facts are only false in a
-*release* build, and the suite runs in debug, where `kDebugMode` is a
-compile-time `true`. There is no runtime seam — a widget test would pass on a
-broken app.
+### Known defects
 
-**Still yours to do:** create the Play account ($25, ID verification, and it can
-take days), generate the upload keystore, and switch GitHub Pages on so
-`docs/privacy-policy.html` has a public URL. `RELEASE.md` walks through each.
+- [ ] **B1** Profile work uncommitted and `cse499b-start` not tagged — tests are green; the tag and commits are the owner's (§8).
+- [x] ✅ **B2** "Take a copy" no longer writes the search index into `wallet.json`. The
+  exporter asks `pragma_table_list` which tables are real rather than guessing
+  from names (it looked for `*_fts`; the index is `search_index`). The test now
+  finds virtual tables by how they were created, not with the exporter's own filter.
+- [x] ✅ **B3** Profile portraits no longer leak: Save deletes the one it replaced
+  or removed, the editor deletes a pick it never saved, and the retention sweep
+  clears older orphans.
+- [x] ✅ **B4** Notes can be added, corrected or cleared after saving — tap the
+  "Why you saved this" block on a card; the card is re-indexed so search finds
+  the new words. Walked on the RMX3612.
+- [x] ✅ **B5** `flutter_local_ai` and the unused `PlatformIntelligence` removed
+  (25 transitive packages went with it, `audioplayers` and `video_player`
+  among them); the AICore permission is gone from the bundle; README and
+  privacy policy no longer describe a language model.
+- [x] ✅ **B6** Uninstalling no longer has to destroy the wallet: an encrypted
+  backup restores it on any phone (F3).
+- [x] ✅ **B7** Card photos, thumbnails and the portrait are encrypted at rest (F4).
+- [ ] **B8** Scaffolding nothing uses: `CardType` never set; `tags` / `subject_tags` never read or
+  written (FTS `tags` column written as `''`); `interactions` read by nothing, so `previousUse` is always 0;
+  `search_queries` / `search_feedback` have no writers.
+- [ ] **B9** The OCR evaluation has never been run. (The spike's stale "3 engines"
+  text, dead `tessdata/README.md` pointer and orphan `tessdata_config.json` are
+  fixed; the run itself needs labelled cards.)
+- [x] ✅ Capture uses the shared `ocrEngineProvider` instead of building its own recogniser.
+- [x] ✅ Retention sweep: Recently deleted keeps a card 30 days, then purges it
+  at launch through the same steps as "Delete for good".
+- [x] ✅ **A reformatted phone number read as a guess** (found 2026-09-28, fixed
+  2026-09-29): `+880 1711-223344` shown as `01711223344` was labelled "digit
+  restored" and sent for review. Only a digit the card never printed counts now
+  (`PhoneExtractor.restoresDigit`), and labels already stored are re-judged
+  once at launch from their OCR text (`repairDigitRestoredLabels`). Written in
+  a separate session and ported in; verified in the release build, where both
+  new scans show "On the card".
+- [x] ✅ **The scan button covered search answers** (found on the phone
+  2026-09-29): with the keyboard up, the pinned "Scan a card" pill sat on top
+  of the result being typed for. It stands aside while the keyboard is up; a
+  widget test fails without the change.
+- [x] ✅ **Deleted cards took search slots** (confirmed 2026-09-29, fixed the
+  same day): both arms now exclude deleted cards *before* their limits. A test
+  with 40 deleted cards outranking one live card returned **nothing** on the
+  old code and returns the live card now.
+- [x] ✅ **Open search results went stale** (found on the phone 2026-09-29): a
+  card deleted from its own screen stayed in the results until the next
+  keystroke, and a restore or note edit did not show either. Results now
+  re-run when `cards`, `card_fields`, `notes` or `embeddings` change
+  (`SearchRepository.watchChanges`). Three widget tests fail with the refresh
+  off and pass with it on.
+- [x] ✅ **Release builds refuse the debug key** (2026-09-29): without
+  `android/key.properties` the signing task fails and says why;
+  `RECALLOS_ALLOW_DEBUG_SIGNING=true` opts in for builds that are never
+  uploaded (CI sets it). Pinned in `release_surface_test.dart`.
 
-### Done in this session (2026-09-07)
+---
 
-| # | Feature | Verified how |
+## 2. The CSE499B thesis
+
+**Product.** RecallOS is a privacy-first memory for **people** and **important
+things**. It captures business cards, receipts and warranties (tickets and IDs
+next), turns them into verified, linked facts, reminds you before something
+matters, and answers questions with the sources attached — *Ask RecallOS*.
+
+**Direction change from 499A, stated plainly.** 499A was a business-card
+wallet. The owner's second prototype, Smart Wallet (`groky-wallet`: receipts,
+warranties, coupons, tickets, IDs, reminders), is being folded into RecallOS as
+its ideas and rules — not its code; the stacks differ. Only RecallOS will be
+published.
+
+**Offline core, optional online.** Everything above works without an account or
+a network. Online features (an end-to-end-encrypted cloud backup first) are
+opt-in and come after the offline Must list.
+
+**Research question.** Does source-aware hybrid retrieval — keyword + semantic +
+structured — answer real personal-memory questions better than keyword search?
+Measured, not claimed.
+
+## 3. What "done" means — three stories
+
+499B is done when all three run end to end on a **release** build on the
+RMX3612, in airplane mode:
+
+1. **Person.** Scan a card → note "esports sponsorship" → WhatsApp intro the user
+   edits and sends → follow-up reminder → later, "Who was interested in
+   sponsorship?" returns that person with the source.
+2. **Purchase.** Scan a laptop receipt, then its warranty → RecallOS suggests
+   they belong together; the user confirms → the expiry is derived and labelled
+   *derived* → a reminder is scheduled → "When does my laptop warranty expire?"
+   answers with both documents cited.
+3. **Memory.** "How much did I spend on electronics this month?" (a database sum,
+   receipts cited) and "What expires in the next 90 days?".
+
+## 4. Scope — three releases
+
+The order comes from the Master Plan review: earn on the people workflow, which
+sits on code that already works, *before* the riskiest change (the schema
+generalisation). Sizes: S ≤ 1 day, M 2–4 days, L 1–2 weeks.
+
+### Foundation
+
+- [x] ✅ **F1. Baseline freeze** (2026-09-28) — B2–B5 and the capture-engine fix;
+  30-day retention sweep; Settings → About (version + commit, tap to copy;
+  feedback email with the build filled in; privacy policy); CI
+  (`.github/workflows/ci.yml` + `tool/ci/check_permissions.sh`, which reads the
+  built bundle); the benchmark flag (`lib/core/build_flags.dart`). 25 new tests.
+  **Verified on the RMX3612 with the release bundle:** About rows, the commit
+  stamp, copy-to-clipboard, OCR under R8 (5 fields read), skip-then-add note,
+  search by the new note. Bundle permissions: CAMERA, USE_BIOMETRIC,
+  USE_FINGERPRINT, the app's receiver permission — nothing else; every native
+  library 16 KB-aligned (zip and ELF).
+- [x] ✅ **F2. Search and signing fixes** (2026-09-29) — deleted cards out of
+  search candidates; open results refresh when the data changes; release
+  builds refuse the debug key unless explicitly allowed. 504 tests pass.
+  **Verified on the RMX3612, release bundle:** search finds the live card;
+  deleted, it shows "Nothing matched"; restored from Recently deleted, it
+  reappears in the open results without retyping; deleted from its own
+  screen, it leaves the results at once. A keyless release build fails with
+  the message; with the opt-in it builds and carries the same four
+  permissions.
+- [x] ✅ **F3. Encrypted, versioned backup and restore** (2026-09-29) — its own format,
+  separate from the plaintext export: authenticated manifest, stable IDs,
+  schema/export versions, encrypted assets with digests; no FTS shadows,
+  embeddings or entitlements inside. Restore **replaces** (never merges):
+  preview counts, keep a copy of the current vault, validate before touching
+  anything, journalled swap that resumes or rolls back. Proven on a clean
+  install with synthetic records before it goes near a real wallet.
+  **Built:** `lib/core/backup/` — Argon2id (64 MiB, 2 passes) wraps a random
+  content key; ChaCha20-Poly1305 seals the manifest, the data and each photo,
+  bound to the archive and the header; both primitives pinned to their RFC
+  test vectors. The backup carries its own schema, so a newer app restores an
+  older backup through the normal migrations and an older app refuses a newer
+  one. Restore stages beside the live wallet, the app restarts, and the swap
+  happens in `openEncryptedDatabase` before anything opens the file — resumable
+  from a crash, rolled back if the restored wallet does not open with this
+  phone's key and hold the promised cards. 36 new tests (540 total): a full
+  round trip onto a "phone" with another key and folder reproduces every row
+  and photo byte for byte; wrong passphrase, edited header, changed or swapped
+  photo, truncated file, path-climbing entry, non-backup, newer schema and
+  oversized file all leave the current wallet untouched.
+  **Verified on the RMX3612, release build:** backup of the test wallet in ~4 s
+  (key derivation and read-back check included), saved to Download through the
+  share sheet; the phone-made file decrypts and verifies on the laptop; no
+  plaintext names or notes in it; restore after editing the note brought the
+  original note, photo and search back, the app restarted itself and said
+  "Restored 1 card from your backup."; a wrong passphrase re-asks instead of
+  failing. No new permissions (still the four); `pointycastle` and
+  `file_selector` added. "Take a copy" is now labelled as a readable export
+  that cannot be restored.
+- [x] **F4. Photos encrypted at rest** (M) ✅ — card photos, thumbnails and the
+  portrait; authenticated encryption, versioned header, key in the Keystore.
+  - Sealed with ChaCha20-Poly1305 under a second Keystore key (`photo_key_v1`),
+    in files that start with `RCPH` + a version byte (`lib/core/imaging/photo_vault.dart`).
+  - Photos stored before F4 are sealed in place once, on the first launch.
+  - OCR reads a plain temporary copy that is deleted as soon as it's read.
+  - Every temporary copy in the cache (the scanner's picture, the pickers'
+    copies, exports) now has a set lifetime in `lib/core/storage/hand_offs.dart`.
+    Found on the phone: the scanner had kept a plaintext copy of every scan.
+  - Verified on the RMX3612 (29 Sep):
+    - the existing photos became `RCPH` files;
+    - home, card detail and the full-size viewer all display them;
+    - a new scan and a back capture were stored sealed, with OCR still working;
+    - the scanner folder was empty after capture, with no plain copies left.
+  - Also fixed: the full-size viewer's back arrow and status bar were drawn
+    dark on dark.
+  - Release build walked end to end on the RMX3612 the same day: scan →
+    review (6 fields, all "On the card") → note → search by the note →
+    contacts → Recently deleted → Settings. 580 tests pass.
+
+### Release A — first sellable workflow (people)
+
+Target: live on Play around weeks 7–8, with a real one-time purchase.
+
+- [ ] **A1. Context and next action** (M) — where and when you met (suggested,
+  never fabricated); notes editable any time ✅ (done in F1); a next action with
+  purpose, due date and optional reminder.
+- [ ] **A2. Reminders and Today** (L) — obligations separate from their
+  notification attempts; inexact scheduling; `reconcile()` after reboot,
+  update, restore and timezone change; notification permission asked when the
+  first reminder is set; generic lock-screen text for sensitive items. Today:
+  overdue, due today, upcoming, then review work.
+- [ ] **A3. Introduction handoff** (S) — "Say hello": a template from the
+  user's own card, shown in full, edited, then handed to WhatsApp / SMS / mail.
+  Recorded as *opened*, never as *sent*.
+- [ ] **A4. My Card QR** (S) — `qr_flutter` over the existing `buildVCard`;
+  only the fields the user chose.
+- [ ] **A5. Compact Event Mode** (M) — one active event; captures inherit it;
+  the user can override; an end-of-event summary of people and next actions.
+- [ ] **A6. People search, grounded** (M) — interactions logged and fed into
+  ranking; Ask for people: lookup ("Rahim's number") and need-shaped search,
+  every answer citing its card.
+- [ ] **A7. Offline Plus — one-time purchase** (L) — Play Billing 8+,
+  **verified on the phone** (see §5). Entitlements cached as a signed grant, so
+  a bought feature works offline; restore on reinstall; pending / cancelled /
+  refunded states; free-tier limits (5 active reminders is a hypothesis). The
+  paywall lists only features that are ready, with Play's localised price.
+- [ ] **A8. Release A gates** — closed test running since week 2; production
+  access applied for; Data safety and privacy policy match the build;
+  golden journeys on the phone.
+
+### Release B — people plus purchases (core 499B)
+
+Target: weeks 10–11.
+
+- [ ] **B1. Schema v10, in place** (L) — see §5. Rehearsed on a copy of a real
+  database; the encrypted backup (F3) must exist first.
+- [ ] **B2. Receipts and warranties** (L) — classification (the capture
+  category the user picked is a strong signal; rules next; "What did you
+  save?" when unsure). Receipt: merchant, date, final total, currency,
+  category. Warranty: product, model, serial, coverage, start basis, duration,
+  printed expiry. Critical fields always reviewed.
+- [ ] **B3. Linking and derived expiry** (M) — suggested on serial / invoice /
+  reference evidence with reasons shown; confirmed, reversible; a derived
+  expiry labelled *calculated*, recomputed when its inputs change.
+- [ ] **B4. Spending totals** (M) — exact sums from verified receipt facts, by
+  period / category / merchant, one currency at a time; duplicates and
+  unverified totals listed separately, never silently added.
+- [ ] **B5. Ask RecallOS across people and purchases** (L) — typed plans only:
+  lookup, search, filter, dates, captured-spending aggregate. Answers state
+  their scope ("1–30 Sep, BDT, 12 verified receipts"), cite sources, and say
+  "couldn't determine that" when they can't. No model-written SQL.
+
+### Release C — only with spare capacity and passed gates
+
+Tickets · a public self-card link · E2EE cloud snapshots with a subscription
+(brings `INTERNET` back — its own disclosure, policy, Data safety and account
+deletion work) · IDs, only after F4 and an independent review · several My
+Cards · QR/barcode scanning · tags and favourites · Bangla UI (with a bundled
+Bengali font) and Banglish query experiments.
+
+**Later, not this semester:** multi-device writable sync, Teams, CRM
+integrations, bank connections, ten categories, generative drafting.
+
+**Cuts, if time runs short, in this order:** generative anything, cloud, public
+links, tickets, several identities, advanced customisation, line items. Never
+cut: security, recovery, honest critical-field review, the primary retrieval,
+billing correctness, or the evaluation the report's claims rest on.
+
+## 5. Architecture decisions for 499B
+
+### The first purchase is verified on the phone
+
+Offline Plus is a one-time unlock of features that run offline, so Release A
+keeps the strongest thing RecallOS can say about privacy — *Android itself
+stops this app from sending anything* — true at launch. The purchase is
+checked on the device (Play's signed purchase data, verified against the app's
+public key) and acknowledged through the Play Store app. Offline piracy cannot
+be driven to zero; a working paid user matters more than always-online DRM.
+
+**To prove before relying on it:** that the Play Billing library adds no
+`INTERNET` permission. A one-day spike: add `in_app_purchase`, build the
+bundle, run `tool/ci/check_permissions.sh`, and complete a licence-test
+purchase from internal testing. If `INTERNET` does come in, this decision
+reopens.
+
+A server (a Supabase Edge Function that checks purchases with Google) arrives
+with Pro and cloud, when `INTERNET` returns anyway.
+
+### Evolve the schema in place — no parallel tables
+
+The existing tables are already most of a general "memory item" model, so
+schema v10 extends them rather than running an old and a new system side by
+side:
+
+| Need | Already there | v10 change |
 |---|---|---|
-| 8 | **Back-side OCR** | on the RMX3612: back read, 15 blocks, fields land labelled `BACK`, card flips to the side a field was read from |
-| 10 | **Biometric lock** | code + 12 widget tests; the *unlock prompt* is unverified — this phone has no screen lock set (see below) |
-| 11 | **Database encryption** | on the RMX3612: the live `recallos.sqlite` is ciphertext, all 7 real cards still open |
+| A saved thing of any type | `cards` — `type` enum (already has `receipt`, `warrantyCard`, `coupon`, `eventPass`…), timestamps, soft delete, person/org/role links | add `title`, `sensitivity`, `captureSource`, `classificationConfidence`; add `ticket`, `idDocument` to the enum. "MemoryItem" is the Dart domain name over this table |
+| Typed facts | `card_fields` — key, value, normalised value, `FactSource`, confidence, verified, region, side | add `valueType`, `amountMinor` (INTEGER) + `currency`, `dateValue` (a local date, not a timestamp), `status`; a controlled key vocabulary in code |
+| Many pages / PDFs | `imagePath`, `backImagePath`, `thumbPath` | new `item_assets`; front and back migrate into it |
+| Links between things | `duplicate_candidates` shows the reversible pattern | new `item_links` with a `reasons` JSON column |
+| Dates and reminders | — | `important_dates` (obligations) and `reminders`, with a separate `ReminderScheduler` that owns the platform side and can `reconcile()` — needed in Release A, so they land before v10 |
 
-Plus two things found on the way and fixed: Android was **backing the whole
-plaintext wallet up to Google Drive** (`allowBackup` defaults to on), and
-`ocrEngineProvider` was being disposed and rebuilt per use despite its own
-comment saying it should be held open.
+**Money is an integer in minor units plus a currency code** — paisa, cents —
+never a floating-point number. BDT and USD are never added together.
 
-### Interaction polish (2026-09-07)
+**A fact has three separate properties**, not one enum: *origin* (printed,
+user, derived, inferred), *review* (unreviewed, confirmed, rejected) and
+*validity* (current, superseded, outdated). Today's `FactSource` mixes them
+(`verified` and `outdated` sit beside `printed`); v10 separates them.
 
-- ✅ Card detail now uses one 420ms card expansion instead of competing with a
-  horizontal page slide. The return animation works from the front or back and
-  from wallet, search, contact, repair and duplicate-card entry points.
-- ✅ Card detail receives the tapped preview on its first frame, so an uncached
-  database read cannot intermittently remove the shared transition.
-- ✅ Search is a deeper themed pocket with an ochre index rail and a visible
-  lower wall. Opening a card clears search/filter focus so the keyboard does
-  not return underneath the shrink-back animation.
+Deferred until a feature needs them: a fact-dependency table (a derived fact
+keeps its inputs as a JSON list), per-page search chunks, a separate
+search-document table, per-type summary projections.
 
-**First step of any work here: copy this file into the repo** (`docs/PLAN.md`)
-so it is version-controlled and findable. The plans directory is a scratch
-space outside the project.
+The query side adopts interfaces rather than new storage: `HybridSearchQuery`
+with lexical / semantic / hybrid modes — the same switch runs the research
+comparison — plus `FactQuery`, a money aggregate, and a `RecallQueryPlan` that
+Ask RecallOS executes. AI output is always a *candidate* that the user or a
+validator promotes; nothing generative writes to the database.
 
----
+### The benchmark build
 
-## 1. The urgent thing: nothing is committed
+`/spike` is compiled out of release builds (`router.dart`), but OCR must be
+measured on a release build — R8 once made release OCR return zero blocks while
+debug was fine. So the route is also enabled by
+`const bool.fromEnvironment('RECALLOS_BENCH')`:
 
-Last commit is `c632e66` (22 Aug). **48 files are uncommitted.** That is:
+```bash
+flutter build apk --release --dart-define=RECALLOS_BENCH=true
+```
 
-- Tier 3d — front/back capture
-- The deletion fixes (both delete paths were destroying data; the detail-screen
-  trash icon purged outright)
-- The `youtube.com`-as-a-company fix, plus the silent org auto-merge it hid
-- The field-editor modality fix
-- The entire design system — theme, bundled fonts, ~40 components, 16 frames,
-  Settings and Onboarding as new screens
+That APK is never uploaded. The Play bundle is built without the define, and
+CI plus `release_surface_test.dart` assert it defaults to off.
 
-387 tests pass, `flutter analyze` is clean. This should be committed in
-reviewable chunks before anything else lands on top of it.
+### Migration safety
 
----
+- Back up the phone's database before every migration:
+  `adb exec-out "run-as com.recallos.recallos cat app_flutter/recallos.sqlite"` —
+  debug builds only, so take it before installing a release build.
+- Rehearse each migration on a copied database file first.
+- The encrypted backup (F3) exists before schema v10 touches a real wallet.
 
-## 2. What is actually built
+### No analytics SDK
 
-| From the old plan | State |
-|---|---|
-| Tier 0 — zero egress, release OCR fix | done, committed (`dd15615`) |
-| Tier 1 — identity graph | done, committed (`6c2f97e`) |
-| Tier 3a — needs-attention queue | done, **uncommitted** |
-| Tier 3b — vCard + `share_plus` | done, **uncommitted** |
-| Tier 3c — duplicate review + undo-able merge | done, **uncommitted** |
-| Tier 3d — front/back capture (cheap version) | done, **uncommitted** |
-| The redesign | not in the old plan; **uncommitted** |
+Installs, retention and purchases come from Play Console's own reports. Paywall
+and feature counts are kept on the device and exported only when a tester
+chooses to send them from About — never OCR text, names, notes or raw queries.
 
-The Tier 3b values call held: `flutter_contacts` was declined in favour of a
-vCard + share sheet, so the manifest is still only CAMERA + RECORD_AUDIO.
+### Honest wording
 
----
+"BDT 8,450 in saved receipts", not "you spent". "Message opened", not
+"message sent". "Calculated from purchase date + 24 months", not a bare date.
+No "100% accurate", "military-grade" or "never miss a deadline" anywhere.
 
-## 3. What is missing — the table
+## 6. Evaluation — measured, never invented
 
-Every row checked against the code on 2026-09-07. "Scaffolding" means the
-table, enum or function exists but nothing in `lib/` touches it.
+- [ ] **OCR on cards** — character error rate and per-field F1, bucketed Latin /
+  Bengali / mixed, on the benchmark build. Needs 30+ hand-labelled cards.
+- [ ] **Receipt and warranty extraction** — per-field F1 on real documents,
+  reported separately for Bangla and thermal-printed receipts.
+- [ ] **Classification** — accuracy and macro-F1.
+- [ ] **Retrieval** — keyword vs semantic vs hybrid: P@3, MRR, NDCG over a
+  labelled set of English and Banglish queries.
+- [ ] **Duplicates and link suggestions** — precision, recall, false-link rate.
+- [ ] **Ask RecallOS** — answer accuracy and grounded-answer rate (every
+  statement traceable to a stored fact) on a fixed question set.
+- [ ] **Users** — System Usability Scale with the 20–30 closed-test users, plus a
+  willingness-to-pay survey.
+- [ ] **Business** — real conversions and revenue from Play Console.
 
-| # | Feature | State | Cost | Blocker / note |
-|---|---|---|---|---|
-| 1 | **OCR gate run** | never run | S | needs your hand-labelled `labels.json` |
-| 2 | **Whole-library export** (JSON + VCF + photos) | ✅ **done** | — | Settings → Privacy → "Take a copy". One zip: `contacts.vcf`, `wallet.json`, `photos/`. `wallet_export.dart`; 9 tests |
-| 3 | **Interactions → ranking** | scaffolding | S | table written twice, never read; `previousUse` always 0 |
-| 4 | **Tags + library filter** | scaffolding | S | tables dead; FTS `tags` column written as `''` |
-| 5 | **Retention sweep** | absent | S | nothing compares `deletedAt` to a date |
-| 6 | **My Card / self identity** | absent | M | no `isSelf` anywhere; needs a schema column |
-| 7 | **QR sharing** | absent | S | `qr_flutter` not in pubspec; reuses `buildVCard` |
-| 8 | **QR scanning** | absent | S | `mobile_scanner` not in pubspec |
-| 9 | **Local analytics screen** | absent | S | depends on #3 |
-| 10 | **Biometric lock** | ✅ **done** | — | `local_auth ^3.0.2`; `lock_gate.dart`, Settings → Privacy |
-| 11 | **Database encryption** | ✅ **done** | — | SQLCipher via `pubspec` hooks; key in the Keystore; `encrypted_database.dart` |
-| 12 | **Reminders** | absent | M | `flutter_local_notifications` not in pubspec |
-| 13 | **`CardType` ever being set** | scaffolding | S | **blocks 14 and 15** — no card ever gets a type |
-| 14 | **Coupon wallet** | absent | M | needs #13 |
-| 15 | **Warranty vault** | absent | L | needs #13 |
+## 7. Calendar
 
-Three of these are worse than the old plan implied — details below.
+About 14 weeks from 28 Sep 2026; re-pinned once the report and defense dates
+are known. Revenue work runs from week 1, not after engineering.
 
-### 3b. The product-brief features (`ChatGPT-M CSE499 Project Product HQ`)
+| Week of | Build | Release / evidence |
+|---|---|---|
+| 28 Sep | ✅ F1 · ✅ F2 | tag `cse499b-start`; Play account; upload key; group agreement |
+| 5 Oct | ✅ F3 backup/restore (done early, 29 Sep) | v1.0 (offline, free) → internal → **closed test starts the 14-day clock**; merchant profile; first interviews |
+| 12 Oct | F4 photo encryption; billing no-INTERNET spike | backup round-trip on the phone, *then* switch it to the upload key; OCR run |
+| 19 Oct | A1 context + next action | apply for production access |
+| 26 Oct | A2 reminders + Today | retrieval query set |
+| 2 Nov | A3 intro · A4 QR · A5 Event Mode | design-partner sessions |
+| 9 Nov | A6 people search · A7 Offline Plus | licence-test purchases |
+| 16 Nov | A8 gates | **Release A live — first sale attempt** |
+| 23 Nov | B1 schema v10 | evaluation round 1 written up |
+| 30 Nov | B2 receipts + warranties | receipt / warranty labels |
+| 7 Dec | B3 linking · B4 totals | |
+| 14 Dec | B5 Ask across both | **Release B live** |
+| 21 Dec | Release C only if spare | usability + willingness-to-pay study; evaluation round 2 |
+| 28 Dec | freeze; golden-journey QA | report, defense rehearsal |
 
-That brief lists 16 numbered features. Mapped against the code, most of the
-hard half is already done — but the **first five** are the ones the brief's own
-demo script (§26) opens with, and four of them collide with the offline
-decision.
+**Stop rules** (from the Master Plan): no restore proven by week 4 → no
+destructive data change; core people workflow missing by week 6 → no new
+features; no payment path by week 8 → Play Console and billing blockers come
+before anything else; from week 11 → reliability, evidence and the report only.
 
-| Brief # | Feature | State in code | Note |
-|---|---|---|---|
-| 1 | User accounts | **absent** | needs a server — conflicts with zero-egress |
-| 2 | Personal professional profile | **absent** | the local half of this is buildable offline |
-| 3 | Digital business card ("My Card") | **absent** | = row 6 of the table above |
-| 4 | QR sharing | **absent** | = row 7; `qr_flutter` over the existing `buildVCard` |
-| 5 | Link sharing | **absent** | needs a public URL — genuinely online, defer |
-| 6 | vCard / contact sharing | **done** | per-person and per-org; `contact_export.dart` |
-| 7 | Visiting-card scanner | **done** | permission, preview, capture, review, retake |
-| 8 | Front/back scanning | ✅ **done** | both sides read; `card_fields.side` + `ocr_blocks.side` (schema v8); front wins when both faces print the same value |
-| 9 | OCR | **done** | on-device ML Kit; release-build bug fixed |
-| 10 | Structured extraction | **done** | `card_extractor.dart` + validators |
-| 11 | Human verification | **done** | review → correct → confirm, with provenance on every fact |
-| 12 | Contact/card management | **done except tags** | notes yes, tags no (row 4 above) |
-| 13 | Search and smart retrieval | **done (weakened)** | FTS + embeddings + hybrid rank, but `previousUse` never fires (row 3) and the FTS `tags` column is always empty (row 4) |
-| 14 | Networking / contact memory | **partial** | the note carries the context; `people.relationship` and `people.photoPath` are declared and never written |
-| 15 | Offers / coupons | **absent** | = row 14; blocked on row 13 (`CardType`) |
-| 16 | Privacy and security | **strong, minus accounts** | zero-egress + SQLCipher at rest + a biometric lock + Android backup disabled. No accounts, by choice (see the collision below) |
+## 8. Only the owner can do these
 
-**The collision worth deciding now.** The brief's §25 core loop begins
-"Account/Profile → Digital Card → Share", and its §26 demo script opens with
-"Create/login to an account". The old plan explicitly chose to stay offline and
-reinterpret CO5 that way — which rules out #1 and #5 outright, and makes #2 a
-*local* profile rather than an account.
+- [ ] Tag `b48d429` as `cse499b-start` (`git tag cse499b-start b48d429`), then commit the current work — this project never commits from an agent. If a separate 499A submission exists, tag that commit too.
+- [ ] **A written agreement with the group partner** (and the university, if its rules need it) on ownership, revenue and maintenance **before anything is sold**.
+- [ ] Play Console account: 2-Step Verification, ID check, $25.
+- [ ] Choose Personal or Organization — a Personal account that sells anything shows its full address publicly.
+- [ ] Generate the upload key (`RELEASE.md` §1); back it up in two places off this laptop.
+- [ ] Settle the permanent `applicationId` and the store title before the first upload — search Play and trademarks for "RecallOS" first.
+- [ ] Merchant payments profile (week 2).
+- [ ] Recruit 20–30 closed testers (week 2).
+- [ ] Hand-label cards, receipts and warranties for §6 (weeks 1–5).
+- [ ] Send the report and defense dates.
+- [ ] Agree with the group partner which parts they own (proposed: the evaluation dataset and QA, or the receipt/warranty slice).
+- [ ] 15–20 interviews with the first customer segment (independent professionals / small agencies) before Release A ships.
 
-That is defensible and arguably stronger, but it has to be **said out loud** in
-the report rather than left as a gap, or it reads as three missing features.
-The honest framing: a local profile plus QR and vCard covers the intent of
-#1–#6 without a server, and the zero-egress guarantee is what pays for it.
-Deciding this changes what gets built next, so it should be settled with your
-supervisor before Step 4.
+## 9. Verification — how every item above gets its ✅
 
-**Dead data layers.** Tables and enums exist that nothing touches:
+- `flutter analyze` clean and `flutter test` green before anything is reported done.
+- Every UI change checked on the RMX3612 with `adb exec-out screencap -p`.
+- `aapt dump permissions` on the release APK after every new package, compared with the CI allowlist.
+- `zipalign -c -P 16` on native libraries before each Play upload (required for updates from 1 Feb 2027).
+- Backup: create → uninstall → reinstall → restore → identical rows and photos, as a test and once on the phone.
+- Each migration rehearsed on a copy of the real database.
+- The three stories in §3 on a release build in airplane mode.
+- Once online features exist: zero network requests without sign-in (checked through a proxy), row-level-security tests, Play Billing tested with licence testers.
 
-- `tags` / `subject_tags` (`lib/core/db/tables.dart:369-382`) — zero reads,
-  zero writes. The FTS5 index even has a `tags` column, written as a literal
-  empty string on every index (`search_repository.dart:123-127`).
-- `CardType` (`lib/core/db/enums.dart:44-53`) — **no value is ever set.** The
-  column always holds `unknown`; the sole card insert omits it entirely
-  (`card_repository.dart:149-152`). All ten variants, `warrantyCard` and
-  `coupon` included, are dead. Tier 5 cannot start without a type-setting path.
-
-**A ranking signal that never fires.** `interactions` is written in only two
-places, both in `card_repository.dart` — `scanned` at `:376` (inside `addNote`,
-which returns early on an empty note, so a card saved without one logs
-*nothing*) and `edited` at `:787`. Nothing ever reads the table. The
-`previousUse` term in `utility_score.dart:36` is never supplied, so it silently
-defaults to 0 — the ranking advertises a signal it does not use.
-
-**Export is single-subject only.** vCard 3.0, one person or one org at a time
-(`contact_export.dart:68,116`). `buildVCards(Iterable)` — the multi-contact
-primitive — already exists at `vcard.dart:113` and **has no caller in `lib/`**.
-No JSON, no CSV, no whole-library export, no export row in Settings.
-
-**No retention sweep.** Soft-deleted cards and their full-size JPEGs persist
-indefinitely. Nothing compares `deletedAt` against a date anywhere. I removed
-the "kept for 30 days" copy rather than claim something untrue, so the app is
-honest — but this is a debt I introduced by making both delete paths soft.
-
-**Absent entirely:** "My Card" / self identity, QR sharing, QR scanning,
-reminders, biometric lock, database encryption. None of `qr_flutter`,
-`mobile_scanner`, `flutter_local_notifications`, `local_auth`,
-`flutter_secure_storage` are in `pubspec.yaml`. (`sqlcipher_flutter_libs`
-appears in `pubspec.lock` only as a transitive dep of `drift_flutter`; the
-database is opened unencrypted at `database.dart:54`.)
-
----
-
-## 4. The OCR gate has never been run
-
-`README.md:20` still admits this, and the old plan called for it "throughout".
-It is the gate the entire extraction claim rests on, and there is no evidence
-behind it: **no `results.json` or `labels.json` is committed anywhere.**
-
-The machinery is complete and reachable:
-
-- Settings → "OCR spike" → `/spike` (`router.dart:78`)
-- `spike_screen.dart:62` picks images with `ImagePicker.pickMultiImage()`
-- `_export()` (`:92`) writes `spike_results.json` to the app documents
-  directory and copies the path to the clipboard for `adb pull`
-- `spike_runner.dart` is complete — no stubs
-- `tool/spike/score.dart` grades `<results.json> <labels.json>` and buckets by
-  script (`latin` / `bengali` / `mixed`), which is the whole point: an average
-  across both hides what the gate needs to show
-
-Three stale details to fix while in there: the screen says "3 engines"
-(`spike_screen.dart:70`) but `SpikeRunner.engines` returns 2
-(`spike_runner.dart:87`); the availability banner points at
-`assets/tessdata/README.md` (`:214`), which does not exist; and
-`assets/tessdata_config.json` is a tracked orphan referenced from nowhere.
-
-**This needs you for one step.** I can run the spike on the RMX3612, pull the
-results and do the scoring. I cannot write `labels.json` — that is the
-hand-labelled ground truth for your cards, and inventing it would defeat the
-gate. You have 6 cards in the app already; the plan's target was 5–10.
-
----
-
-## 5. Recommended order
-
-### Step 1 — Commit, and put this plan in the repo
-
-Yours to do. Suggested split: design system; front/back capture; the three
-correctness fixes (deletion, identity/domain, editor modality); then the three
-built on 2026-09-07 — back-side OCR (schema v8), the biometric lock, and
-SQLCipher encryption.
-
-**One thing to do on the phone first**, before or just after committing: the
-lock cannot be armed because this device has **no screen lock set at all**
-(`adb shell locksettings get-disabled` → `true`). Set a PIN or fingerprint in
-Android Settings, and the "Lock the wallet" switch in RecallOS becomes usable.
-Until then the row correctly greys itself out and says why — which is verified,
-but the unlock prompt itself has never run on hardware.
-
-### Step 2 — Run the OCR gate
-
-Highest value per hour and the only item with academic weight. It is also the
-one thing that could invalidate later work: if extraction scores badly on real
-Bangladeshi cards, the priority becomes extraction, not features.
-
-1. Fix the three stale details above.
-2. Build **release** (a green debug run says nothing about the artifact — this
-   is exactly how the R8 registrar bug hid), install, run the spike over your
-   cards, `adb pull` the results.
-3. You hand-label `labels.json`; I score it and report `n` honestly.
-4. Update `README.md:20` with the real numbers.
-
-### Step 3 — Table rows 2–5, the cheap ones
-
-Each is small, and each fixes something currently broken or dishonest rather
-than merely adding surface:
-
-- ~~**#2 Whole-library export**~~ ✅ **Done 2026-09-08**, brought forward
-  because it turned out to be a data-loss fix rather than a feature. Switching
-  to a real upload key means the release build cannot install over the
-  debug-signed one, and uninstalling destroys the wallet *permanently* — the
-  SQLCipher key lives in the Android Keystore and dies with the app, so a copied
-  `.sqlite` restores to nothing. There was no way to get a wallet off a phone
-  except one contact at a time. Now: Settings → Privacy → "Take a copy".
-- **#3 Interactions → ranking** — write `viewed` / `called` / `messaged` on the
-  actions that already exist, then feed `previousUse` into `utility_score`.
-  Makes the ranking do what it says.
-- **#4 Tags + library filter** — the tables exist and the FTS column is already
-  reserved, so tagging improves search as well as browsing.
-- **#5 Retention sweep** — purge soft-deleted cards older than N days on
-  launch, which lets the "kept for N days" copy from frame 10 be true.
-
-**#13 `CardType` belongs here too** if Tier 5 is anywhere on the horizon — it
-is a small change now and a blocker later.
-
-### Step 4 — Then choose a direction
-
-Settle the accounts question (§3b) first, because it decides the first option
-below.
-
-- **Close the demo script** — brief #2, #3, #4 = rows 6, 7, 8 here: local
-  profile → My Card → QR sharing → QR scanning. This is the highest-value
-  direction for the supervisor demo, because it is the part of §26 that
-  currently has nothing behind it, and all four come off the one vCard
-  serialiser already written and tested.
-- ~~**Depth on privacy** — brief #16 = rows 10, 11.~~ ✅ **Done 2026-09-07.**
-  The lock and SQLCipher both landed, and Android's backup of the plaintext
-  wallet was switched off — which was the largest hole in the zero-egress
-  claim and nobody had noticed it.
-- ~~**Finish #8 properly** — OCR the back.~~ ✅ **Done 2026-09-07.** Schema v8
-  added `card_fields.side` and `ocr_blocks.side`; extraction is scoped per
-  side; a highlight paints only on the side it was measured against and turns
-  the card over to get there.
-- **Tier 5** — brief #15 = rows 14, 15: coupon wallet then warranty vault. Both
-  blocked on row 13, so budget that first.
-- Row 12 (reminders) and row 9 (analytics screen) fit either direction; row 9
-  is nearly free once row 3 is done.
-
-Every new package needs `aapt dump permissions` on the release APK and a
-re-read of the manifest-merger report afterwards. That is how the ML Kit
-`INTERNET` transitive was caught. Done for the three added on 2026-09-07
-(`local_auth`, `flutter_secure_storage`, `sqlite3`): the merged manifest gained
-`USE_BIOMETRIC` and `USE_FINGERPRINT` and still carries **no `INTERNET`**.
-
----
-
-## 6. Verification
-
-Unchanged from the old plan, and it has been holding:
-
-- `flutter analyze` clean and `flutter test` green before anything is reported
-  done.
-- Pure functions unit-tested in `test/core/` style.
-- **Every UI change checked on the RMX3612** via `adb exec-out screencap -p`,
-  cropped with `tool/devcrop/` where the detail is too small to judge. Four
-  bugs this session rendered correctly, passed every test, and were wrong only
-  on the phone.
-- `aapt dump permissions` after each new package.
-- Airplane-mode run of the whole thread — scan → correct → note → search → act
-  — as the demo evidence.
-- **Back up the phone's database before any migration runs**, with
-  `adb exec-out "run-as com.recallos.recallos cat app_flutter/recallos.sqlite"`.
-  Done before the encryption migration touched the real wallet on 2026-09-07;
-  the copy is what made it safe to let a one-way conversion run over seven real
-  cards. Note it only works on a *debug* build — `run-as` refuses a release
-  one, so take the copy before installing release.
+Release procedure and the Play rules that apply to each of these: [`RELEASE.md`](RELEASE.md).

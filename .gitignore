@@ -58,3 +58,8 @@ ChatGPT-*.md
 
 handoff/
 CLAUDE*.md
+*.docx
+
+# Pricing, revenue and competitor strategy. This repo is public and docs/ is
+# served on GitHub Pages, so commercial planning lives here instead.
+/business/

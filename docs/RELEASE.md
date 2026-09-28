@@ -32,17 +32,31 @@ storeFile=/Users/you/recallos-upload.jks
 Use an **absolute** `storeFile` path. A relative one resolves against
 `android/app/`, which is not where anybody keeps a keystore.
 
-`android/app/build.gradle.kts` reads this file. If it is missing, the release
-build falls back to the debug key so `flutter run --release` still works on a
-fresh clone — which is safe only because Play rejects a debug certificate
-outright, so a fallback build cannot be uploaded by mistake.
+`android/app/build.gradle.kts` reads this file. **Without it a release build
+refuses to sign** and says why, instead of quietly using the debug key. For a
+release build that will never be uploaded — the R8 checks on your own phone,
+CI, the benchmark APK — opt in explicitly:
+
+```bash
+RECALLOS_ALLOW_DEBUG_SIGNING=true flutter build appbundle --release
+```
+
+Play rejects a debug certificate, so an opted-in build still cannot be uploaded
+by accident; the refusal just moves that failure from upload time to build
+time, where it is cheap.
 
 > **Back up `recallos-upload.jks` and both passwords somewhere that is not this
 > laptop.** Losing them locks you out of updating your own app. Play App Signing
 > (accept it when Console offers it) lets Google reset the *upload* key if that
 > happens, which is a safety net, not a substitute.
 
-### 2. The privacy policy — yours
+### 2. The privacy policy — done, keep it true
+
+**Live** at `https://arafatulhasansadoy.github.io/recallos/privacy-policy.html`
+(checked 2026-09-28, HTTP 200). What is still owed: it has to be rewritten when
+the profile ships (it says there are no user profiles), when the on-device
+language-model sentence is removed, and before any release that brings back
+`INTERNET`.
 
 `docs/privacy-policy.html` is written. Play requires a policy URL for every
 app, including one that collects nothing, and it must be reachable by anyone
@@ -89,6 +103,33 @@ exposed, but do not put anything in `docs/` you would not want served.
    the document. This takes anywhere from hours to several days, and **nothing
    can be uploaded until it clears** — so start it before you need it.
 
+**Know what a Personal account publishes.** It shows your legal name, country
+and developer email — and **once you sell anything, your full address**. The
+Lifetime purchase planned for 499B triggers that. If a home address on a public
+listing is not acceptable, the way out is an Organization account (trade
+licence + D-U-N-S number, which can take up to 30 days), and the app can be
+moved later with Play's official transfer feature (7-day cool-down). Whether a
+business address can stand in on a Personal account is unverified.
+
+**Package registration.** Android developer verification now requires every
+Play package to be registered to a verified developer; new apps are registered
+as part of publishing. Enforcement for sideloaded installs reaches Bangladesh
+in 2027 — demo APKs for examiners will then need the free *limited distribution*
+registration (up to 20 devices).
+
+### 4. The merchant payments profile — yours, before anything is sold
+
+Bangladesh is a supported merchant location; sales settle in **USD** by wire to
+a bank account in the same country as the payments profile, monthly, above a
+US$100 threshold. Submit a **W-8BEN** in the payments profile, or US-user
+revenue is withheld at the default 30%. Enrol in the **15% service-fee tier**
+(it is not automatic: create an Account Group once). Google collects and remits
+VAT for Bangladeshi buyers.
+
+Which payment methods Bangladeshi buyers actually have in Play (bKash, carrier
+billing) is **unverified** — try a purchase from a Bangladeshi account during
+closed testing before planning prices around it.
+
 ---
 
 ## Every release
@@ -109,8 +150,13 @@ the `+`. The name before it is what users see and can stay put.
 ### Build the bundle
 
 ```bash
-flutter build appbundle --release
+flutter build appbundle --release --dart-define=RECALLOS_COMMIT=$(git rev-parse --short HEAD)
 ```
+
+The define stamps the commit into Settings → About and into feedback emails,
+so a tester's report names the exact code. Leave it off and the app says
+"local". **Never** add `--dart-define=RECALLOS_BENCH=true` to a build meant for
+Play — that is the benchmark build, with the evaluation screen compiled in.
 
 Output: `build/app/outputs/bundle/release/app-release.aab`. Play requires an
 App Bundle for new apps; a plain APK is not accepted.
@@ -130,11 +176,15 @@ bundletool build-apks --bundle=build/app/outputs/bundle/release/app-release.aab 
   --output=/tmp/recallos.apks --mode=universal
 unzip -o -p /tmp/recallos.apks universal.apk > /tmp/recallos-universal.apk
 
-# Permissions. Expect exactly: CAMERA, USE_BIOMETRIC, USE_FINGERPRINT,
-# com.google.android.apps.aicore.service.BIND_SERVICE, and the app's own
-# DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION.
-# There must be NO INTERNET and NO RECORD_AUDIO.
-aapt dump permissions /tmp/recallos-universal.apk
+# Permissions, read from the bundle itself and compared with the allowlist.
+# Expect exactly: CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, and the app's own
+# DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION. No INTERNET, no RECORD_AUDIO.
+# (The AICore BIND_SERVICE permission left with flutter_local_ai, 2026-09-28.)
+# CI runs the same script on every push.
+tool/ci/check_permissions.sh
+
+# 16 KB pages: every native library must pass (required from 1 Feb 2027).
+zipalign -c -P 16 -v 4 /tmp/recallos-universal.apk | grep '\.so'
 
 # The signature must be yours, not CN=Android Debug. Check the BUNDLE, not the
 # APK: bundletool signs the APKs it generates with its own debug keystore
@@ -184,9 +234,10 @@ testing or production.
 | Ads | No |
 | App access | All functionality available without special access — the wallet lock is off by default (`app_settings.dart`, `lockEnabled: false`), so a fresh install opens with no gate |
 | Content rating | IARC questionnaire; a utility with no objectionable content |
-| Target audience | 18+ — keeps the app clear of the Families policy |
+| Target audience | 18+, with Restrict Minor Access — keeps the app clear of the Families policy |
 | News app | No |
-| Government / financial / health | No to all three |
+| Government / health | No to both. The **Health apps** declaration still has to be completed |
+| Financial features | **Re-answer when spending totals ship.** Expense tracking from saved receipts is not lending or trading, but which category Play expects for it is unverified — read the options and answer truthfully |
 | Data safety | see below |
 
 ### Data safety — the one that matters
@@ -277,3 +328,51 @@ message naming the required level. Check the merged manifest if that happens:
 ```bash
 grep targetSdkVersion build/app/intermediates/merged_manifest/release/*/AndroidManifest.xml
 ```
+
+### 16 KB memory pages
+
+From **1 February 2027** Play refuses updates whose native libraries are not
+aligned to 16 KB pages. SQLCipher, ML Kit and Flutter's engine all ship `.so`
+files. Check the universal APK before each upload:
+
+```bash
+zipalign -c -P 16 -v 4 /tmp/recallos-universal.apk | grep -v 'OK'
+```
+
+Any line that is not `OK` names a library to update.
+
+---
+
+## Rules that apply as 499B features land
+
+Each of these is triggered by a specific feature in [`PLAN.md`](PLAN.md). Check
+the row before the feature ships, not after a rejection.
+
+| When this lands | What Play requires |
+|---|---|
+| **Any purchase** (Lifetime, Pro) | Play Billing only — no link, button or web view to bKash or a web checkout; Bangladesh has no alternative-billing programme. Billing Library **8 or later** (Flutter: `in_app_purchase_android` 0.5.0+). The merchant profile above must exist first |
+| **A subscription** | The real price and billing period on the paywall — not only a monthly equivalent of an annual price; a trial's length and the price after it; a way to cancel; value that continues (a subscription for a one-time unlock is a violation) |
+| **Reminders** | Never declare `USE_EXACT_ALARM` — it is for alarm-clock and calendar apps. Schedule inexactly. Ask for `POST_NOTIFICATIONS` when the first reminder is set, not at launch |
+| **IDs** | Treat as sensitive: encrypted photos first, generic lock-screen text, `FLAG_SECURE` on their screens, redaction before sharing |
+| **`INTERNET` comes back** (accounts, cloud backup) | In the **same release**: update Data safety (the account email and purchase status are collected; genuinely end-to-end-encrypted content is not), rewrite the privacy policy, show a prominent disclosure with **Agree / Not now** before the first upload of anyone's contact details, and declare ML Kit's own telemetry per Google's ML Kit data-disclosure page. Update `release_surface_test.dart` deliberately — it asserts `INTERNET` is removed |
+| **Accounts** | Account deletion inside the app **and** on a public web page that names the app as the listing does; delete everything Data safety declares. App access needs a reusable reviewer login in English with no one-time code |
+| **AI-generated text** (e.g. drafted follow-ups) | An in-app way to report offensive output without leaving the app. Ask RecallOS as planned is deterministic and cites stored facts, so this does not apply to it |
+| **Importing from the phone's contacts** | Use the Android Contact Picker. Declaring `READ_CONTACTS` while targeting API 37+ needs a Play declaration from **27 January 2027** |
+| **Photos from the gallery** | Keep using the picker. `READ_MEDIA_*` stay removed in the manifest |
+
+### The benchmark build is never uploaded
+
+OCR is measured on a release-optimised APK built with
+`--dart-define=RECALLOS_BENCH=true`, which compiles the evaluation screen back
+in. That APK is for measurement only. The bundle uploaded to Play is always
+built **without** the define; CI and `release_surface_test.dart` check that it
+defaults to off.
+
+### Dates to keep in view
+
+| Date | What |
+|---|---|
+| 27 Oct 2026 | Play's pre-review checks start flagging likely violations before submission |
+| 27 Jan 2027 | Contacts permission policy for apps targeting API 37+ |
+| 1 Feb 2027 | 16 KB page alignment required for updates |
+| 2027 | Developer verification enforced worldwide for sideloaded apps |

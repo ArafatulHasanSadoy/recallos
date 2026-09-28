@@ -3,8 +3,9 @@
 An offline-first, zero-egress personal commerce memory system.
 
 Scan a card. Say why it mattered. Find it later by describing the need rather
-than the name. Everything — OCR, inference, search — runs on the phone. Nothing
-is uploaded, because there is no server to upload to.
+than the name. Hand over one of your own without printing anything. Everything —
+OCR, inference, search — runs on the phone. Nothing is uploaded, because there
+is no server to upload to.
 
 > **People remember the *need*, not the *name*.** Existing scanners digitise
 > contact details. RecallOS keeps the context: which of his three businesses was
@@ -15,10 +16,19 @@ Background research: `ChatGPT-CSE499A Senior Project Guide.md`.
 
 ## Status
 
-Phase 0 complete, plus the embedding layer and the identity graph. Scaffold,
-database, extraction, OCR, embeddings, hybrid ranking and contacts are in
-place; both platforms build release. 444 tests pass. **The Phase 0 OCR gate has
-not been run against real cards yet** — that is the next step.
+A working app, not a scaffold. Scan a card, correct what was read, write why it
+mattered, find it later by need, hand a contact on to somebody else — that whole
+thread runs on a phone today, and so does your own card.
+
+Built and on the device: capture (front *and* back, both read), OCR, field
+extraction with validators, human correction, the identity graph, hybrid search,
+contacts, duplicate review, a full wallet export, a bespoke design system across
+every screen, first-run onboarding, a biometric lock, a SQLCipher-encrypted
+database, and the user's own profile and digital card. Both platforms build
+release. 474 tests pass.
+
+**The Phase 0 OCR gate has still not been run against real cards.** It is the
+one thing that could invalidate work already done, and it stays the next step.
 
 Scope is **Latin script only**. Bangla and Banglish are deferred; see
 [Language scope](#language-scope).
@@ -47,16 +57,21 @@ Measured release builds, not estimates:
 
 | | |
 |---|---|
-| Android arm64 APK | **39.8 MB** |
-| Android armeabi-v7a (older 32-bit phones) | **32.8 MB** |
-| iOS `Runner.app` | 79.7 MB |
+| Android arm64 APK | **47.1 MB** |
+| Android armeabi-v7a (older 32-bit phones) | **39.7 MB** |
+| iOS `Runner.app` | 79.7 MB — measured before encryption landed, not since |
 
-Of the Android download: 11.1 MB Flutter engine, 10.6 MB ML Kit OCR model,
-7.3 MB embedding table, 4.8 MB app code.
+Of the arm64 download: 11.0 MB Flutter engine, 10.6 MB ML Kit OCR model,
+7.7 MB app code, 7.3 MB embedding table, 4.8 MB SQLCipher.
+
+That is up about 7 MB from before the database was encrypted, and SQLCipher is
+almost all of it: it replaces the plain SQLite build rather than sitting beside
+it, and brings its own crypto. The biometric lock and the Keystore binding cost
+well under a megabyte between them.
 
 Judge dependency weight on **release** builds. The debug fat APK is 194 MB
-because it carries three ABIs unminified — `flutter_local_ai` looks enormous
-there and costs 0.7 MB once tree-shaken.
+because it carries three ABIs unminified, and a package that looks enormous
+there can cost well under a megabyte once tree-shaken.
 
 ## Language scope
 
@@ -102,12 +117,19 @@ than week four.
 ```
 lib/
   core/
-    db/            Drift schema — identity graph, provenance, OCR recovery
+    db/            Drift schema — identity graph, provenance, OCR recovery,
+                   and SQLCipher at rest
     intelligence/  OcrEngine + TextIntelligence interfaces, and engines/
     extraction/    Deterministic field extraction, validators, metrics
-    theme/
+    identity/      Matching and similarity rules, pure and testable
+    imaging/       Card and portrait preparation, Flutter-free so it isolates
+    search/        RRF fusion and the utility score
+    export/        vCard serialisation
+    theme/ ui/     The design system and every primitive built on it
   features/
-    capture/ cards/ contacts/ search/
+    capture/ cards/ contacts/ search/ settings/ profile/
+docs/              PLAN.md, RELEASE.md, the privacy policy
+design/            DESIGN.md, BRAND.md, screens.html (16 frames)
 tool/spike/        Offline scorer for the Phase 0 gate
 ```
 
@@ -132,14 +154,15 @@ pass, no native code, no download.
 So a 3 GB Android 11 phone gets the same retrieval quality as a Pixel 10. That
 is the whole point — semantic search is not tiered by hardware.
 
-**Generation — flagship only.** Apple Foundation Models on iOS, Gemini Nano via
-ML Kit GenAI on Android, through `flutter_local_ai`. Neither platform exposes an
-embedding API, which is why the half above is ours. Availability is narrow —
-Pixel 9/10, Galaxy S25/S26, iPhones new enough for iOS 26 — so
-`DeterministicIntelligence` is not a stub but the path most devices actually
-take. Only drafted messages are lost without it.
+**No generative model.** An adapter for the phone's own language model
+(Gemini Nano on Android, Apple Foundation Models on iOS) was written and never
+connected to anything, so it was removed rather than left to be described as a
+feature. Availability was narrow in any case — recent flagships only — and
+neither platform exposes embeddings, which is why the half above is ours.
+Classification rules live in `DeterministicIntelligence`; nothing in the app
+generates text. If generation returns, it comes back behind a measured use.
 
-The two compose: `StaticEmbeddingIntelligence(inner: PlatformIntelligence(...))`.
+The two compose: `StaticEmbeddingIntelligence(inner: DeterministicIntelligence())`.
 
 ### Retrieval
 
@@ -167,6 +190,18 @@ than showing an empty form.
 
 **Provenance on every fact.** `printed | user | ai_inferred | outdated`. An AI
 guess never gets displayed as though it were printed on the card.
+
+**Your own card is the one that was never printed.** Every other card in the
+wallet is a photograph of a piece of paper. Yours is typeset in the app's own
+faces — same warm paper, same ochre corner fold, same proportions — and that
+contrast is the point. It carries one line the others do not: *what should they
+remember you for?* — the mirror of the note you write about everybody else, and
+it travels into their address book as the vCard `NOTE`, so the thing you wanted
+remembered is the thing that survives the exchange.
+
+It shares the vCard serialiser with every other export, so the same card reaches
+Contacts through `ACTION_VIEW` and WhatsApp through `ACTION_SEND` with no
+address-book permission on either path.
 
 ## Engine boundaries
 
@@ -212,6 +247,37 @@ implementations over the same dataset and report the difference.
   compiles a Rust core through Native Assets, so every build machine would need
   `rustup`. A WordPiece tokeniser and a matrix reader are ~250 lines, and
   correctness is pinned by a parity test against the Python reference.
+- **The wallet is encrypted at rest, and the key never leaves the phone.**
+  SQLCipher rather than plain SQLite, selected by a `hooks:` block in
+  `pubspec.yaml`; the key is 32 random bytes generated on the device and held in
+  the Android Keystore. Existing plaintext wallets are converted in place, and
+  the migration only swaps the encrypted copy in after verifying it opens and
+  holds every row. The card photographs are sealed separately
+  (ChaCha20-Poly1305, their own Keystore key — `lib/core/imaging/photo_vault.dart`),
+  and photographs from before that change are converted in place at launch.
+  OCR reads a short-lived plain copy in the app's private cache, deleted as soon
+  as recognition returns.
+
+  On a build without SQLCipher, `PRAGMA key` is silently ignored rather than
+  failing — so the app checks `PRAGMA cipher_version` at startup and Settings
+  reports what it actually found, not what it intended.
+- **Android's own backup is switched off.** It defaults to *on*, which meant the
+  whole wallet was being copied to the user's Google Drive by the OS — in an app
+  built without permission to reach the network. `allowBackup="false"` plus
+  `dataExtractionRules`, because Android 12+ reads the latter. It is also what
+  keeps the key and the database together: the Keystore does not travel, so a
+  restored ciphertext file would arrive permanently unreadable.
+- **A lock in front of the wallet, and a control that never does nothing.** The
+  biometric prompt is the OS's; what comes back is a boolean. On a phone with no
+  screen lock the row does not render a dead switch — it renders a way to
+  Android's security settings, and re-checks when the app comes back.
+- **Your own card is authored data, and lives apart from the identity graph.**
+  `people`, `organizations` and `roles` are *derived*: rebuilt from scanned cards
+  by `promote`, matched on shared endpoints, collected when no card holds them
+  up. A self-row inside `people` would have to be excluded from seven of those
+  mechanisms, each failing silently — including the sweep that deletes anyone
+  whose name does not read like one. Schema v9 gives it `profiles` and
+  `profile_fields` of its own.
 - **Both sides of a card are read, and a region remembers which side it came
   from.** This was once front-only, because `card_fields` and `ocr_blocks`
   recorded a `region_rect` in one image's pixel space with no column saying
@@ -223,8 +289,9 @@ implementations over the same dataset and report the difference.
   one turns the card over. Where both faces print the same value, the front
   wins.
 
-- **`minSdk 26`** — ML Kit GenAI's floor. Android 8.0 shipped in 2017, so
-  coverage is effectively total.
+- **`minSdk 26`** — originally ML Kit GenAI's floor; kept after that package
+  was removed, since every device check has run on 26+. Android 8.0 shipped in
+  2017, so coverage is effectively total.
 
 ## Testing
 
@@ -233,7 +300,7 @@ flutter test
 flutter analyze
 ```
 
-444 tests. **Run the OCR gate against a release build, not a debug one.**
+474 tests. **Run the OCR gate against a release build, not a debug one.**
 Minification is not cosmetic here: R8 renamed ML Kit's component registrars,
 which are looked up reflectively by name, and OCR returned zero blocks in
 release while working perfectly in debug — silently, with no error surfaced to
