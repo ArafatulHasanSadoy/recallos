@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/backup/restore_swap.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/brand.dart';
 import '../../../core/ui/card_face.dart';
@@ -12,8 +13,11 @@ import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
 import '../../capture/data/back_capture_service.dart';
 import '../../capture/data/card_repository.dart';
+import '../../cards/data/retention_sweep.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../settings/data/backup_service.dart';
+import '../../settings/data/photo_protection.dart';
 import '../data/search_repository.dart';
 
 /// Live list of saved cards, newest first.
@@ -41,9 +45,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<SearchHit> _hits = const <SearchHit>[];
   bool _searching = false;
 
+  /// Keeps open results true to the data. See [SearchRepository.watchChanges]:
+  /// without it a card deleted from its own screen, or restored, or re-noted,
+  /// stayed in the results as it was until the next keystroke.
+  StreamSubscription<void>? _changes;
+  Timer? _refresh;
+
   @override
   void initState() {
     super.initState();
+    _changes = ref.read(searchRepositoryProvider).watchChanges().listen((_) {
+      if (_query.isEmpty) return;
+      // Coalesced: one edit touches several tables in a burst (the note, the
+      // interaction, the card's timestamp, then the index), and the results
+      // only need recomputing once it has settled.
+      _refresh?.cancel();
+      _refresh = Timer(const Duration(milliseconds: 150), () {
+        if (mounted && _query.isNotEmpty) unawaited(_run(_query));
+      });
+    });
     // Cards saved before search existed have no index rows, and without this
     // they stay permanently invisible — which looks exactly like search being
     // broken.
@@ -52,8 +72,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // longer than they have been readable, so the ones already on the phone
     // hold text nothing has ever looked at. Read first, indexed second, so a
     // back read on this launch is findable on this launch.
+    //
+    // The retention sweep goes first: it finishes deletes the user already
+    // asked for (Recently deleted keeps a card for 30 days), and there is no
+    // point reading or indexing a card that is about to be purged.
+    //
+    // Labels stored under an older rule go ahead of the backs and the index:
+    // that is a handful of rows, where reading backs is OCR.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_reportRestore());
       unawaited(() async {
+        await ref.read(retentionSweepProvider).run();
+        if (!ref.context.mounted) return;
+        await ref.read(cardRepositoryProvider).repairDigitRestoredLabels();
+        if (!ref.context.mounted) return;
+        // Photographs from before photo encryption are sealed in place, once.
+        await ref.read(photoProtectionProvider.future);
+        if (!ref.context.mounted) return;
         await ref.read(backCaptureServiceProvider).backfill();
         if (!ref.context.mounted) return;
         await ref.read(searchRepositoryProvider).backfill();
@@ -64,8 +99,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _refresh?.cancel();
+    unawaited(_changes?.cancel());
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Says once, on the first screen after a restart, what a restore did.
+  /// The restore itself finished before this screen existed — see
+  /// `restore_swap.dart` — so this is the only place the user can be told.
+  Future<void> _reportRestore() async {
+    final RestoreOutcome? outcome = await ref.read(
+      restoreOutcomeProvider.future,
+    );
+    if (outcome == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome.ok
+              ? 'Restored ${outcome.cards} '
+                    '${outcome.cards == 1 ? 'card' : 'cards'} from your backup.'
+              : 'That restore could not finish, so your wallet was left as it '
+                    'was.',
+        ),
+        persist: false,
+      ),
+    );
   }
 
   void _onQueryChanged(String raw) {
@@ -173,6 +232,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final AppColors c = AppColors.of(context);
     final AsyncValue<List<CardSummary>> saved = ref.watch(savedCardsProvider);
     final bool searchingNow = _query.isNotEmpty;
+    // While the keyboard is up the body shrinks to the space above it, and a
+    // pill pinned to the bottom lands on the answers being typed for.
+    final bool keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return Scaffold(
       // No AppBar. Frame 01 puts the wordmark and two round buttons in the
@@ -253,18 +315,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const Positioned(left: 0, right: 0, bottom: 0, child: StackFade()),
             // Rule: this is a Positioned child of the body, never a
             // floatingActionButton — a Material FAB brings its own elevation
-            // curve, its own shape and a ripple.
-            Positioned(
-              left: Gap.lg,
-              right: Gap.lg,
-              bottom: 34,
-              child: InkPill(
-                label: 'Scan a card',
-                icon: Icons.document_scanner_outlined,
-                height: 58,
-                onTap: () => context.push(Routes.capture),
+            // curve, its own shape and a ripple. Stood down while somebody is
+            // typing a search: scanning is not what they are doing, and it
+            // would sit on top of the answers.
+            if (!keyboardUp)
+              Positioned(
+                left: Gap.lg,
+                right: Gap.lg,
+                bottom: 34,
+                child: InkPill(
+                  label: 'Scan a card',
+                  icon: Icons.document_scanner_outlined,
+                  height: 58,
+                  onTap: () => context.push(Routes.capture),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -272,11 +337,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// The wordmark, and the two ways out of this screen.
+/// The wordmark, and the three ways out of this screen.
 ///
 /// Replaces the `AppBar` and its `PopupMenuButton`. The mark is the logo's
 /// folded-card R at 32px; the wordmark is Archivo bold, uppercase, wide-tracked,
 /// and never set in the serif.
+///
+/// Three round buttons plus the lockup is tight on a narrow phone — the
+/// `FittedBox` around `RecallBrand` is what absorbs it, shrinking the wordmark
+/// rather than overflowing. Your own card earns the space: it is the one thing
+/// here that is about the person holding the phone, and the demo opens on it.
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader();
 
@@ -292,6 +362,12 @@ class _HomeHeader extends StatelessWidget {
               child: FittedBox(fit: BoxFit.scaleDown, child: RecallBrand()),
             ),
           ),
+          _RoundButton(
+            icon: Icons.badge_outlined,
+            tooltip: 'Your card',
+            onTap: () => context.push(Routes.myCard),
+          ),
+          const SizedBox(width: Gap.sm),
           _RoundButton(
             icon: Icons.people_outline,
             tooltip: 'Contacts',

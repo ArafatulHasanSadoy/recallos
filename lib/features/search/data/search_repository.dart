@@ -201,6 +201,26 @@ class SearchRepository {
   /// Removes a card from the index. Called when one is purged.
   Future<void> removeFromIndex(int cardId) => _deleteIndexRows(cardId);
 
+  /// Fires whenever something a result depends on may have changed.
+  ///
+  /// Results are a snapshot, and a snapshot goes stale: a card deleted from
+  /// its own screen, restored from Recently deleted, or given a new note stayed
+  /// in the open results — deleted cards still showing — until the next
+  /// keystroke. `cards` covers delete and restore, `card_fields` and `notes`
+  /// cover edits, and `embeddings` is written last by [reindexCard], so it
+  /// fires once the index has caught up with an edit. (The FTS table is
+  /// written with raw SQL, which Drift does not track, hence not listed.)
+  Stream<void> watchChanges() => _db
+      .tableUpdates(
+        TableUpdateQuery.onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+          _db.cards,
+          _db.cardFields,
+          _db.notes,
+          _db.embeddings,
+        ]),
+      )
+      .map((_) {});
+
   /// Runs a query.
   ///
   /// Returns an empty list for a query with nothing searchable in it, which the
@@ -262,12 +282,20 @@ class SearchRepository {
     return hits;
   }
 
+  /// Both arms exclude deleted cards *before* their limit, not after.
+  ///
+  /// A soft-deleted card keeps its index rows and its embedding until it is
+  /// purged (thirty days later), so filtering only when results were rendered
+  /// let recently deleted cards take candidate slots: each arm kept its top
+  /// 50, fusion its top 20, and a live card ranked below enough deleted ones
+  /// never reached the screen at all.
   Future<List<ScoredCandidate>> _lexicalArm(String match) async {
     try {
       final List<QueryRow> rows = await _db
           .customSelect(
             'SELECT subject_id, bm25(search_index) AS score FROM search_index '
             'WHERE search_index MATCH ? AND subject_type = ? '
+            'AND subject_id IN (SELECT id FROM cards WHERE deleted_at IS NULL) '
             'ORDER BY score LIMIT 50',
             variables: <Variable<Object>>[
               Variable<String>(match),
@@ -298,7 +326,12 @@ class SearchRepository {
         await (_db.select(_db.embeddings)..where(
               ($EmbeddingsTable e) =>
                   e.subjectType.equals('card') &
-                  e.model.equals(StaticEmbedder.modelId),
+                  e.model.equals(StaticEmbedder.modelId) &
+                  e.subjectId.isInQuery(
+                    _db.selectOnly(_db.cards)
+                      ..addColumns(<Expression<Object>>[_db.cards.id])
+                      ..where(_db.cards.deletedAt.isNull()),
+                  ),
             ))
             .get();
 

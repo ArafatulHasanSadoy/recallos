@@ -233,9 +233,35 @@ void main() {
       await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(id)))
           .write(CardsCompanion(deletedAt: Value<DateTime?>(DateTime.now())));
 
-      // Soft-deleted rows stay in the index until purge, so the summary lookup
-      // is what has to filter them — otherwise a deleted card keeps appearing.
+      // Soft-deleted rows stay in the index until purge, so the search itself
+      // has to filter them — otherwise a deleted card keeps appearing.
       expect(await search.search('printing'), isEmpty);
+    });
+
+    test('do not take the places of live cards', () async {
+      // Deleted cards keep their index rows for thirty days. Filtered only
+      // after each arm had kept its top 50 and fusion its top 20, enough of
+      // them matching more strongly pushed a live card out of the results
+      // entirely — the search looked like it had simply failed.
+      for (int i = 0; i < 40; i++) {
+        final int id = await saveCard(
+          company: 'Old Printers $i',
+          phone: '0171122${(3000 + i).toString()}',
+          note: 'printing printing printing printing',
+        );
+        await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(id)))
+            .write(CardsCompanion(deletedAt: Value<DateTime?>(DateTime.now())));
+      }
+      final int live = await saveCard(
+        company: 'Sonar Bangla Press',
+        phone: '01711223344',
+        note: 'printing shop near campus',
+      );
+
+      final List<SearchHit> hits = await search.search('printing');
+
+      expect(hits.map((SearchHit h) => h.card.id), contains(live));
+      expect(hits, hasLength(1), reason: 'no deleted card may be shown');
     });
 
     test('purging removes the index rows too', () async {
