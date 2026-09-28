@@ -1,10 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/build_flags.dart';
 import '../../../core/db/encrypted_database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/brand.dart';
@@ -12,9 +14,13 @@ import '../../../core/ui/primitives.dart';
 import '../../../router.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../profile/data/profile_repository.dart';
+import '../data/app_info.dart';
 import '../data/app_lock.dart';
 import '../data/app_settings.dart';
+import '../data/photo_protection.dart';
 import '../data/wallet_export.dart';
+import 'backup_rows.dart';
 import 'lock_gate.dart';
 
 /// Whether this phone can be asked to prove who is holding it.
@@ -68,13 +74,19 @@ class SettingsScreen extends ConsumerWidget {
                   const SizedBox(height: Gap.lg),
 
                   SettingGroup(
+                    label: 'You',
+                    children: <Widget>[_MyCardRow()],
+                  ),
+                  const SizedBox(height: Gap.lg),
+
+                  SettingGroup(
                     label: 'Your wallet',
                     children: <Widget>[
                       SettingRow(
                         label: 'Recently deleted',
                         description: deleted == 1
-                            ? '1 card, still on the phone'
-                            : '$deleted cards, still on the phone',
+                            ? '1 card, kept for 30 days'
+                            : '$deleted cards, each kept for 30 days',
                         trailing: Icon(
                           Icons.chevron_right,
                           size: 18,
@@ -137,7 +149,11 @@ class SettingsScreen extends ConsumerWidget {
                             'not to back the wallet up either.',
                       ),
                       // Directly under the row that says nothing backs this
-                      // up, because that is the sentence it answers.
+                      // up, because that is the sentence they answer: an
+                      // encrypted backup that restores, and a readable copy
+                      // for other apps that does not.
+                      const BackupRow(),
+                      const RestoreRow(),
                       const _ExportRow(),
                     ],
                   ),
@@ -162,17 +178,28 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
+                  const SizedBox(height: Gap.lg),
+
+                  const SettingGroup(
+                    label: 'About',
+                    children: <Widget>[
+                      VersionRow(),
+                      FeedbackRow(),
+                      PrivacyPolicyRow(),
+                    ],
+                  ),
                   // Phase 0 scaffolding, and the last thing still reachable
                   // only from a menu. It lives here until the spike screen
                   // itself goes.
                   //
-                  // Debug builds only. The spike reads whatever is picked out
-                  // of the gallery and writes the raw OCR to a file, which is a
-                  // developer's tool and not something to hand a user. The
-                  // route is gated the same way in `router.dart`, so the group
-                  // and its destination disappear together — `kDebugMode` is a
-                  // const, so neither survives into a release build.
-                  if (kDebugMode) ...<Widget>[
+                  // Debug and benchmark builds only. The spike reads whatever
+                  // is picked out of the gallery and writes the raw OCR to a
+                  // file, which is a developer's tool and not something to
+                  // hand a user. The route is gated the same way in
+                  // `router.dart`, so the group and its destination disappear
+                  // together — `kEvaluationTools` is a const, so neither
+                  // survives into a Play build.
+                  if (kEvaluationTools) ...<Widget>[
                     const SizedBox(height: Gap.lg),
                     SettingGroup(
                       label: 'Development',
@@ -462,8 +489,8 @@ class _ExportRowState extends ConsumerState<_ExportRow> {
         (false, WalletExportResult.failed) =>
           'That did not work. Nothing was changed or lost.',
         (false, null) =>
-          'Every card, contact, note and photo, in one file you can '
-              'keep off the phone.',
+          'A readable copy — contacts, notes, photos — for other apps. Not '
+              'encrypted, and it cannot be restored; use a backup for that.',
       },
       trailing: Icon(
         _last == WalletExportResult.failed
@@ -514,13 +541,11 @@ class _ExportRowState extends ConsumerState<_ExportRow> {
 /// would be indistinguishable from the truth — which is why the failure states
 /// below are worded as plainly as the success one, and coloured.
 ///
-/// The label used to read "Your cards are encrypted", and that was wider than
-/// the truth in the other direction: the *database* is encrypted, but the card
-/// photographs are ordinary JPEGs in the documents directory — see the header
-/// of `encrypted_database.dart`. A card is a picture to most people, so the old
-/// label promised exactly the thing SQLCipher does not cover. It now says
-/// "wallet", and the description names the gap rather than leaving the reader
-/// to find it.
+/// The label once read "Your cards are encrypted" while the card photographs
+/// were plain JPEGs — wider than the truth, because a card is a picture to
+/// most people. The photographs are sealed now, but the description still
+/// reports what the launch's sealing pass actually found
+/// (`photoProtectionProvider`), including when it could not seal them.
 class _StorageRow extends ConsumerWidget {
   const _StorageRow();
 
@@ -529,15 +554,36 @@ class _StorageRow extends ConsumerWidget {
     final AppColors c = AppColors.of(context);
     final AsyncValue<StorageStatus> status = ref.watch(storageStatusProvider);
     final StorageStatus? settled = status.value;
+    // The photographs are reported from the pass that actually ran this
+    // launch — `photoProtectionProvider` — never assumed from the fact that
+    // the code to seal them exists.
+    final PhotoStatus? photos = ref.watch(photoProtectionProvider).value;
+    final bool photosAtRisk =
+        photos != null && photos.protection != PhotoProtection.encrypted;
 
     return SettingRow(
       label: 'Your wallet is encrypted',
       description: switch (settled) {
         null => 'Checking…',
         (protection: StorageProtection.encrypted, reason: _) =>
-          'Names, numbers and notes are scrambled on this phone with a key '
-              'only this phone holds. The card photographs are not — they sit '
-              'in this app\'s own storage, which no other app can open.',
+          switch (photos?.protection) {
+            null =>
+              'Names, numbers and notes are scrambled on this phone with a key '
+                  'only this phone holds. Checking the photographs…',
+            PhotoProtection.encrypted =>
+              'Names, numbers, notes and card photographs are scrambled on '
+                  'this phone with keys only this phone holds.',
+            PhotoProtection.partial =>
+              'Names, numbers and notes are scrambled on this phone. '
+                  '${photos!.plaintextLeft} '
+                  '${photos.plaintextLeft == 1 ? 'photograph' : 'photographs'} '
+                  'could not be encrypted yet; RecallOS tries again next time '
+                  'it opens.',
+            PhotoProtection.unavailable =>
+              'Names, numbers and notes are scrambled on this phone. The card '
+                  'photographs are not: this phone would not provide a key '
+                  'for them.',
+          },
         (protection: StorageProtection.plaintext, reason: final String? why) =>
           'Not encrypted on this phone. ${why ?? ''}'.trim(),
         (protection: StorageProtection.unreadable, reason: final String? why) =>
@@ -545,18 +591,178 @@ class _StorageRow extends ConsumerWidget {
       },
       trailing: Icon(
         switch (settled?.protection) {
+          StorageProtection.encrypted when photosAtRisk =>
+            Icons.lock_open_outlined,
           StorageProtection.encrypted => Icons.lock_outline,
           null => Icons.more_horiz,
           _ => Icons.lock_open_outlined,
         },
         size: 18,
         color: switch (settled?.protection) {
+          StorageProtection.encrypted when photosAtRisk => c.vermilion,
           StorageProtection.encrypted || null => c.inkFaint,
           // Rule 2 keeps ochre for markers, so a state the user should act on
           // is vermilion — the same colour a field that failed to read wears.
           _ => c.vermilion,
         },
       ),
+    );
+  }
+}
+
+/// The way to your own card, for people who never look at the header.
+///
+/// A second door on purpose. The header button is the fast one; this is the
+/// one somebody finds when they go looking for where the app keeps things
+/// about them.
+class _MyCardRow extends ConsumerWidget {
+  const _MyCardRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final AsyncValue<ProfileDetail?> profile = ref.watch(myProfileProvider);
+    final ProfileDetail? detail = profile.value;
+
+    return SettingRow(
+      label: 'Your card',
+      description: switch (detail) {
+        null => 'Not made yet — say who you are and hand it over.',
+        final ProfileDetail d when d.isEmpty =>
+          'Nothing on it yet.',
+        final ProfileDetail d => d.name.isEmpty ? 'Ready to hand over' : d.name,
+      },
+      trailing: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+      onTap: () => context.push(Routes.myCard),
+    );
+  }
+}
+
+/// Which build this is — the first thing any bug report needs.
+///
+/// Tapping copies it, and the description says so: a row that looks tappable
+/// and silently does something invisible reads as a row that does nothing.
+/// Public so the tap can be tested on its own.
+class VersionRow extends ConsumerStatefulWidget {
+  const VersionRow({super.key});
+
+  @override
+  ConsumerState<VersionRow> createState() => _VersionRowState();
+}
+
+class _VersionRowState extends ConsumerState<VersionRow> {
+  bool _copied = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final AsyncValue<AppVersion?> version = ref.watch(appVersionProvider);
+    final AppVersion? v = version.value;
+    final String id = v?.buildId ?? kBuildCommit;
+
+    return SettingRow(
+      label: 'Version',
+      description: switch ((version.hasValue, _copied)) {
+        (false, _) => 'Checking…',
+        (true, true) => 'Copied — paste it into your report.',
+        (true, false) => v == null ? 'Build $id' : id,
+      },
+      trailing: Icon(
+        _copied ? Icons.check : Icons.copy_outlined,
+        size: 18,
+        color: c.inkFaint,
+      ),
+      onTap: () async {
+        final String line = v == null
+            ? 'RecallOS $id'
+            : 'RecallOS $id · ${v.device}, Android ${v.android}';
+        await Clipboard.setData(ClipboardData(text: line));
+        if (mounted) setState(() => _copied = true);
+      },
+    );
+  }
+}
+
+/// Opens the user's email app with the build already written in.
+///
+/// If there is no email app the row says where to write instead — a tap that
+/// finds nothing to open must not look like a tap that did nothing.
+class FeedbackRow extends ConsumerStatefulWidget {
+  const FeedbackRow({super.key, this.launch = _launch});
+
+  /// Injected so a test can see what would be opened without a platform.
+  final Future<bool> Function(Uri) launch;
+
+  static Future<bool> _launch(Uri uri) =>
+      launchUrl(uri, mode: LaunchMode.externalApplication);
+
+  @override
+  ConsumerState<FeedbackRow> createState() => _FeedbackRowState();
+}
+
+class _FeedbackRowState extends ConsumerState<FeedbackRow> {
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return SettingRow(
+      label: 'Send feedback',
+      description: _failed
+          ? 'No email app on this phone. Write to $kFeedbackEmail.'
+          : 'Opens your email with this build filled in. You see everything '
+                'before it is sent.',
+      trailing: Icon(
+        _failed ? Icons.error_outline : Icons.mail_outline,
+        size: 18,
+        color: _failed ? c.vermilion : c.inkFaint,
+      ),
+      onTap: () async {
+        // Awaited, not `.value`: on its own this row is the first thing to
+        // ask, and a read that lands before the answer sent a report with no
+        // build in it — the one line the report exists to carry.
+        final AppVersion? v = await ref.read(appVersionProvider.future);
+        final bool ok = await widget.launch(AppInfo.feedbackEmail(v));
+        if (mounted) setState(() => _failed = !ok);
+      },
+    );
+  }
+}
+
+/// The published privacy policy, opened in the browser.
+class PrivacyPolicyRow extends StatefulWidget {
+  const PrivacyPolicyRow({super.key, this.launch = FeedbackRow._launch});
+
+  final Future<bool> Function(Uri) launch;
+
+  @override
+  State<PrivacyPolicyRow> createState() => _PrivacyPolicyRowState();
+}
+
+class _PrivacyPolicyRowState extends State<PrivacyPolicyRow> {
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return SettingRow(
+      label: 'Privacy policy',
+      description: _failed
+          ? 'No browser on this phone. It is at '
+                '${kPrivacyPolicyUrl.host}${kPrivacyPolicyUrl.path}'
+          : 'What RecallOS keeps, and what it never sends. Opens in your '
+                'browser.',
+      trailing: Icon(
+        _failed ? Icons.error_outline : Icons.open_in_new,
+        size: 18,
+        color: _failed ? c.vermilion : c.inkFaint,
+      ),
+      onTap: () async {
+        final bool ok = await widget.launch(kPrivacyPolicyUrl);
+        if (mounted) setState(() => _failed = !ok);
+      },
     );
   }
 }

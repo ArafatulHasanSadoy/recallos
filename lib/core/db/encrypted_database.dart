@@ -20,11 +20,9 @@
 /// 3. **A one-way migration** of the plaintext database people already have,
 ///    which is the part with something to lose and is written accordingly.
 ///
-/// What this does **not** cover, stated plainly because a half-understood
-/// guarantee is worse than none: the card photographs are still ordinary JPEGs
-/// in the app's documents directory. Android's own app-sandbox and full-disk
-/// encryption protect them; this does not. Doing better means encrypting the
-/// image files too, which is a separate change.
+/// The card photographs are not in the database and are not covered by
+/// SQLCipher. They are sealed separately, under their own key — see
+/// `lib/core/imaging/photo_vault.dart` and [photoKey].
 library;
 
 import 'dart:async';
@@ -38,6 +36,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart';
+
+import '../backup/restore_swap.dart';
 
 /// Whether what is on disk is actually encrypted.
 enum StorageProtection {
@@ -112,6 +112,11 @@ QueryExecutor openEncryptedDatabase() {
         return driftDatabase(name: 'recallos');
       }
 
+      // A restore staged in the last session is swapped in here, before the
+      // file is opened — the only moment nothing is holding it. With nothing
+      // pending this returns at once. See `restore_swap.dart`.
+      finishPendingRestore(documentsDir: file.parent.path, databaseKey: key);
+
       if (!_opensWith(file, key)) {
         _report(
           StorageProtection.unreadable,
@@ -173,6 +178,11 @@ bool _cipherAvailable() {
   }
 }
 
+/// This phone's database key, for the backup code: a backup reads the live
+/// database with it, and a restore encrypts the staged copy with it. Null when
+/// the platform will not hand it over.
+Future<String?> databaseKey() => _key();
+
 /// The database key: read it, or make one and keep it.
 ///
 /// 32 bytes from [Random.secure], hex-encoded, handed to SQLCipher in its raw
@@ -180,7 +190,27 @@ bool _cipherAvailable() {
 /// other option and is the wrong one here: there is nobody to ask for it on a
 /// cold start, and a key people would have to remember is a key people would
 /// choose badly.
-Future<String?> _key() async {
+Future<String?> _key() => _secret(_keyName);
+
+/// The key the card photographs are sealed with — a separate secret from the
+/// database key, so each key protects one thing. See `photo_vault.dart`.
+///
+/// Null when the platform will not hand it over; photographs are then written
+/// in the clear, exactly as the database is in that case, and the settings
+/// screen says so.
+Future<Uint8List?> photoKey() async {
+  final String? hex = await _secret(_photoKeyName);
+  if (hex == null) return null;
+  return Uint8List.fromList(<int>[
+    for (int i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ]);
+}
+
+const String _photoKeyName = 'photo_key_v1';
+
+/// Reads a 32-byte secret from the Keystore, or makes one and keeps it.
+Future<String?> _secret(String name) async {
   const FlutterSecureStorage store = FlutterSecureStorage(
     aOptions: AndroidOptions(
       // The default is to wipe the entry when it cannot be decrypted. For a
@@ -192,7 +222,7 @@ Future<String?> _key() async {
   );
 
   try {
-    final String? existing = await store.read(key: _keyName);
+    final String? existing = await store.read(key: name);
     if (existing != null && existing.length == 64) return existing;
 
     final Random random = Random.secure();
@@ -200,7 +230,7 @@ Future<String?> _key() async {
       for (int i = 0; i < 32; i++)
         random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join();
-    await store.write(key: _keyName, value: fresh);
+    await store.write(key: name, value: fresh);
     return fresh;
   } on Object {
     return null;
