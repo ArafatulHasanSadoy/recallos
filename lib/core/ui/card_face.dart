@@ -10,6 +10,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
+import '../../core/imaging/sealed_file_image.dart';
 import '../theme/app_theme.dart';
 import 'primitives.dart';
 
@@ -192,19 +193,22 @@ class CardFlight extends StatelessWidget {
           // is never an empty rectangle. It is the same cache entry the tile
           // is drawing from, which is what makes it free.
           if (thumb != null)
-            Image.file(
-              File(thumb),
+            Image(
+              image: sealedPhoto(
+                File(thumb),
+                cacheWidth: (Gap.cardFaceThumb.width * dpr).round(),
+              ),
               fit: BoxFit.cover,
-              cacheWidth: (Gap.cardFaceThumb.width * dpr).round(),
               filterQuality: FilterQuality.medium,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
           // The photograph card detail resolves anyway, through the same bare
-          // `FileImage` it uses — so this costs no decode of its own. It paints
-          // nothing until it is ready and the thumbnail stands in until then.
+          // `SealedFileImage` it uses — so this costs no decode of its own. It
+          // paints nothing until it is ready and the thumbnail stands in until
+          // then.
           Image(
-            image: FileImage(File(imagePath)),
+            image: SealedFileImage(File(imagePath)),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.medium,
             gaplessPlayback: true,
@@ -358,12 +362,14 @@ class _Photo extends StatelessWidget {
                   final double dpr = MediaQuery.devicePixelRatioOf(context);
                   final int cacheWidth = (box.maxWidth * dpr).round();
 
-                  return Image.file(
-                    File(path),
+                  return Image(
+                    image: sealedPhoto(
+                      File(path),
+                      cacheWidth: cacheWidth <= 0 || !cacheWidth.isFinite
+                          ? null
+                          : cacheWidth,
+                    ),
                     fit: BoxFit.cover,
-                    cacheWidth: cacheWidth <= 0 || !cacheWidth.isFinite
-                        ? null
-                        : cacheWidth,
                     filterQuality: FilterQuality.medium,
                     gaplessPlayback: true,
                     errorBuilder: (_, _, _) => _Missing(colors: colors),

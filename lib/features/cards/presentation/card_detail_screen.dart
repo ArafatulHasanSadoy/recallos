@@ -15,8 +15,11 @@ import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../capture/data/card_repository.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../search/data/search_repository.dart';
 import 'widgets/card_sides_view.dart';
 import 'widgets/editable_field_list.dart';
+import 'widgets/full_image_view.dart';
+import 'widgets/note_sheet.dart';
 
 /// One saved card, and what you can do with it.
 ///
@@ -121,6 +124,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                         detail: card,
                         onRegionChanged: (FieldHighlight? h) =>
                             setState(() => _highlight = h),
+                        onEditNote: (String? current) =>
+                            unawaited(_editNote(context, current)),
                       ),
               ),
             ),
@@ -133,15 +138,37 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   void _showFullImage(BuildContext context, File image) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(backgroundColor: Colors.black, elevation: 0),
-          body: Center(
-            child: InteractiveViewer(maxScale: 6, child: Image.file(image)),
-          ),
-        ),
+        builder: (BuildContext context) => FullImageView(image: image),
       ),
     );
+  }
+
+  /// Adds, corrects or clears the note — the one piece of a card that makes it
+  /// findable by need. Until this existed it could only be written once, in
+  /// the save sheet, so "Skip for now" was permanent.
+  Future<void> _editNote(BuildContext context, String? current) async {
+    // Resolved before the sheet opens: the screen can be gone by the time it
+    // closes, and a ref is not usable after that.
+    final CardRepository cards = ref.read(cardRepositoryProvider);
+    final SearchRepository search = ref.read(searchRepositoryProvider);
+
+    final String? result = await showNoteSheet(
+      context,
+      question: 'Why did you save this?',
+      explanation: current == null
+          ? "You'll search by this later, so write it how you'd say it."
+          : "You'll search by this later. Clear it to remove the note.",
+      primaryLabel: 'Save note',
+      secondaryLabel: 'Cancel',
+      secondaryResult: null,
+      initial: current ?? '',
+    );
+    if (result == null || result.trim() == (current ?? '').trim()) return;
+
+    await cards.setNote(cardId: widget.cardId, body: result);
+    // The note is the most valuable text search has; a stale index would keep
+    // finding the card by what it used to say.
+    await search.reindexCard(widget.cardId);
   }
 
   Future<void> _confirmDelete(BuildContext context) async {
@@ -150,8 +177,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       builder: (BuildContext context) => AlertDialog(
         title: const Text('Delete this card?'),
         content: const Text(
-          'It moves to Recently deleted, on the Needs attention screen. '
-          'It stays on the phone until you remove it there.',
+          'It moves to Recently deleted, on the Needs attention screen, and '
+          'waits there for 30 days before it is removed for good.',
         ),
         actions: <Widget>[
           TextButton(
@@ -185,10 +212,17 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 /// can be checked against the printing while it is corrected rather than from
 /// memory.
 class _Body extends StatelessWidget {
-  const _Body({required this.detail, required this.onRegionChanged});
+  const _Body({
+    required this.detail,
+    required this.onRegionChanged,
+    required this.onEditNote,
+  });
 
   final CardDetail detail;
   final ValueChanged<FieldHighlight?> onRegionChanged;
+
+  /// Called with the current note, or null when the card has none.
+  final ValueChanged<String?> onEditNote;
 
   @override
   Widget build(BuildContext context) {
@@ -204,10 +238,10 @@ class _Body extends StatelessWidget {
       children: <Widget>[
         Text(detail.title, style: AppText.title(c)),
         const SizedBox(height: Gap.md),
-        if (note != null) ...<Widget>[
-          _NoteBlock(note: note, colors: c),
-          const SizedBox(height: Gap.lg),
-        ],
+        // Always present: a card with no note is exactly the one that most
+        // needs one, and hiding the block hid the only way to add it.
+        _NoteBlock(note: note, colors: c, onTap: () => onEditNote(note)),
+        const SizedBox(height: Gap.lg),
         _Actions(detail: detail),
         const SizedBox(height: Gap.lg),
         SectionHeader('On the card', count: detail.fields.length),
@@ -228,39 +262,76 @@ class _Body extends StatelessWidget {
   }
 }
 
-/// Why the card was kept. The label is the existing copy, deliberately.
+/// Why the card was kept — or, when nobody said, the invitation to say it.
+/// The label is the existing copy, deliberately. Tapping opens the same sheet
+/// the save flow uses.
 class _NoteBlock extends StatelessWidget {
-  const _NoteBlock({required this.note, required this.colors});
+  const _NoteBlock({
+    required this.note,
+    required this.colors,
+    required this.onTap,
+  });
 
-  final String note;
+  final String? note;
   final AppColors colors;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(Gap.md),
-    decoration: AppDecoration.card(
-      colors,
-      isDark: isDarkTheme(context),
-      lifted: false,
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        MicroLabel('Why you saved this', color: colors.ochreInk),
-        const SizedBox(height: Gap.sm),
-        Text(
-          note,
-          style: AppText.rowTitle(colors).copyWith(
-            fontSize: 15.5,
-            fontWeight: FontWeight.w400,
-            fontVariations: AppFonts.weight(400),
-            height: 1.45,
-          ),
+  Widget build(BuildContext context) {
+    final String? text = note;
+    return PressFade(
+      onTap: onTap,
+      semanticLabel: text == null
+          ? 'Add why you saved this'
+          : 'Why you saved this: $text. Edit',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(Gap.md),
+        decoration: AppDecoration.card(
+          colors,
+          isDark: isDarkTheme(context),
+          lifted: false,
         ),
-      ],
-    ),
-  );
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: MicroLabel(
+                    'Why you saved this',
+                    color: colors.ochreInk,
+                  ),
+                ),
+                Icon(
+                  text == null ? Icons.add : Icons.edit_outlined,
+                  size: 16,
+                  color: colors.inkMuted,
+                ),
+              ],
+            ),
+            const SizedBox(height: Gap.sm),
+            if (text != null)
+              Text(
+                text,
+                style: AppText.rowTitle(colors).copyWith(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w400,
+                  fontVariations: AppFonts.weight(400),
+                  height: 1.45,
+                ),
+              )
+            else
+              Text(
+                "Nothing yet. Add a line — it's how you'll find this card "
+                'when you have forgotten the name.',
+                style: AppText.body(colors).copyWith(color: colors.inkMuted),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Call, message, mail, map.

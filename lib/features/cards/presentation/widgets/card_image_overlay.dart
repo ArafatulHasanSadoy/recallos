@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../../../core/imaging/card_geometry.dart';
+import '../../../../core/imaging/sealed_file_image.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/primitives.dart';
 
@@ -72,7 +73,7 @@ class CardImageOverlay extends StatefulWidget {
 }
 
 class _CardImageOverlayState extends State<CardImageOverlay> {
-  late FileImage _provider;
+  late SealedFileImage _provider;
   ImageStream? _stream;
   ImageStreamListener? _listener;
 
@@ -82,7 +83,7 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
   @override
   void initState() {
     super.initState();
-    _provider = FileImage(widget.image);
+    _provider = SealedFileImage(widget.image);
     _resolve();
   }
 
@@ -91,7 +92,7 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
     super.didUpdateWidget(old);
     if (old.image.path != widget.image.path) {
       _detach();
-      _provider = FileImage(widget.image);
+      _provider = SealedFileImage(widget.image);
       // The old size is kept rather than cleared. Card detail swaps the
       // wallet's thumbnail for the full capture a frame or two after the
       // screen opens, and both are the same card at the same proportion —
@@ -220,13 +221,15 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
           // `cover` and the wallet's own cache width, because this is the
           // wallet's own decode — see [CardImageOverlay.preview].
           if (thumb != null)
-            Image.file(
-              thumb,
+            Image(
+              image: sealedPhoto(
+                thumb,
+                cacheWidth:
+                    (Gap.cardFaceThumb.width *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+              ),
               fit: BoxFit.cover,
-              cacheWidth:
-                  (Gap.cardFaceThumb.width *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round(),
               filterQuality: FilterQuality.medium,
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),

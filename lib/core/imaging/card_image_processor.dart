@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'card_geometry.dart';
+import 'photo_vault.dart';
 
 /// What one capture produced: the image everything else works from, and a
 /// smaller copy for list rows.
@@ -36,7 +37,13 @@ class CardImageRequest {
     this.maxEdge = 1600,
     this.thumbEdge = 1000,
     this.thumbnail = true,
+    this.photoKey,
   });
+
+  /// Seals both outputs when given, and opens a sealed source. Null writes
+  /// plain files — what a test, or a phone that would not hand over a key,
+  /// gets. See `photo_vault.dart`.
+  final Uint8List? photoKey;
 
   final String sourcePath;
   final String targetDir;
@@ -83,7 +90,7 @@ PreparedImage prepareCardImage(CardImageRequest request) {
     throw CardImageException('No image at ${request.sourcePath}');
   }
 
-  final Uint8List bytes = source.readAsBytesSync();
+  final Uint8List bytes = readPhotoSync(request.sourcePath, request.photoKey);
   final img.Image? decoded = img.decodeImage(bytes);
   if (decoded == null) {
     throw const CardImageException('Could not decode the captured image');
@@ -101,8 +108,10 @@ PreparedImage prepareCardImage(CardImageRequest request) {
 
   final String imagePath = p.join(request.targetDir, '${request.baseName}.jpg');
 
-  File(imagePath).writeAsBytesSync(
+  writePhotoSync(
+    imagePath,
     img.encodeJpg(_within(shaped, request.maxEdge), quality: 85),
+    request.photoKey,
   );
 
   if (!request.thumbnail) {
@@ -113,8 +122,10 @@ PreparedImage prepareCardImage(CardImageRequest request) {
     request.targetDir,
     '${request.baseName}_thumb.jpg',
   );
-  File(thumbPath).writeAsBytesSync(
+  writePhotoSync(
+    thumbPath,
     img.encodeJpg(_within(shaped, request.thumbEdge), quality: 80),
+    request.photoKey,
   );
 
   return PreparedImage(imagePath: imagePath, thumbPath: thumbPath);

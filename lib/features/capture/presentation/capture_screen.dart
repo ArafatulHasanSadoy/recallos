@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/material.dart';
@@ -10,12 +11,15 @@ import 'package:go_router/go_router.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/imaging/card_geometry.dart';
 import '../../../core/imaging/card_image_processor.dart';
-import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
+import '../../../core/imaging/photo_keyring.dart';
 import '../../../core/intelligence/ocr_engine.dart';
+import '../../../core/intelligence/ocr_engine_provider.dart';
+import '../../../core/storage/hand_offs.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/primitives.dart';
 import '../../cards/presentation/widgets/card_sides_view.dart';
 import '../../cards/presentation/widgets/editable_field_list.dart';
+import '../../cards/presentation/widgets/note_sheet.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
 import '../data/card_repository.dart';
@@ -39,7 +43,12 @@ class CaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _CaptureScreenState extends ConsumerState<CaptureScreen> {
-  final OcrEngine _engine = MlKitOcrEngine();
+  /// The shared recogniser, not one of this screen's own. Building a private
+  /// `MlKitOcrEngine` here meant a second native recogniser loaded alongside
+  /// the one `ocrEngineProvider` keeps open for back-side and rescan work, and
+  /// torn down on every exit from this screen. Resolved once in [initState]:
+  /// the provider is kept alive, and a `ref` is not usable after dispose.
+  late final OcrEngine _engine;
 
   File? _image;
   int? _cardId;
@@ -54,16 +63,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
   @override
   void initState() {
     super.initState();
+    _engine = ref.read(ocrEngineProvider);
     // Post-frame so the screen (and its back button) is on screen before the
     // OS camera UI takes over — a bare white frame while the camera launches
     // reads as broken.
     WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
-  }
-
-  @override
-  void dispose() {
-    unawaited(_engine.dispose());
-    super.dispose();
   }
 
   Future<void> _capture() async {
@@ -186,6 +190,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       final String targetDir = cards.path;
       final String baseName =
           'card_${pending.id}_${DateTime.now().microsecondsSinceEpoch}';
+      final Uint8List? photoKey = await PhotoKeyring.instance.key;
 
       final PreparedImage prepared = await Isolate.run(
         () => prepareCardImage(
@@ -193,6 +198,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
             sourcePath: scanned.path,
             targetDir: targetDir,
             baseName: baseName,
+            photoKey: photoKey,
           ),
         ),
       );
@@ -207,22 +213,13 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       // ours. Guarded, not fired off bare: unawaited, a throw here is an
       // unhandled async error that no catch can reach, reported long after the
       // capture it belongs to succeeded.
-      unawaited(_cleanScannerCache());
+      unawaited(clearScannerLeftovers());
       return File(prepared.imagePath);
     } on Object {
       // A card must never be lost to an image step. Fall back to the full-size
       // copy already saved — same pixels, so regions still line up — and carry
       // on to OCR.
       return pending.image;
-    }
-  }
-
-  /// Drops the scanner's copy. Failing to tidy up is not a failed capture.
-  Future<void> _cleanScannerCache() async {
-    try {
-      await CunningDocumentScanner.cleanCache();
-    } on Object {
-      // The leftover is the plugin's own cache file; the OS reclaims it.
     }
   }
 
@@ -239,12 +236,19 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     final CardDetail? detail = ref.read(cardDetailProvider(cardId)).value;
     final bool nothingFound = detail == null || detail.fields.isEmpty;
 
-    final String? note = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (BuildContext context) => _NotePrompt(emphasised: nothingFound),
+    // Frame 04b. "Skip for now" still saves — the card and its fields are
+    // already on disk; it only declines to add a note.
+    final String? note = await showNoteSheet(
+      context,
+      question: 'Why are you saving this?',
+      explanation: nothingFound
+          ? 'Not much was readable on this card, so this note is how '
+                "you'll find it later."
+          : "You'll search by this later, so write it how you'd say it.",
+      primaryLabel: 'Save card',
+      secondaryLabel: 'Skip for now',
+      secondaryResult: '',
+      emphasised: nothingFound,
     );
     // Dismissed the sheet without deciding — keep them on the review screen.
     if (note == null || !mounted) return;
@@ -668,131 +672,5 @@ class _ReviewBody extends ConsumerWidget {
             );
           },
         );
-  }
-}
-
-/// The "why are you saving this?" sheet — frame 04b.
-///
-/// Fired by Save card, not an inline composer on the review screen. The
-/// [emphasised] branch is the frame's vermilion pill and harder second
-/// sentence, and it appears only when extraction found little or nothing.
-class _NotePrompt extends StatefulWidget {
-  const _NotePrompt({required this.emphasised});
-
-  final bool emphasised;
-
-  @override
-  State<_NotePrompt> createState() => _NotePromptState();
-}
-
-class _NotePromptState extends State<_NotePrompt> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors c = AppColors.of(context);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: Gap.lg,
-        right: Gap.lg,
-        top: Gap.lg,
-        bottom: MediaQuery.viewInsetsOf(context).bottom + Gap.lg,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (widget.emphasised) ...<Widget>[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Gap.sm + 2,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: c.vermilion.withValues(alpha: 0.14),
-                  borderRadius: AppRadius.chipR,
-                ),
-                child: MicroLabel('Nothing was readable', color: c.vermilion),
-              ),
-            ),
-            const SizedBox(height: Gap.md),
-          ],
-          // Rule 3: the app asking the user, so it is the serif italic.
-          Text(
-            'Why are you saving this?',
-            style: AppText.displayAsk(c).copyWith(fontSize: 30, height: 1.1),
-          ),
-          const SizedBox(height: Gap.sm),
-          Text(
-            widget.emphasised
-                ? 'Not much was readable on this card, so this note is how '
-                      "you'll find it later."
-                : "You'll search by this later, so write it how you'd say it.",
-            style: AppText.body(c),
-          ),
-          const SizedBox(height: Gap.md),
-          Pocket(
-            padding: const EdgeInsets.symmetric(
-              horizontal: Gap.md,
-              vertical: Gap.sm + 2,
-            ),
-            child: TextField(
-              controller: _controller,
-              autofocus: true,
-              maxLines: 3,
-              minLines: 2,
-              cursorColor: c.ochre,
-              cursorWidth: 2,
-              textCapitalization: TextCapitalization.sentences,
-              style: AppText.rowTitle(c).copyWith(
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                fontVariations: AppFonts.weight(400),
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                hintText: 'cheap t-shirt printing, did our fest shirts',
-                hintStyle: AppText.body(c).copyWith(fontSize: 15),
-              ),
-              onSubmitted: (String v) => Navigator.of(context).pop(v),
-            ),
-          ),
-          const SizedBox(height: Gap.md),
-          InkPill(
-            label: 'Save card',
-            height: 58,
-            onTap: () => Navigator.of(context).pop(_controller.text),
-          ),
-          const SizedBox(height: Gap.sm),
-          // Still saves — the card and its fields are already on disk. This
-          // only declines to add a note.
-          PressFade(
-            onTap: () => Navigator.of(context).pop(''),
-            child: SizedBox(
-              height: kMinTarget,
-              child: Center(
-                child: Text(
-                  'Skip for now',
-                  style: AppText.button(c, on: c.inkMuted),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

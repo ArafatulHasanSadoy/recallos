@@ -1,9 +1,15 @@
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart'
     as mlkit;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
+import '../../imaging/photo_keyring.dart';
+import '../../imaging/photo_vault.dart';
 import '../ocr_engine.dart';
 
 /// Latin-script OCR via Google ML Kit.
@@ -56,9 +62,32 @@ class MlKitOcrEngine implements OcrEngine {
       );
     }
 
+    // ML Kit reads a file by path and cannot be handed bytes as a JPEG, so a
+    // sealed photograph is opened into a short-lived plain copy in the app's
+    // private cache, read, and deleted — here, in `finally`, and by the
+    // retention sweep if the process died in between.
+    File? plainCopy;
     try {
+      File readable = image;
+      if (await _isSealed(image)) {
+        final Uint8List? key = await PhotoKeyring.instance.key;
+        final String path = image.path;
+        final Uint8List plain = await Isolate.run(
+          () => readPhotoSync(path, key),
+        );
+        final Directory temp = await getTemporaryDirectory();
+        plainCopy = File(
+          p.join(
+            temp.path,
+            '$kPlainTempPrefix${DateTime.now().microsecondsSinceEpoch}.jpg',
+          ),
+        );
+        await plainCopy.writeAsBytes(plain, flush: true);
+        readable = plainCopy;
+      }
+
       final mlkit.RecognizedText recognized = await _engine
-          .processImage(mlkit.InputImage.fromFile(image))
+          .processImage(mlkit.InputImage.fromFile(readable))
           .timeout(timeout);
 
       final List<OcrBlock> blocks = <OcrBlock>[];
@@ -105,6 +134,24 @@ class MlKitOcrEngine implements OcrEngine {
         duration: clock.elapsed,
         errorDetail: e.toString(),
       );
+    } finally {
+      final File? copy = plainCopy;
+      if (copy != null) {
+        try {
+          if (copy.existsSync()) await copy.delete();
+        } on Object {
+          // The sweep gets it next launch.
+        }
+      }
+    }
+  }
+
+  static Future<bool> _isSealed(File file) async {
+    final RandomAccessFile handle = await file.open();
+    try {
+      return isSealedPhoto(await handle.read(5));
+    } finally {
+      await handle.close();
     }
   }
 

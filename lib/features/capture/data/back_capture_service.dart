@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,8 +10,11 @@ import 'package:path/path.dart' as p;
 import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/imaging/card_image_processor.dart';
+import '../../../core/imaging/photo_keyring.dart';
+import '../../../core/imaging/photo_vault.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine_provider.dart';
+import '../../../core/storage/hand_offs.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
 import 'card_repository.dart';
@@ -134,7 +138,7 @@ class BackCaptureService {
     try {
       stored = await _store(cardId, scanned);
       await cards.attachBackImage(cardId: cardId, backImagePath: stored);
-      unawaited(_cleanScannerCache());
+      unawaited(clearScannerLeftovers());
     } on Object catch (e) {
       return (
         outcome: BackCaptureOutcome.failed,
@@ -199,23 +203,6 @@ class BackCaptureService {
     }
   }
 
-  /// Drops the scanner's copy now that the pixels are ours.
-  ///
-  /// Swallows its own failures rather than being fired off bare. Unawaited, a
-  /// throw here becomes an unhandled async error — it cannot reach the caller
-  /// to be reported and cannot be caught by the block it sits in, so it
-  /// surfaces as a red screen in debug and a log line in release, long after
-  /// the capture it belongs to succeeded. Failing to tidy up is not a failed
-  /// capture: the back is already stored and attached by this point.
-  Future<void> _cleanScannerCache() async {
-    try {
-      await CunningDocumentScanner.cleanCache();
-    } on Object {
-      // Nothing to do and nothing to say. The leftover is the plugin's own
-      // cache file, which the OS reclaims.
-    }
-  }
-
   /// Moves the capture out of the scanner's cache and into our own storage.
   ///
   /// Downscaled the same way the front is, so a back costs about what a front
@@ -231,6 +218,7 @@ class BackCaptureService {
     final String targetDir = directory.path;
     final String baseName =
         'card_${cardId}_back_${DateTime.now().microsecondsSinceEpoch}';
+    final Uint8List? photoKey = await PhotoKeyring.instance.key;
 
     try {
       final PreparedImage prepared = await Isolate.run(
@@ -240,15 +228,19 @@ class BackCaptureService {
             targetDir: targetDir,
             baseName: baseName,
             thumbnail: false,
+            photoKey: photoKey,
           ),
         ),
       );
       return prepared.imagePath;
     } on Object {
-      final File copy = await scanned.copy(
-        p.join(targetDir, '$baseName${p.extension(scanned.path)}'),
+      final String target = p.join(
+        targetDir,
+        '$baseName${p.extension(scanned.path)}',
       );
-      return copy.path;
+      final String from = scanned.path;
+      await Isolate.run(() => sealCopySync(from, target, photoKey));
+      return target;
     }
   }
 }

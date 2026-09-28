@@ -4,6 +4,8 @@ import 'dart:ui' show Rect;
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
+import '../../imaging/photo_keyring.dart';
+import '../../imaging/photo_vault.dart';
 import '../ocr_engine.dart';
 
 /// Dispatches an image to whichever engine can read the scripts asked for.
@@ -128,7 +130,9 @@ Future<File?> cropRegion(
   int upscale = 2,
 }) async {
   try {
-    final img.Image? decoded = img.decodeImage(await source.readAsBytes());
+    final img.Image? decoded = img.decodeImage(
+      openPhoto(await PhotoKeyring.instance.key, await source.readAsBytes()),
+    );
     if (decoded == null) return null;
 
     final int x = (region.left - padding).clamp(0, decoded.width - 1).round();
@@ -150,7 +154,9 @@ Future<File?> cropRegion(
       );
     }
 
-    final String name = 'crop_${DateTime.now().microsecondsSinceEpoch}.png';
+    // Named as a plain copy, so a crop nobody deletes is swept like one.
+    final String name =
+        '${kPlainTempPrefix}crop_${DateTime.now().microsecondsSinceEpoch}.png';
     final File out = File(p.join(outputDir, name));
     await out.writeAsBytes(img.encodePng(crop));
     return out;
