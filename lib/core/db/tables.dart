@@ -463,3 +463,82 @@ class DuplicateCandidates extends Table with _Timestamps {
   /// `pending`, `linked`, `rejected`.
   TextColumn get status => text().withDefault(const Constant('pending'))();
 }
+
+// ---------------------------------------------------------------------------
+// The user's own card
+//
+// Authored data, and kept deliberately apart from the identity graph next to
+// it. `people`, `organizations` and `roles` are *derived*: `promote()` rebuilds
+// them from scanned cards, garbage collection deletes whatever no live card
+// holds up, resolution matches new scans against them, and a `rulesVersion`
+// bump re-derives the lot. None of that is true of the person using the app.
+//
+// A row inside `people` marked `is_self` would therefore have to be excluded
+// from the contacts list, from endpoint matching, from duplicate proposal,
+// from garbage collection, from the implausible-name sweep, from backfill and
+// from the wallet export — seven places, each of which fails silently. The
+// worst of them deletes the user's own card because no scanned card holds it
+// up. Keeping authored data in its own tables costs two small tables and
+// removes all seven.
+// ---------------------------------------------------------------------------
+
+/// The card the user hands to other people.
+///
+/// Plural from the start. The brief wants a professional card, a freelance card
+/// and an event card eventually — "same person, different identities depending
+/// on context" — and holding several rows now means that arrives as a picker
+/// rather than as a migration. Until then exactly one row exists and it is the
+/// default.
+@DataClassName('Profile')
+class Profiles extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// "Work", "Freelance". Null while there is only one card to choose from,
+  /// because naming a thing you have one of is noise.
+  TextColumn get label => text().nullable()();
+
+  BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+
+  /// Stored beside the card photos and, like them, sealed with the photo key
+  /// rather than by SQLCipher. See `lib/core/imaging/photo_vault.dart`.
+  TextColumn get photoPath => text().nullable()();
+
+  /// What you want them to remember you for.
+  ///
+  /// The mirror of the note the user writes about everybody else, which is the
+  /// most valuable column in this database. It travels as the vCard `NOTE`, so
+  /// the sentence lands in their address book rather than stopping at ours.
+  TextColumn get tagline => text().nullable()();
+}
+
+/// One line on the user's own card.
+///
+/// Shaped like `card_fields` and keyed by the same closed [FieldKeys]
+/// vocabulary on purpose: it buys the human labels, `validateField` — so the
+/// user's own number is normalised to E.164 exactly as a scanned one is — the
+/// keyboard-type switch, and repeatable phones and emails, none of which have
+/// to be written twice.
+class ProfileFields extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  /// `person_name`, `company`, `designation`, `phone`, `email`, `website`,
+  /// `address` — the `FieldKeys` vocabulary.
+  TextColumn get fieldKey => text()();
+
+  TextColumn get value => text()();
+
+  /// E.164 phones, lowercased emails, bare domains — the same canonical forms
+  /// `card_fields` stores, produced by the same validator.
+  TextColumn get normalizedValue => text().nullable()();
+
+  /// "mobile", "office", "LinkedIn".
+  ///
+  /// Load-bearing rather than decorative: it is what turns a phone into
+  /// `TEL;TYPE=CELL` in the exported card, and what tells one website row from
+  /// another when both are social links.
+  TextColumn get label => text().nullable()();
+
+  IntColumn get orderIndex => integer().withDefault(const Constant(0))();
+}

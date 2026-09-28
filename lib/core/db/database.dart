@@ -48,6 +48,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
     RankingWeights,
     DuplicateCandidates,
     Settings,
+    Profiles,
+    ProfileFields,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -61,7 +63,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? openEncryptedDatabase());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -69,6 +71,7 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       await customStatement(_createSearchIndex);
       await _createIdentityIndexes();
+      await _createProfileIndexes();
       await _seedRankingWeights();
     },
     onUpgrade: (Migrator m, int from, int to) async {
@@ -127,6 +130,20 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(cardFields, cardFields.side);
         await m.addColumn(ocrBlocks, ocrBlocks.side);
       }
+      // v9 — the app learned who its own user is.
+      //
+      // Its own tables rather than a flag on `people`, because a profile is
+      // authored and everything in the identity graph is derived. A self row
+      // would have to be kept out of the contacts list, endpoint matching,
+      // duplicate proposal, the implausible-name sweep, backfill and the
+      // wallet export — and out of garbage collection, which would otherwise
+      // delete the user's own card for the crime of having no scanned card
+      // behind it.
+      if (from < 9) {
+        await m.createTable(profiles);
+        await m.createTable(profileFields);
+        await _createProfileIndexes();
+      }
     },
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -157,6 +174,19 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_organizations_domain '
       'ON organizations(website_domain)',
+    );
+  }
+
+  /// Exactly one card is the one you hand over.
+  ///
+  /// A partial index rather than a rule in the repository, because "at most one
+  /// row with is_default = 1" is an invariant, and an invariant every writer
+  /// has to remember is one some future writer will not. Rows at 0 are outside
+  /// the index entirely, so any number of them is fine.
+  Future<void> _createProfileIndexes() async {
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_default '
+      'ON profiles(is_default) WHERE is_default = 1',
     );
   }
 

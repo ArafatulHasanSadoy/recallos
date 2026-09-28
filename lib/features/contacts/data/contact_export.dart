@@ -3,11 +3,14 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/db/database.dart';
+import '../../../core/db/enums.dart';
 import '../../../core/export/vcard.dart';
+import '../../../core/extraction/card_extractor.dart';
+import '../../../core/storage/hand_offs.dart';
+import '../../profile/data/profile_repository.dart';
 import 'identity_repository.dart';
 
 final contactExportProvider = Provider<ContactExport>(
@@ -27,6 +30,14 @@ enum ContactExportResult {
 
   /// The contact went away between the tap and the write.
   gone,
+
+  /// There is a card, but nothing on it yet.
+  ///
+  /// Only reachable for the user's own card, which can exist while empty in a
+  /// way a scanned one cannot. Distinct from [gone] because "this contact is no
+  /// longer here" is the wrong sentence for a card you simply have not filled
+  /// in.
+  empty,
 }
 
 
@@ -68,6 +79,53 @@ VCardData vCardForPerson(PersonDetail detail) {
     organization: primary?.orgName,
     title: primary?.title,
     note: detail.person.relationship,
+    contacts: endpoints.values.toList(),
+  );
+}
+
+/// The user's own card as a vCard.
+///
+/// The one mapper here built from authored fields rather than derived ones,
+/// which is why it reads by key instead of walking roles: a profile has no
+/// roles, because as far as your own card is concerned you have one job.
+/// Everything downstream — the escaping, the name split, the TEL types — is
+/// [buildVCard]'s, exactly as it is for anybody else. That is the point of this
+/// being a third mapper and not a second serialiser.
+VCardData vCardForProfile(ProfileDetail detail) {
+  // Deduplicated on the canonical form, so one number typed twice in two
+  // spellings does not land in somebody's address book twice.
+  final Map<String, VCardContact> endpoints = <String, VCardContact>{};
+  void offer(ContactKind kind, ProfileField f) {
+    endpoints.putIfAbsent(
+      '$kind|${f.normalizedValue ?? f.value.trim().toLowerCase()}',
+      () => VCardContact(kind: kind, value: f.value.trim(), label: f.label),
+    );
+  }
+
+  for (final ProfileField f in detail.fields) {
+    if (f.value.trim().isEmpty) continue;
+    switch (f.fieldKey) {
+      case FieldKeys.phone:
+        offer(ContactKind.phone, f);
+      case FieldKeys.email:
+        offer(ContactKind.email, f);
+      case FieldKeys.website:
+        offer(ContactKind.website, f);
+    }
+  }
+
+  return VCardData(
+    // Empty is safe: `buildVCard` falls back to the organisation and then to
+    // "Unnamed contact" itself, so a second fallback here would only disagree
+    // with it.
+    displayName: detail.name,
+    organization: detail.valueOf(FieldKeys.company),
+    title: detail.valueOf(FieldKeys.designation),
+    address: detail.valueOf(FieldKeys.address),
+    // Deliberately not set. `buildVCard` writes `website` as its own URL line
+    // *and* writes every website contact as one, so filling both would put the
+    // same address in the card twice.
+    note: detail.profile.tagline,
     contacts: endpoints.values.toList(),
   );
 }
@@ -158,6 +216,32 @@ class ContactExport {
     return _open(card, fileName: detail.organization.name);
   }
 
+  /// Hands the user's own card to the rest of the phone.
+  ///
+  /// The same two verbs as [savePerson], because they still reach different
+  /// places: `ACTION_VIEW` is the only one Contacts listens for, and
+  /// `ACTION_SEND` is how a card gets to WhatsApp. The only difference is where
+  /// the data comes from — authored, not promoted.
+  Future<ContactExportResult> saveProfile({bool share = false}) async {
+    // Resolved before the first await. A provider read afterwards can land on
+    // a disposed container — see the note on `backCaptureServiceProvider`.
+    final ProfileRepository profiles = _ref.read(profileRepositoryProvider);
+    final ProfileDetail? detail = await profiles.watchDefault().first;
+    if (detail == null) return ContactExportResult.gone;
+    if (detail.isEmpty) return ContactExportResult.empty;
+
+    final VCardData card = vCardForProfile(detail);
+    final String name = card.displayName.trim().isEmpty
+        ? 'My card'
+        : card.displayName;
+
+    if (share) {
+      await _share(card, fileName: name);
+      return ContactExportResult.shared;
+    }
+    return _open(card, fileName: name);
+  }
+
   /// Opens the contact in whatever app imports vCards — Contacts, in practice.
   Future<ContactExportResult> _open(
     VCardData data, {
@@ -176,21 +260,28 @@ class ContactExport {
 
   Future<void> _share(VCardData data, {required String fileName}) async {
     final File file = await _write(data, fileName);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: <XFile>[XFile(file.path, mimeType: 'text/x-vcard')],
-        subject: data.displayName,
-      ),
-    );
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: <XFile>[XFile(file.path, mimeType: 'text/x-vcard')],
+          subject: data.displayName,
+        ),
+      );
+    } finally {
+      // share_plus hands over its own copy.
+      await discardHandOff(file);
+    }
   }
 
   /// Writes the card where another app can be granted a read on it.
   ///
-  /// The cache rather than documents: this file exists to be handed over and
+  /// The outbox rather than documents: this file exists to be handed over and
   /// has no reason to survive. Both plugins expose it through their own
-  /// FileProvider, so no storage permission is involved on either path.
+  /// FileProvider, so no storage permission is involved on either path. One
+  /// opened in Contacts is still being read when `_open` returns, so it is
+  /// left for the launch sweep (a day; see `hand_offs.dart`).
   Future<File> _write(VCardData data, String fileName) async {
-    final Directory dir = await getTemporaryDirectory();
+    final Directory dir = await outboxDirectory();
     final File file = File(p.join(dir.path, '${_safeName(fileName)}.vcf'));
     await file.writeAsString(buildVCard(data));
     return file;

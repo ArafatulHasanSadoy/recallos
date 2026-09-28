@@ -222,6 +222,7 @@ Future<void> exportContact(
     ContactExportResult.noHandler =>
       'No app on this phone can import a contact file.',
     ContactExportResult.gone => 'This contact is no longer here.',
+    ContactExportResult.empty => 'Your card has nothing on it yet.',
   };
   if (message != null) {
     messenger.showSnackBar(SnackBar(content: Text(message)));

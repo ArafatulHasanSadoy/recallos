@@ -51,6 +51,33 @@ FieldValidation validateField(String fieldKey, String value) {
   };
 }
 
+/// One validation issue, in words a person can act on.
+///
+/// The tokens above are deliberately machine names — they are stored in
+/// `card_fields.validation_issue`, compared against, and must not change
+/// meaning because somebody improved a sentence. This is the other half: the
+/// one place they become English, so that no screen invents its own wording
+/// and none of them ever shows a user the string `unrecognizedFormat`.
+///
+/// Returns null for tokens that are not a problem to report — an empty field
+/// the user has not filled in yet, and a repair the app made successfully.
+String? describeFieldIssue(String? issue) => switch (issue) {
+  null || 'empty' || 'ocr_repaired' || 'digit_restored' => null,
+  'tooShort' => 'That looks too short to dial.',
+  'tooLong' => 'That is longer than a phone number can be.',
+  'unknownOperator' => 'No Bangladeshi operator uses that prefix.',
+  'unrecognizedFormat' => 'That does not look like a phone number.',
+  'not_an_email' => 'That does not look like an email address.',
+  'malformed' => 'That does not look like an email address.',
+  'malformed_domain' => 'The part after the @ does not look right.',
+  'implausible_tld' => 'That domain ending looks unlikely.',
+  'not_a_website' => 'That does not look like a web address.',
+  'looks_like_address' => 'That reads like an address rather than a name.',
+  // An issue nobody has written a sentence for is worth saying *something*
+  // about — but never the token itself.
+  _ => 'That does not look right.',
+};
+
 FieldValidation _phone(String text) {
   final PhoneMatch? match = PhoneExtractor.parse(text);
   if (match == null) {

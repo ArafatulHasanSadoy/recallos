@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/build_flags.dart';
 import 'core/theme/app_theme.dart';
 import 'features/capture/presentation/capture_screen.dart';
 import 'features/capture/presentation/spike_screen.dart';
@@ -12,6 +12,8 @@ import 'features/contacts/presentation/contacts_screen.dart';
 import 'features/contacts/presentation/duplicates_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
+import 'features/profile/presentation/my_card_screen.dart';
+import 'features/profile/presentation/profile_editor_screen.dart';
 import 'features/search/presentation/home_screen.dart';
 import 'features/settings/data/app_settings.dart';
 import 'features/settings/presentation/onboarding_screen.dart';
@@ -26,6 +28,11 @@ abstract final class Routes {
   static const String needsAttention = '/needs-attention';
   static const String settings = '/settings';
   static const String onboarding = '/welcome';
+
+  /// The user's own card, and the form that sets it. The one record in this
+  /// app that is about the person holding the phone.
+  static const String myCard = '/me';
+  static const String myCardEdit = '/me/edit';
 
   /// Phase 0 scaffolding. Delete once the OCR gate has been answered.
   static const String spike = '/spike';
@@ -87,9 +94,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // The spike screen reads whatever the user picks out of the gallery,
       // runs OCR over it and writes the raw result to a file — an
       // unadvertised gallery-reading surface that Play would be right to ask
-      // about. `kDebugMode` is a const, so in release the route is not
-      // registered and `/spike` is unreachable even by deep link.
-      if (kDebugMode)
+      // about. `kEvaluationTools` is a const that is true only in debug and in
+      // the never-uploaded benchmark build (see `build_flags.dart`), so in a
+      // Play build the route is not registered and `/spike` is unreachable
+      // even by deep link.
+      if (kEvaluationTools)
         GoRoute(path: Routes.spike, builder: (_, _) => const SpikeScreen()),
       GoRoute(path: Routes.contacts, builder: (_, _) => const ContactsScreen()),
       GoRoute(
@@ -99,6 +108,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.duplicates,
         builder: (_, _) => const DuplicatesScreen(),
+      ),
+      GoRoute(path: Routes.myCard, builder: (_, _) => const MyCardScreen()),
+      GoRoute(
+        path: Routes.myCardEdit,
+        builder: (_, _) => const ProfileEditorScreen(),
       ),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
       GoRoute(

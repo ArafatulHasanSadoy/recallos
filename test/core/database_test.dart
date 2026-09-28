@@ -82,6 +82,13 @@ void main() {
       );
       await before.customStatement('ALTER TABLE card_fields DROP COLUMN side');
       await before.customStatement('ALTER TABLE ocr_blocks DROP COLUMN side');
+      // v9's two tables, for the same reason as v8's columns: `createTable` is
+      // not `IF NOT EXISTS`, so a database that still has them is not a v1
+      // database and the upgrade fails on a name that is already there. The
+      // child first — foreign keys are on. Dropping the tables takes the
+      // partial index with them.
+      await before.customStatement('DROP TABLE IF EXISTS profile_fields');
+      await before.customStatement('DROP TABLE IF EXISTS profiles');
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 
@@ -137,6 +144,36 @@ void main() {
             ..where(($OrganizationsTable t) => t.id.equals(orgId)))
           .getSingle();
       expect(org.mergedIntoId, isNull);
+
+      // v9: the user's own card lands in an upgraded database, and it lands
+      // outside the graph — nothing above can promote it, match it or collect
+      // it, which is the entire reason it has tables of its own.
+      final int profileId = await after.into(after.profiles).insert(
+            ProfilesCompanion.insert(isDefault: const Value<bool>(true)),
+          );
+      await after.into(after.profileFields).insert(
+            ProfileFieldsCompanion.insert(
+              profileId: profileId,
+              fieldKey: 'phone',
+              value: '01711363991',
+            ),
+          );
+      expect(await after.select(after.profileFields).get(), hasLength(1));
+
+      // A second default is refused by the index rather than quietly accepted,
+      // so "the card you hand over" cannot become ambiguous.
+      await expectLater(
+        after.into(after.profiles).insert(
+              ProfilesCompanion.insert(isDefault: const Value<bool>(true)),
+            ),
+        throwsA(anything),
+      );
+
+      // The cascade a delete depends on.
+      await (after.delete(after.profiles)
+            ..where(($ProfilesTable t) => t.id.equals(profileId)))
+          .go();
+      expect(await after.select(after.profileFields).get(), isEmpty);
     });
 
     test('creates every table and seeds ranking weights', () async {
