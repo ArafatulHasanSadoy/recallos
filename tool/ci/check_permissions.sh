@@ -18,6 +18,9 @@ allowed=(
   android.permission.CAMERA                 # photographing cards
   android.permission.USE_BIOMETRIC          # the optional wallet lock
   android.permission.USE_FINGERPRINT        # local_auth, for older Android
+  android.permission.POST_NOTIFICATIONS     # next-step reminders; asked at the first one
+  android.permission.RECEIVE_BOOT_COMPLETED # reminders survive a restart or update
+  android.permission.VIBRATE                # flutter_local_notifications, for the alert
   com.recallos.recallos.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION # AndroidX, app-private
 )
 

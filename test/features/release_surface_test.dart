@@ -104,6 +104,25 @@ void main() {
       expect(manifest, contains('android.permission.CAMERA'));
     });
 
+    test('reminders are inexact: no exact-alarm permission', () {
+      // Play restricts SCHEDULE_EXACT_ALARM and USE_EXACT_ALARM to alarm-clock
+      // and calendar apps, and a follow-up a few minutes late is still on
+      // time. A declaration, not the word: the manifest's own comment names
+      // both to say why they are absent.
+      final RegExp exact = RegExp(
+        r'<uses-permission[^>]*android\.permission\.(SCHEDULE|USE)_EXACT_ALARM',
+      );
+      expect(manifest, isNot(matches(exact)));
+    });
+
+    test('scheduled reminders are re-armed after a reboot or an update', () {
+      // Android forgets every alarm on reboot. Without the boot receiver a
+      // reminder set on Monday silently never fires if the phone restarts.
+      expect(manifest, contains('android.permission.RECEIVE_BOOT_COMPLETED'));
+      expect(manifest, contains('ScheduledNotificationBootReceiver'));
+      expect(manifest, contains('android.intent.action.MY_PACKAGE_REPLACED'));
+    });
+
     test('the wallet is not backed up to Google Drive', () {
       // Android's default is to back the app's files up, which for a while
       // shipped the whole plaintext wallet off the device — the largest hole

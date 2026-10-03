@@ -50,6 +50,17 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "version" -> result.success(version())
+                    // The phone's time zone, as an IANA id ("Asia/Dhaka"), so
+                    // a 9 AM reminder means 9 AM wherever the phone is.
+                    "timezone" -> result.success(java.util.TimeZone.getDefault().id)
+                    // The way out when reminders are off: RecallOS's own page
+                    // in Android's notification settings.
+                    "openNotificationSettings" -> {
+                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                        startActivity(intent)
+                        result.success(true)
+                    }
                     "restart" -> {
                         result.success(null)
                         restart()

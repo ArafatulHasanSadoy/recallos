@@ -7,6 +7,17 @@
          enrolled fingerprint still runs the app, it just cannot arm the lock,
          and the settings row says so rather than failing on a tap. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+
+    <!-- Reminders for next steps (A2). POST_NOTIFICATIONS and VIBRATE come in
+         with flutter_local_notifications; POST_NOTIFICATIONS is asked for when
+         the user sets their first reminder, never at onboarding.
+         RECEIVE_BOOT_COMPLETED lets a scheduled reminder survive a restart or
+         an app update — Android forgets every alarm on reboot.
+         Deliberately absent: SCHEDULE_EXACT_ALARM and USE_EXACT_ALARM. A
+         follow-up does not need to-the-minute timing, and Play restricts exact
+         alarms to alarm-clock and calendar apps. Reminders are inexact and can
+         arrive a few minutes late. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-feature android:name="android.hardware.fingerprint" android:required="false"/>
 
     <!-- Deliberately absent: INTERNET.
@@ -89,6 +100,19 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- flutter_local_notifications: shows a scheduled reminder, puts
+             them all back after a reboot or an app update, and handles the
+             Done / Snooze buttons on one. None is exported. -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
