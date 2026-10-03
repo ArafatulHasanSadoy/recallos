@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
+import 'features/followup/presentation/reminder_responder.dart';
 import 'features/settings/data/app_settings.dart';
 import 'features/settings/presentation/lock_gate.dart';
 import 'router.dart';
@@ -38,8 +39,12 @@ class RecallOsApp extends ConsumerWidget {
       routerConfig: ref.watch(routerProvider),
       // The lock lives inside the app rather than above it, so it wears the
       // same palette and the router below keeps its place. See [LockGate].
-      builder: (BuildContext context, Widget? child) =>
-          LockGate(child: child ?? const SizedBox.shrink()),
+      //
+      // Reminder taps are answered from here too: above every route, so a
+      // notification can open a card from wherever the app happens to be.
+      builder: (BuildContext context, Widget? child) => LockGate(
+        child: ReminderResponder(child: child ?? const SizedBox.shrink()),
+      ),
       debugShowCheckedModeBanner: false,
     );
   }

@@ -12,6 +12,7 @@ import 'package:recallos/core/intelligence/embedding/static_embedder.dart';
 import 'package:recallos/core/intelligence/embedding/wordpiece.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
+import 'package:recallos/features/followup/data/follow_up_repository.dart';
 import 'package:recallos/features/search/data/search_repository.dart';
 import 'package:recallos/features/search/presentation/home_screen.dart';
 
@@ -99,6 +100,31 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(Duration.zero);
   }
+
+  testWidgets('the home row says what is due, and is absent when nothing is',
+      (WidgetTester tester) async {
+    final int id = await seed('Spice Route Catering', 'catering');
+    await pumpHome(tester);
+    expect(find.textContaining('due today'), findsNothing);
+    expect(find.textContaining('Next:'), findsNothing,
+        reason: 'no steps, no row: a row that says nothing trains people to '
+            'ignore it');
+
+    // Written behind the screen's back, the way the card screen writes it.
+    final FollowUpRepository repo = FollowUpRepository(db);
+    await repo.addStep(
+      cardId: id,
+      title: 'Confirm menu',
+      dueOn: DateTime.now().add(const Duration(days: 3)),
+    );
+    await settleRefresh(tester);
+    expect(find.textContaining('Next: Confirm menu'), findsOneWidget);
+
+    await repo.addStep(cardId: id, title: 'Send CVs', dueOn: DateTime.now());
+    await settleRefresh(tester);
+    expect(find.text('1 step due today'), findsOneWidget);
+    await unmount(tester);
+  });
 
   testWidgets('the scan button stands aside while a search is being typed', (
     WidgetTester tester,

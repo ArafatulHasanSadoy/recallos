@@ -12,6 +12,7 @@ import 'features/contacts/presentation/contacts_screen.dart';
 import 'features/contacts/presentation/duplicates_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
+import 'features/followup/presentation/today_screen.dart';
 import 'features/profile/presentation/my_card_screen.dart';
 import 'features/profile/presentation/profile_editor_screen.dart';
 import 'features/search/presentation/home_screen.dart';
@@ -27,6 +28,7 @@ abstract final class Routes {
   static const String duplicates = '/duplicates';
   static const String needsAttention = '/needs-attention';
   static const String settings = '/settings';
+  static const String today = '/today';
   static const String onboarding = '/welcome';
 
   /// The user's own card, and the form that sets it. The one record in this
@@ -115,6 +117,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const ProfileEditorScreen(),
       ),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
+      GoRoute(path: Routes.today, builder: (_, _) => const TodayScreen()),
       GoRoute(
         path: Routes.onboarding,
         builder: (_, _) => const OnboardingScreen(),

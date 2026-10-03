@@ -8,6 +8,7 @@ import '../../../core/backup/restore_swap.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/brand.dart';
 import '../../../core/ui/card_face.dart';
+import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
@@ -16,6 +17,8 @@ import '../../capture/data/card_repository.dart';
 import '../../cards/data/retention_sweep.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../followup/data/follow_up_repository.dart';
+import '../../followup/data/reminder_engine.dart';
 import '../../settings/data/backup_service.dart';
 import '../../settings/data/photo_protection.dart';
 import '../data/search_repository.dart';
@@ -83,6 +86,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       unawaited(_reportRestore());
       unawaited(() async {
         await ref.read(retentionSweepProvider).run();
+        if (!ref.context.mounted) return;
+        // After the sweep, which may have purged cards and their reminders
+        // with them. This is also what re-arms reminders after an app update,
+        // a restore or a change of time zone.
+        await ref.read(reminderEngineProvider).reconcile();
         if (!ref.context.mounted) return;
         await ref.read(cardRepositoryProvider).repairDigitRestoredLabels();
         if (!ref.context.mounted) return;
@@ -270,6 +278,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       // answering a question, and a queue of unrelated repairs
                       // is an interruption rather than a prompt.
                       if (!searchingNow) const _AttentionRow(),
+                      if (!searchingNow) const _TodayRow(),
                     ],
                   ),
                 ),
@@ -812,6 +821,74 @@ class _DeleteReveal extends StatelessWidget {
             const SizedBox(width: Gap.sm),
             Text('Delete', style: AppText.button(c, on: c.onInk)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The way into Today, shown only when there is a next step to go to.
+///
+/// It says the thing itself rather than "Today": what is overdue or due now,
+/// or else what comes next. A row that read "nothing due" on most days would
+/// teach people to stop reading it — the reason the repair row below is quiet
+/// when empty too.
+class _TodayRow extends ConsumerWidget {
+  const _TodayRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final List<TodayEntry> open =
+        ref.watch(openFollowUpsProvider).value ?? const <TodayEntry>[];
+    if (open.isEmpty) return const SizedBox.shrink();
+
+    final DateTime now = DateTime.now();
+    final TodayView view = TodayView.split(open, now);
+    final int late = view.overdue.length;
+    final int due = view.today.length;
+    final String text;
+    if (late > 0 && due > 0) {
+      text = '$late overdue · $due due today';
+    } else if (late > 0) {
+      text = late == 1 ? '1 step overdue' : '$late steps overdue';
+    } else if (due > 0) {
+      text = due == 1 ? '1 step due today' : '$due steps due today';
+    } else {
+      final TodayEntry next = view.upcoming.first;
+      text =
+          'Next: ${next.step.title} · '
+          '${weekdayDayMonth(next.step.dueOn, now)}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.md),
+      child: PressFade(
+        onTap: () => context.push(Routes.today),
+        semanticLabel: '$text. Open Today',
+        child: Container(
+          height: kMinTarget,
+          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          decoration: BoxDecoration(
+            color: c.ochre.withValues(alpha: 0.12),
+            borderRadius: AppRadius.pocketR,
+            border: Border.all(color: c.ochre.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.event_note_outlined, size: 18, color: c.ochreInk),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: c.ochreInk),
+            ],
+          ),
         ),
       ),
     );

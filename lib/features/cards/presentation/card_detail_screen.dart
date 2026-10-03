@@ -15,6 +15,7 @@ import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../capture/data/card_repository.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../followup/presentation/card_follow_up_blocks.dart';
 import '../../search/data/search_repository.dart';
 import 'widgets/card_sides_view.dart';
 import 'widgets/editable_field_list.dart';
@@ -241,6 +242,12 @@ class _Body extends StatelessWidget {
         // Always present: a card with no note is exactly the one that most
         // needs one, and hiding the block hid the only way to add it.
         _NoteBlock(note: note, colors: c, onTap: () => onEditNote(note)),
+        const SizedBox(height: Gap.sm),
+        // What happens next, then how you know them: the note says why the
+        // card mattered, these two say what to do about it.
+        NextStepsBlock(cardId: detail.card.id),
+        const SizedBox(height: Gap.sm),
+        MetBlock(cardId: detail.card.id, scannedOn: detail.card.capturedAt),
         const SizedBox(height: Gap.lg),
         _Actions(detail: detail),
         const SizedBox(height: Gap.lg),
