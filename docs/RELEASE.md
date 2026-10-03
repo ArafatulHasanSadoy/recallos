@@ -177,8 +177,10 @@ bundletool build-apks --bundle=build/app/outputs/bundle/release/app-release.aab 
 unzip -o -p /tmp/recallos.apks universal.apk > /tmp/recallos-universal.apk
 
 # Permissions, read from the bundle itself and compared with the allowlist.
-# Expect exactly: CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, and the app's own
-# DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION. No INTERNET, no RECORD_AUDIO.
+# Expect exactly: CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, the app's own
+# DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, and — since reminders (A2, 30 Sep)
+# — POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED and VIBRATE. No INTERNET, no
+# RECORD_AUDIO, no SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM.
 # (The AICore BIND_SERVICE permission left with flutter_local_ai, 2026-09-28.)
 # CI runs the same script on every push.
 tool/ci/check_permissions.sh

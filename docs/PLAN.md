@@ -10,6 +10,22 @@ out of it and are applied below: sell the people workflow first (Release A),
 verify the first purchase on the phone so `INTERNET` stays out, and tag
 `b48d429` as `cse499b-start`.
 
+**2026-09-29, later — the dates are fixed.** The **first release is live on
+Google Play on 20 Oct 2026**. The **final code and the final Play release are
+submitted to the university on 10 Nov 2026**, and the project is judged on that
+submission. The owner chose the **complete app** for it: Releases A and B.
+§4 targets and the §7 calendar are re-pinned to these dates; Release C moves
+after the judging.
+
+**2026-09-30 — build order and schema numbers.** Release A is built in this
+order: **A1 + A2 → A3 + A4 → A7 purchase → A5 → A6 → A8**, so the purchase
+follows the first release by about a week instead of trailing to the end of
+October. Schema **v10** is the one that shipped with A1/A2 — `encounters`,
+`important_dates` and `reminders`, new tables only. The larger generalisation
+this plan used to call v10 (typed facts, item assets, item links) is now
+**v11**. Schema numbers describe what happened, not the order they were once
+planned in.
+
 Pricing, revenue and competitor strategy are deliberately **not** here: this repo
 is public and `docs/` is served on GitHub Pages. They live in the gitignored
 `business/` folder.
@@ -224,16 +240,49 @@ generalisation). Sizes: S ≤ 1 day, M 2–4 days, L 1–2 weeks.
 
 ### Release A — first sellable workflow (people)
 
-Target: live on Play around weeks 7–8, with a real one-time purchase.
+Target: the **first Play release, 20 Oct 2026**, with a real one-time purchase.
 
-- [ ] **A1. Context and next action** (M) — where and when you met (suggested,
+- [x] ✅ **A1. Context and next action** (M) — where and when you met (suggested,
   never fabricated); notes editable any time ✅ (done in F1); a next action with
   purpose, due date and optional reminder.
+  **Built 2026-09-30; walked on the RMX3612, release build, 2026-10-03.** The
+  phone's database was backed up first (`pre-v10-20261003-…`), the v9 → v10
+  upgrade kept all 15 cards, and every step below was done by tapping:
+  a step added with its day and reminder, edited from its row, marked done and
+  undone (Android's alarm went and came back with it); *Where you met* saved
+  with the scan day taken from the one-tap suggestion ("Not sure" is the
+  default, so nothing is assumed); both blocks checked in light and dark.
+  On a card, under the note: *Next
+  step* (add, edit, remove, mark done with Undo; due day in words, overdue
+  said as well as coloured) and *Where you met* (a place and a day; the scan
+  day is a one-tap suggestion inside the sheet and is never stored unless
+  saved). `lib/features/followup/`, schema v10.
 - [ ] **A2. Reminders and Today** (L) — obligations separate from their
   notification attempts; inexact scheduling; `reconcile()` after reboot,
   update, restore and timezone change; notification permission asked when the
   first reminder is set; generic lock-screen text for sensitive items. Today:
   overdue, due today, upcoming, then review work.
+  **Built 2026-09-30, phone check pending.** `ReminderEngine.reconcile()` makes
+  Android hold exactly the reminders the database says are due; it runs after
+  every change, at launch and on every return to the app. Reminders are 9 AM
+  on the due day (an hour out once that has passed), inexact, private on the
+  lock screen, with *Done* and *Snooze 1 hour*. The permission is asked at the
+  first reminder; when it is refused, Today and the card say so with a button
+  that opens Android's notification settings. Home shows the next thing due
+  and opens Today. New permissions, all on the CI allowlist:
+  `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `VIBRATE` — no exact alarms.
+  619 tests pass (39 new).
+  **On the phone, 2026-10-03:** the permission prompt appeared at the first
+  reminder and not before; Android held the alarm at exactly the time shown
+  (`dumpsys alarm`: 09:00 next day, inexact window); an app update kept the
+  alarms (`MY_PACKAGE_REPLACED`), and the next launch's reconcile dropped the
+  ones whose card had been deleted. Today and the home row are right in light
+  and dark. **Found and fixed:** deleting a card from its own screen left its
+  reminders scheduled, because card deletes never called the engine; the app
+  root now reconciles on any change to `cards`, `important_dates` or
+  `reminders`, which covers all five delete/restore/purge paths. Verified:
+  delete → alarms gone, restore → back. Still to see: a reminder actually
+  arriving, and Done / Snooze from the notification.
 - [ ] **A3. Introduction handoff** (S) — "Say hello": a template from the
   user's own card, shown in full, edited, then handed to WhatsApp / SMS / mail.
   Recorded as *opened*, never as *sent*.
@@ -249,15 +298,15 @@ Target: live on Play around weeks 7–8, with a real one-time purchase.
   a bought feature works offline; restore on reinstall; pending / cancelled /
   refunded states; free-tier limits (5 active reminders is a hypothesis). The
   paywall lists only features that are ready, with Play's localised price.
-- [ ] **A8. Release A gates** — closed test running since week 2; production
-  access applied for; Data safety and privacy policy match the build;
+- [ ] **A8. Release A gates** — closed test running since ~3 Oct; production
+  access applied for the day its 14 days are up (~17 Oct); Data safety and privacy policy match the build;
   golden journeys on the phone.
 
 ### Release B — people plus purchases (core 499B)
 
-Target: weeks 10–11.
+Target: shipped as updates between 20 Oct and 7 Nov; all in the final release on 10 Nov.
 
-- [ ] **B1. Schema v10, in place** (L) — see §5. Rehearsed on a copy of a real
+- [ ] **B1. Schema v11, in place** (L) — see §5. Rehearsed on a copy of a real
   database; the encrypted backup (F3) must exist first.
 - [ ] **B2. Receipts and warranties** (L) — classification (the capture
   category the user picked is a strong signal; rules next; "What did you
@@ -275,7 +324,7 @@ Target: weeks 10–11.
   their scope ("1–30 Sep, BDT, 12 verified receipts"), cite sources, and say
   "couldn't determine that" when they can't. No model-written SQL.
 
-### Release C — only with spare capacity and passed gates
+### Release C — after the judging
 
 Tickets · a public self-card link · E2EE cloud snapshots with a subscription
 (brings `INTERNET` back — its own disclosure, policy, Data safety and account
@@ -314,16 +363,16 @@ with Pro and cloud, when `INTERNET` returns anyway.
 ### Evolve the schema in place — no parallel tables
 
 The existing tables are already most of a general "memory item" model, so
-schema v10 extends them rather than running an old and a new system side by
+schema v11 extends them rather than running an old and a new system side by
 side:
 
-| Need | Already there | v10 change |
+| Need | Already there | v11 change |
 |---|---|---|
 | A saved thing of any type | `cards` — `type` enum (already has `receipt`, `warrantyCard`, `coupon`, `eventPass`…), timestamps, soft delete, person/org/role links | add `title`, `sensitivity`, `captureSource`, `classificationConfidence`; add `ticket`, `idDocument` to the enum. "MemoryItem" is the Dart domain name over this table |
 | Typed facts | `card_fields` — key, value, normalised value, `FactSource`, confidence, verified, region, side | add `valueType`, `amountMinor` (INTEGER) + `currency`, `dateValue` (a local date, not a timestamp), `status`; a controlled key vocabulary in code |
 | Many pages / PDFs | `imagePath`, `backImagePath`, `thumbPath` | new `item_assets`; front and back migrate into it |
 | Links between things | `duplicate_candidates` shows the reversible pattern | new `item_links` with a `reasons` JSON column |
-| Dates and reminders | — | `important_dates` (obligations) and `reminders`, with a separate `ReminderScheduler` that owns the platform side and can `reconcile()` — needed in Release A, so they land before v10 |
+| Dates and reminders | built in **v10** (A1/A2, phone check pending): `encounters`, `important_dates` (obligations) and `reminders`, with `ReminderEngine` owning the platform side through `reconcile()` | warranty expiry, ticket and ID dates become more `DateKind` values, not new tables |
 
 **Money is an integer in minor units plus a currency code** — paisa, cents —
 never a floating-point number. BDT and USD are never added together.
@@ -331,7 +380,7 @@ never a floating-point number. BDT and USD are never added together.
 **A fact has three separate properties**, not one enum: *origin* (printed,
 user, derived, inferred), *review* (unreviewed, confirmed, rejected) and
 *validity* (current, superseded, outdated). Today's `FactSource` mixes them
-(`verified` and `outdated` sit beside `printed`); v10 separates them.
+(`verified` and `outdated` sit beside `printed`); v11 separates them.
 
 Deferred until a feature needs them: a fact-dependency table (a derived fact
 keeps its inputs as a JSON list), per-page search chunks, a separate
@@ -363,7 +412,8 @@ CI plus `release_surface_test.dart` assert it defaults to off.
   `adb exec-out "run-as com.recallos.recallos cat app_flutter/recallos.sqlite"` —
   debug builds only, so take it before installing a release build.
 - Rehearse each migration on a copied database file first.
-- The encrypted backup (F3) exists before schema v10 touches a real wallet.
+- The encrypted backup (F3) exists before schema v11 touches a real wallet.
+  (v10 only adds tables; it still gets the same phone backup first.)
 
 ### No analytics SDK
 
@@ -395,43 +445,51 @@ No "100% accurate", "military-grade" or "never miss a deadline" anywhere.
 
 ## 7. Calendar
 
-About 14 weeks from 28 Sep 2026; re-pinned once the report and defense dates
-are known. Revenue work runs from week 1, not after engineering.
+Fixed 2026-09-29: **first Play release 20 Oct**, **final submission 10 Nov**.
+Every update carries only finished features: a feature not done by its week
+waits for the next update instead of shipping half-built.
 
-| Week of | Build | Release / evidence |
+The 20 Oct date is set by Google, not by us. A new personal developer account
+must run a closed test with 12+ opted-in testers for 14 continuous days before
+it can apply for production, and that review can take up to about a week. So
+the closed test has to be live by **~3 Oct** (6 Oct only if the review is
+instant), with the build we have then.
+
+| Dates | Build | Play Store / evidence |
 |---|---|---|
-| 28 Sep | ✅ F1 · ✅ F2 | ✅ tag `cse499b-start`; Play account; upload key; group agreement |
-| 5 Oct | ✅ F3 backup/restore (done early, 29 Sep) | v1.0 (offline, free) → internal → **closed test starts the 14-day clock**; merchant profile; first interviews |
-| 12 Oct | ✅ F4 photo encryption (done early, 29 Sep); billing no-INTERNET spike | backup round-trip on the phone, *then* switch it to the upload key; OCR run |
-| 19 Oct | A1 context + next action | apply for production access |
-| 26 Oct | A2 reminders + Today | retrieval query set |
-| 2 Nov | A3 intro · A4 QR · A5 Event Mode | design-partner sessions |
-| 9 Nov | A6 people search · A7 Offline Plus | licence-test purchases |
-| 16 Nov | A8 gates | **Release A live — first sale attempt** |
-| 23 Nov | B1 schema v10 | evaluation round 1 written up |
-| 30 Nov | B2 receipts + warranties | receipt / warranty labels |
-| 7 Dec | B3 linking · B4 totals | |
-| 14 Dec | B5 Ask across both | **Release B live** |
-| 21 Dec | Release C only if spare | usability + willingness-to-pay study; evaluation round 2 |
-| 28 Dec | freeze; golden-journey QA | report, defense rehearsal |
+| 29 Sep – 2 Oct | ✅ F1–F4 · store listing, screenshots, upload-key bundle | **Owner:** Play Console account and ID check, upload key, `applicationId`, 12+ testers (aim for 20), merchant profile |
+| **by ~3 Oct** | current build (F1–F4) | internal test → **closed test live**: Google's 14-day clock starts |
+| 3 – 9 Oct | A1 + A2 checked on the phone · A3 intro handoff · A4 My Card QR · billing no-INTERNET spike | update to testers; OCR labels from real cards |
+| 10 – 16 Oct | A7 Offline Plus · A8 gates | update to testers; licence-test purchases |
+| ~17 Oct | — | 14 days done → **apply for production** |
+| **20 Oct** | **First release on Play: Release A** | public |
+| 20 – 26 Oct | A5 Event Mode · A6 people search · B1 schema v11 (rehearsed on a copy; backup first) | update |
+| 27 Oct – 2 Nov | B2 receipts + warranties · B3 linking + expiry · B4 spending totals | update; receipt / warranty labels; retrieval query set |
+| 3 – 7 Nov | B5 Ask RecallOS · evaluation runs (OCR, retrieval) · short usability study | update |
+| 8 – 9 Nov | freeze — fixes only; golden journeys on the phone | report and demo rehearsal |
+| **10 Nov** | **Final release on Play + final code** | **submitted to the university; judged on this** |
 
-**Stop rules** (from the Master Plan): no restore proven by week 4 → no
-destructive data change; core people workflow missing by week 6 → no new
-features; no payment path by week 8 → Play Console and billing blockers come
-before anything else; from week 11 → reliability, evidence and the report only.
+**Stop rules:**
+- No destructive data change before a restore is proven — met (F3, 29 Sep).
+- Closed test not live by 6 Oct → the 20 Oct date cannot hold; Play Console
+  and testers come before any feature until it is.
+- Purchase not working by 16 Oct → the first release ships free, and billing
+  comes before Release B.
+- From 8 Nov → fixes, evidence and the report only; anything unfinished stays
+  out of the final release rather than shipping half-built.
 
 ## 8. Only the owner can do these
 
 - [x] ✅ Tagged `b48d429` as `cse499b-start` and committed the 499B work so far (2026-09-29, pushed at the owner's request). If a separate 499A submission exists, tag that commit too.
 - [ ] **A written agreement with the group partner** (and the university, if its rules need it) on ownership, revenue and maintenance **before anything is sold**.
-- [ ] Play Console account: 2-Step Verification, ID check, $25.
+- [ ] **Now (by 2 Oct):** Play Console account — 2-Step Verification, ID check, $25. Identity verification can take days, and everything on Play waits for it.
 - [ ] Choose Personal or Organization — a Personal account that sells anything shows its full address publicly.
-- [ ] Generate the upload key (`RELEASE.md` §1); back it up in two places off this laptop.
-- [ ] Settle the permanent `applicationId` and the store title before the first upload — search Play and trademarks for "RecallOS" first.
-- [ ] Merchant payments profile (week 2).
-- [ ] Recruit 20–30 closed testers (week 2).
-- [ ] Hand-label cards, receipts and warranties for §6 (weeks 1–5).
-- [ ] Send the report and defense dates.
+- [ ] **By 2 Oct:** generate the upload key (`RELEASE.md` §1); back it up in two places off this laptop.
+- [ ] **By 2 Oct:** settle the permanent `applicationId` and the store title before the first upload — search Play and trademarks for "RecallOS" first.
+- [ ] **By 2 Oct:** merchant payments profile, so the purchase can be tested before 16 Oct.
+- [ ] **By 2 Oct:** about 20 closed testers lined up (Gmail addresses); at least 12 must opt in and stay for all 14 days.
+- [ ] Hand-label cards (by 16 Oct), receipts and warranties (by 2 Nov) for §6.
+- [x] ✅ Dates set (2026-09-29): first Play release 20 Oct, final submission 10 Nov.
 - [ ] Agree with the group partner which parts they own (proposed: the evaluation dataset and QA, or the receipt/warranty slice).
 - [ ] 15–20 interviews with the first customer segment (independent professionals / small agencies) before Release A ships.
 
