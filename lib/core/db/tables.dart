@@ -465,6 +465,88 @@ class DuplicateCandidates extends Table with _Timestamps {
 }
 
 // ---------------------------------------------------------------------------
+// Context and obligations (v10)
+//
+// Three things that are easy to fold into one and should not be. An encounter
+// is a fact about the past: when and where the user met whoever is behind a
+// card. An important date is an obligation — "send Rahim the proposal by
+// Friday" — with a life of its own: open, done, dropped. A reminder is only the
+// moment Android should say so; an obligation can have none, and snoozing one
+// never moves the date it is about. Warranty expiry, ticket dates and ID expiry
+// are the same shape later, as more kinds of important date.
+//
+// All three hang off a card, never a person. People are derived — promotion
+// rebuilds them, merges point them elsewhere, garbage collection deletes the
+// ones no card holds up — and nothing the user wrote may go with them. The
+// note hangs off the card for the same reason. The cascade means purging a
+// card takes its context with it, without a line in `purge` to forget.
+// ---------------------------------------------------------------------------
+
+/// When and where the user met whoever is behind a card.
+///
+/// Only what the user said. The capture date is offered as a suggestion on
+/// screen and written here only if the user takes it: a meeting date the app
+/// made up would read exactly like one the user remembered.
+@DataClassName('Encounter')
+class Encounters extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get cardId =>
+      integer().references(Cards, #id, onDelete: KeyAction.cascade)();
+
+  /// The day they met, at local midnight. Null when only the place is known.
+  DateTimeColumn get metOn => dateTime().nullable()();
+
+  /// Where, or at what: "CSE fest, NSU". Free text on purpose — an event, a
+  /// venue and a city are all answers people give.
+  TextColumn get place => text().nullable()();
+
+  TextColumn get origin => textEnum<EncounterOrigin>().withDefault(
+    Constant<String>(EncounterOrigin.user.name),
+  )();
+}
+
+/// Something that has to happen by a date: the obligation, not the alert.
+@DataClassName('ImportantDate')
+class ImportantDates extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get cardId =>
+      integer().references(Cards, #id, onDelete: KeyAction.cascade)();
+
+  TextColumn get kind => textEnum<DateKind>()();
+
+  /// In the user's words: "Send sponsorship proposal".
+  TextColumn get title => text().withLength(min: 1, max: 300)();
+
+  /// The day it is due, at local midnight.
+  DateTimeColumn get dueOn => dateTime()();
+
+  TextColumn get status => textEnum<DateStatus>().withDefault(
+    Constant<String>(DateStatus.open.name),
+  )();
+
+  DateTimeColumn get completedAt => dateTime().nullable()();
+}
+
+/// When Android should mention an important date.
+///
+/// Its id is the Android notification id, so scheduling, cancelling and
+/// reconciling all agree on which notification is which.
+@DataClassName('Reminder')
+class Reminders extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get importantDateId =>
+      integer().references(ImportantDates, #id, onDelete: KeyAction.cascade)();
+
+  DateTimeColumn get remindAt => dateTime()();
+
+  TextColumn get status => textEnum<ReminderStatus>().withDefault(
+    Constant<String>(ReminderStatus.scheduled.name),
+  )();
+
+  IntColumn get snoozeCount => integer().withDefault(const Constant(0))();
+}
+
+// ---------------------------------------------------------------------------
 // The user's own card
 //
 // Authored data, and kept deliberately apart from the identity graph next to

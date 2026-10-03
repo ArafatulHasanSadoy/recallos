@@ -90,3 +90,29 @@ enum AttemptStatus { success, partial, failed }
 /// photographed but never read, because a value recognised on the back would
 /// have boxed a spot on the front — wrong, and silently so.
 enum CardSide { front, back }
+
+/// Who put an encounter on a card.
+///
+/// Only two answers, and neither is a guess: the user typed it, or it came
+/// from an event the user started (Event Mode). The scan date is offered as a
+/// suggestion on screen and never written here unless the user takes it.
+enum EncounterOrigin { user, event }
+
+/// What an important date is about.
+///
+/// One kind today. Warranty expiry, ticket dates and ID expiry arrive as more
+/// values here, not as more tables: each is a date something has to happen
+/// by, with the same open/done life and the same reminders.
+enum DateKind { followUp }
+
+/// Where an obligation stands. `dismissed` is for "not doing this after all",
+/// kept apart from `done` so a summary never counts a dropped task as work
+/// finished.
+enum DateStatus { open, done, dismissed }
+
+/// Whether Android should still be asked to show a reminder.
+///
+/// There is no `delivered`: whether a notification appeared is Android's
+/// business and cannot be known reliably from here. A scheduled reminder whose
+/// time has passed is simply history.
+enum ReminderStatus { scheduled, cancelled }

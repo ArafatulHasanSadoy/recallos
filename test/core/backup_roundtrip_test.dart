@@ -30,6 +30,16 @@ import 'package:sqlite3/sqlite3.dart' as s3;
 /// must come back byte for byte at B's own paths, and B's previous wallet must
 /// be gone. Then the ways it must fail: each one leaves B's wallet untouched.
 void main() {
+  /// The schema the app on the restoring phone runs: this build's own, read
+  /// from the database class rather than written here, which went stale the
+  /// first time the schema moved and failed every restore as "too new".
+  late final int appSchema;
+  setUpAll(() async {
+    final AppDatabase probe = AppDatabase(NativeDatabase.memory());
+    appSchema = probe.schemaVersion;
+    await probe.close();
+  });
+
   const String passphrase = 'correct horse battery staple';
   // Light parameters keep the suite fast; production uses KdfParams.fresh().
   final KdfParams fastKdf = KdfParams(
@@ -155,7 +165,7 @@ void main() {
     final OpenedBackup opened = openBackup(
       archivePath: backup.path,
       passphrase: pass,
-      appSchemaVersion: 9,
+      appSchemaVersion: appSchema,
     );
     stageRestore(
       StageJob(
@@ -164,7 +174,7 @@ void main() {
         headerBytes: opened.headerBytes,
         documentsDir: docsB.path,
         databaseKey: keyB,
-        appSchemaVersion: 9,
+        appSchemaVersion: appSchema,
         photoKey: photoKey,
       ),
     );
@@ -308,7 +318,7 @@ void main() {
       final OpenedBackup opened = openBackup(
         archivePath: backupOfA().path,
         passphrase: passphrase,
-        appSchemaVersion: 9,
+        appSchemaVersion: appSchema,
       );
       expect(opened.preview.cards, 3);
       expect(opened.preview.photos, 7);
@@ -440,7 +450,7 @@ void main() {
         () async => openBackup(
           archivePath: backup.path,
           passphrase: passphrase,
-          appSchemaVersion: 9,
+          appSchemaVersion: appSchema,
           limits: const BackupLimits(maxArchiveBytes: 100),
         ),
         BackupProblem.tooLarge,
@@ -456,7 +466,7 @@ void main() {
       final OpenedBackup opened = openBackup(
         archivePath: backup.path,
         passphrase: passphrase,
-        appSchemaVersion: 9,
+        appSchemaVersion: appSchema,
       );
       stageRestore(
         StageJob(
@@ -465,7 +475,7 @@ void main() {
           headerBytes: opened.headerBytes,
           documentsDir: docsB.path,
           databaseKey: keyB,
-          appSchemaVersion: 9,
+          appSchemaVersion: appSchema,
         ),
       );
     }

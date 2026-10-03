@@ -89,11 +89,43 @@ void main() {
       // partial index with them.
       await before.customStatement('DROP TABLE IF EXISTS profile_fields');
       await before.customStatement('DROP TABLE IF EXISTS profiles');
+      // v10's three, children first for the same reason.
+      await before.customStatement('DROP TABLE IF EXISTS reminders');
+      await before.customStatement('DROP TABLE IF EXISTS important_dates');
+      await before.customStatement('DROP TABLE IF EXISTS encounters');
       await before.customStatement('PRAGMA user_version = 1');
       await before.close();
 
       final AppDatabase after = open();
       addTearDown(after.close);
+
+      // v10: context and obligations land in an upgraded database, hang off
+      // the card, and go when it goes — checked before the card is deleted
+      // further down, which is the cascade a purge relies on.
+      await after.into(after.encounters).insert(
+            EncountersCompanion.insert(
+              cardId: cardId,
+              place: const Value<String?>('CSE fest, NSU'),
+            ),
+          );
+      final int dateId = await after.into(after.importantDates).insert(
+            ImportantDatesCompanion.insert(
+              cardId: cardId,
+              kind: DateKind.followUp,
+              title: 'Send sponsorship proposal',
+              dueOn: DateTime(2026, 10, 2),
+            ),
+          );
+      await after.into(after.reminders).insert(
+            RemindersCompanion.insert(
+              importantDateId: dateId,
+              remindAt: DateTime(2026, 10, 2, 9),
+            ),
+          );
+      final ImportantDate due = await (after.select(after.importantDates)
+            ..where(($ImportantDatesTable d) => d.id.equals(dateId)))
+          .getSingle();
+      expect(due.status, DateStatus.open, reason: 'new obligations start open');
 
       final List<OcrBlockRow> blocks = await after.select(after.ocrBlocks).get();
       expect(blocks, hasLength(1), reason: 'the upgrade must not drop rows');
@@ -129,6 +161,12 @@ void main() {
           .go();
       expect(await after.select(after.contactPoints).get(), isEmpty,
           reason: 'the source-card cascade must survive the upgrade');
+      expect(await after.select(after.encounters).get(), isEmpty,
+          reason: "a purged card's encounter goes with it");
+      expect(await after.select(after.importantDates).get(), isEmpty,
+          reason: 'and its obligations');
+      expect(await after.select(after.reminders).get(), isEmpty,
+          reason: 'and, through them, its reminders');
 
       // v4/v5: both merge pointers exist and are null on rows that predate
       // them.

@@ -50,6 +50,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
     Settings,
     Profiles,
     ProfileFields,
+    Encounters,
+    ImportantDates,
+    Reminders,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -63,7 +66,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? openEncryptedDatabase());
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -72,6 +75,7 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(_createSearchIndex);
       await _createIdentityIndexes();
       await _createProfileIndexes();
+      await _createFollowUpIndexes();
       await _seedRankingWeights();
     },
     onUpgrade: (Migrator m, int from, int to) async {
@@ -144,6 +148,15 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(profileFields);
         await _createProfileIndexes();
       }
+      // v10 — context and obligations: when and where the user met someone,
+      // what they promised to do next, and when Android should say so. New
+      // tables only; nothing already stored changes shape.
+      if (from < 10) {
+        await m.createTable(encounters);
+        await m.createTable(importantDates);
+        await m.createTable(reminders);
+        await _createFollowUpIndexes();
+      }
     },
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -187,6 +200,26 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_default '
       'ON profiles(is_default) WHERE is_default = 1',
+    );
+  }
+
+  /// The two lookups Today and the reminder engine make on every refresh:
+  /// open obligations by date, and the reminders behind one obligation.
+  Future<void> _createFollowUpIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_important_dates_due '
+      'ON important_dates(status, due_on)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_important_dates_card '
+      'ON important_dates(card_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_encounters_card ON encounters(card_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_reminders_date '
+      'ON reminders(important_date_id)',
     );
   }
 
