@@ -10,9 +10,11 @@ import 'package:path/path.dart' as p;
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/extraction/field_validator.dart';
 import 'package:recallos/core/extraction/phone.dart';
 import 'package:recallos/core/intelligence/ocr_engine.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
+import 'package:recallos/features/contacts/data/identity_repository.dart';
 
 /// Exercises the persistence side of the save flow against a real database.
 ///
@@ -363,6 +365,521 @@ void main() {
 
       expect((await field(first)).validationIssue, isNull);
       expect((await field(later)).validationIssue, 'digit_restored');
+    });
+  });
+
+  // Before `_findPerson` learned what a tagline looks like, a shop card filed
+  // the line under its brand as a person, and promotion made a contact of it.
+  // These store cards the way that extractor left them — the same blocks, with
+  // the tagline's block owned by a `person_name` row — and repair them in
+  // place.
+  group('repairing people invented from a tagline', () {
+    late CardRepository repo;
+    late IdentityRepository identity;
+    int seq = 0;
+
+    setUp(() {
+      repo = CardRepository(db);
+      identity = IdentityRepository(db);
+    });
+
+    Future<int> card() => db.into(db.cards).insert(
+          CardsCompanion.insert(
+            imagePath: '/tmp/cards/card_${++seq}.jpg',
+            capturedAt: DateTime(2026, 9, 1, 0, seq),
+          ),
+        );
+
+    /// Saves [blocks] as an older extractor filed them — each key off the
+    /// blocks at those indices — and promotes the card, as capture does.
+    Future<void> readBefore(
+      int cardId,
+      List<OcrBlock> blocks,
+      Map<String, List<int>> filed, {
+      CardSide side = CardSide.front,
+    }) async {
+      await repo.attachExtraction(
+        cardId: cardId,
+        result: OcrResult(
+          blocks: blocks,
+          engine: 'test',
+          duration: const Duration(milliseconds: 20),
+        ),
+        extraction: CardExtraction(
+          fields: <ExtractedField>[
+            for (final MapEntry<String, List<int>> f in filed.entries)
+              () {
+                final String value =
+                    f.value.map((int i) => blocks[i].text.trim()).join(', ');
+                return ExtractedField(
+                  fieldKey: f.key,
+                  value: value,
+                  normalizedValue: validateField(f.key, value).normalized,
+                  confidence: 0.6,
+                  sourceBlockIndices: f.value,
+                );
+              }(),
+          ],
+          unassignedBlockIndices: const <int>[],
+        ),
+        side: side,
+      );
+      await identity.promote(cardId);
+    }
+
+    /// Saves [blocks] as today's extractor reads them, and promotes the card.
+    Future<void> readNow(
+      int cardId,
+      List<OcrBlock> blocks, {
+      CardSide side = CardSide.front,
+    }) async {
+      await repo.attachExtraction(
+        cardId: cardId,
+        result: OcrResult(
+          blocks: blocks,
+          engine: 'test',
+          duration: const Duration(milliseconds: 20),
+        ),
+        extraction: CardFieldExtractor.extract(blocks),
+        side: side,
+      );
+      await identity.promote(cardId);
+    }
+
+    List<OcrBlock> shopCard(
+      String tagline, {
+      String phone = '+880 1617-223311',
+    }) =>
+        <OcrBlock>[
+          _line('TechFix Repair Centre', top: 10, height: 60),
+          _line(tagline, top: 80, height: 26),
+          _line(phone, top: 116, height: 28),
+          _line('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+        ];
+
+    /// What the old extractor made of [shopCard].
+    const Map<String, List<int>> taglineAsPerson = <String, List<int>>{
+      FieldKeys.company: <int>[0],
+      FieldKeys.personName: <int>[1],
+      FieldKeys.phone: <int>[2],
+      FieldKeys.address: <int>[3],
+    };
+
+    Future<List<String>> contacts() async => <String>[
+          for (final Person p in await (db.select(db.people)
+                ..where(($PeopleTable t) => t.mergedIntoId.isNull()))
+              .get())
+            p.displayName,
+        ];
+
+    Future<List<CardField>> names(int cardId) => (db.select(db.cardFields)
+          ..where(
+            ($CardFieldsTable f) =>
+                f.cardId.equals(cardId) &
+                f.fieldKey.equals(FieldKeys.personName),
+          ))
+        .get();
+
+    Future<CardRow> row(int cardId) => (db.select(db.cards)
+          ..where(($CardsTable c) => c.id.equals(cardId)))
+        .getSingle();
+
+    Future<String?> valueOf(int cardId, String key) async =>
+        (await repo.watchCard(cardId).first)!.valueOf(key);
+
+    test('takes the tagline off the card and out of contacts', () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+
+      // Why this is a repair and not a rules bump: rebuilding the graph from
+      // stored fields keeps the contact, because the field is still there and
+      // a tagline is shaped like a name.
+      await identity.backfill();
+      expect(await contacts(), <String>['Laptop and Mobile Servicing']);
+
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      expect(await names(shop), isEmpty);
+      expect(await contacts(), isEmpty);
+
+      final CardRow repaired = await row(shop);
+      expect(repaired.personId, isNull);
+      expect(repaired.orgId, isNotNull);
+      expect(repaired.extractionStatus, ExtractionStatus.complete);
+
+      // The number was the shop's all along, and now hangs off the shop.
+      final ContactPoint phone = await (db.select(db.contactPoints)
+            ..where(
+              ($ContactPointsTable c) =>
+                  c.normalizedValue.equals('+8801617223311'),
+            ))
+          .getSingle();
+      expect(phone.ownerType, 'organization');
+      expect(phone.ownerId, repaired.orgId);
+
+      // Nothing else on the card moved.
+      expect(await valueOf(shop, FieldKeys.company), 'TechFix Repair Centre');
+      expect(
+        await valueOf(shop, FieldKeys.address),
+        'Shop 14, Elephant Road, Dhaka',
+      );
+    });
+
+    test('commits on a database opened the way the app opens one', () async {
+      // The app's connection lives on a background isolate, and the repair
+      // promotes inside its own transaction — a nested one. An executor that
+      // refused that would throw, the repair would swallow it, and every
+      // launch would quietly change nothing.
+      final Directory dir = Directory.systemTemp.createTempSync('recallos_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      await db.close();
+      db = AppDatabase(
+        NativeDatabase.createInBackground(File(p.join(dir.path, 'w.sqlite'))),
+      );
+      repo = CardRepository(db);
+      identity = IdentityRepository(db);
+
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+
+      expect(await repo.repairInventedPeople(identity), 1);
+      expect(await names(shop), isEmpty);
+      expect(await contacts(), isEmpty);
+    });
+
+    test('puts the line back in the picker', () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+
+      await repo.repairInventedPeople(identity);
+
+      final OcrBlockRow line = await (db.select(db.ocrBlocks)
+            ..where(
+              ($OcrBlocksTable b) =>
+                  b.blockText.equals('Laptop and Mobile Servicing'),
+            ))
+          .getSingle();
+      expect(line.fieldId, isNull);
+      expect(line.assignedFieldKey, isNull);
+      expect(
+        (await repo.watchCard(shop).first)!.unassignedText,
+        <String>['Laptop and Mobile Servicing'],
+      );
+    });
+
+    test('keeps a name the extractor still reads as one', () async {
+      final int id = await card();
+      await readNow(id, <OcrBlock>[
+        _line('Medica Books Ltd', top: 10, height: 34),
+        _line('Rahim Uddin', top: 60, height: 26),
+        _line('01711-223344', top: 100, height: 16),
+        _line('House 42, Road 7, Dhanmondi, Dhaka', top: 122, height: 16),
+      ]);
+
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(await valueOf(id, FieldKeys.personName), 'Rahim Uddin');
+      expect(await contacts(), <String>['Rahim Uddin']);
+    });
+
+    test('keeps a name somebody confirmed, whatever the extractor says',
+        () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      // Saved from the field editor, as it stands.
+      await repo.updateField(
+        fieldId: (await names(shop)).single.id,
+        value: 'Laptop and Mobile Servicing',
+      );
+      // And the flag alone, on a row still marked as printed: it is the
+      // confirmation that counts, not how the row came by it.
+      final int ticked = await card();
+      await readBefore(
+        ticked,
+        shopCard('All brands repaired', phone: '+880 1911-556677'),
+        taglineAsPerson,
+      );
+      await (db.update(db.cardFields)
+            ..where(
+              ($CardFieldsTable f) =>
+                  f.cardId.equals(ticked) &
+                  f.fieldKey.equals(FieldKeys.personName),
+            ))
+          .write(const CardFieldsCompanion(verifiedByUser: Value<bool>(true)));
+
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(await names(shop), hasLength(1));
+      expect(await names(ticked), hasLength(1));
+      expect(
+        await contacts(),
+        unorderedEquals(<String>[
+          'Laptop and Mobile Servicing',
+          'All brands repaired',
+        ]),
+      );
+    });
+
+    test('does not write a different name in its place', () async {
+      // The owner's name is on the card too, under the tagline. Today's
+      // extractor would file it; the old one filed the tagline instead.
+      final List<OcrBlock> blocks = <OcrBlock>[
+        _line('TechFix Repair Centre', top: 10, height: 40),
+        _line('Laptop and Mobile Servicing', top: 56, height: 24),
+        _line('Kamal Hossain', top: 90, height: 20),
+        _line('Proprietor', top: 116, height: 14),
+        _line('01617-223311', top: 136, height: 14),
+      ];
+      expect(
+        CardFieldExtractor.extract(blocks)
+            .firstOfKey(FieldKeys.personName)
+            ?.value,
+        'Kamal Hossain',
+      );
+      final int shop = await card();
+      await readBefore(shop, blocks, <String, List<int>>{
+        FieldKeys.company: <int>[0],
+        FieldKeys.personName: <int>[1],
+        FieldKeys.designation: <int>[3],
+        FieldKeys.phone: <int>[4],
+      });
+
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      // Nobody reviewed "Kamal Hossain" as this card's person. Both lines are
+      // one tap away instead.
+      expect(await names(shop), isEmpty);
+      expect(await contacts(), isEmpty);
+      expect(
+        (await repo.watchCard(shop).first)!.unassignedText,
+        <String>['Laptop and Mobile Servicing', 'Kamal Hossain'],
+      );
+    });
+
+    test('leaves the company and address of a brand named after a place',
+        () async {
+      // The old extractor joined "Dhaka Tech Repair" onto the address and
+      // filed the tagline as the company; today's reads the brand as the
+      // company. Only the person is repaired, and here the two agree on it.
+      final List<OcrBlock> blocks = <OcrBlock>[
+        _line('Dhaka Tech Repair', top: 10, height: 40),
+        _line('Laptop and Mobile Servicing', top: 56, height: 24),
+        _line('Kamal Hossain', top: 90, height: 20),
+        _line('Proprietor', top: 116, height: 14),
+        _line('01617-223311', top: 136, height: 14),
+        _line('Shop 14, Elephant Road, Dhaka', top: 156, height: 14),
+      ];
+      final int shop = await card();
+      await readBefore(shop, blocks, <String, List<int>>{
+        FieldKeys.address: <int>[0, 5],
+        FieldKeys.company: <int>[1],
+        FieldKeys.personName: <int>[2],
+        FieldKeys.designation: <int>[3],
+        FieldKeys.phone: <int>[4],
+      });
+
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(
+        await valueOf(shop, FieldKeys.company),
+        'Laptop and Mobile Servicing',
+      );
+      expect(
+        await valueOf(shop, FieldKeys.address),
+        'Dhaka Tech Repair, Shop 14, Elephant Road, Dhaka',
+      );
+      expect(await valueOf(shop, FieldKeys.personName), 'Kamal Hossain');
+    });
+
+    test("gives a contact the owner's own card joined back its real name",
+        () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      // The owner's own card, with the shop's number on it, scanned later. It
+      // joins the invented contact through the number, and the contact keeps
+      // the invented name because one of its cards still carries it.
+      final int owner = await card();
+      await readNow(owner, <OcrBlock>[
+        _line('TechFix Repair Centre', top: 10, height: 34),
+        _line('Kamal Hossain', top: 56, height: 26),
+        _line('Proprietor', top: 90, height: 16),
+        _line('01617-223311', top: 112, height: 16),
+      ]);
+      expect(await contacts(), <String>['Laptop and Mobile Servicing']);
+
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      expect(await contacts(), <String>['Kamal Hossain']);
+      expect((await row(owner)).personId, isNotNull);
+      expect((await row(shop)).personId, isNull);
+    });
+
+    test('judges each side on its own blocks', () async {
+      // Shaped like a name, so only its size says it is not one — and the
+      // size rule is off wherever a job title is in sight. The back has one.
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Genuine Spare Parts'),
+        taglineAsPerson,
+      );
+      // The back names the owner, and today's extractor agrees.
+      await readNow(
+        shop,
+        <OcrBlock>[
+          _line('TechFix Repair Centre', top: 10, height: 30),
+          _line('Kamal Hossain', top: 50, height: 24),
+          _line('Proprietor', top: 80, height: 14),
+          _line('01711-223344', top: 100, height: 14),
+        ],
+        side: CardSide.back,
+      );
+
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      final CardField left = (await names(shop)).single;
+      expect(left.value, 'Kamal Hossain');
+      expect(left.side, CardSide.back);
+      expect(await contacts(), <String>['Kamal Hossain']);
+    });
+
+    test('leaves a contact the user merged with somebody', () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      final int owner = await card();
+      await readNow(owner, <OcrBlock>[
+        _line('TechFix Repair Centre', top: 10, height: 34),
+        _line('Kamal Hossain', top: 56, height: 26),
+        _line('Proprietor', top: 90, height: 16),
+        _line('01711-998877', top: 112, height: 16),
+      ]);
+      final List<Person> people = await db.select(db.people).get();
+      final int invented = people
+          .firstWhere(
+            (Person p) => p.displayName == 'Laptop and Mobile Servicing',
+          )
+          .id;
+      final int kamal =
+          people.firstWhere((Person p) => p.displayName == 'Kamal Hossain').id;
+      // The user said the shop's card is Kamal's.
+      await identity.merge(survivor: kamal, loser: invented);
+
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(await names(shop), hasLength(1));
+      expect((await row(shop)).personId, invented);
+      expect(await contacts(), <String>['Kamal Hossain']);
+    });
+
+    test('leaves a side with nothing faithful to re-read', () async {
+      final int unboxed = await card();
+      await readBefore(
+        unboxed,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      await (db.update(db.ocrBlocks)
+            ..where(($OcrBlocksTable b) => b.cardId.equals(unboxed)))
+          .write(const OcrBlocksCompanion(rect: Value<String>('')));
+
+      // A name with no blocks behind it on its side at all.
+      final int blank = await card();
+      await db.into(db.cardFields).insert(
+            CardFieldsCompanion.insert(
+              cardId: blank,
+              fieldKey: FieldKeys.personName,
+              value: 'Laptop and Mobile Servicing',
+              source: FactSource.printed,
+            ),
+          );
+
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(await names(unboxed), hasLength(1));
+      expect(await names(blank), hasLength(1));
+    });
+
+    test('repairs a card in Recently deleted, so restoring it brings no one '
+        'back', () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      // Deleted the way the library does it.
+      await repo.softDelete(shop);
+      await identity.detach(shop);
+      expect(await contacts(), isEmpty);
+
+      expect(await repo.repairInventedPeople(identity), 1);
+      expect(await names(shop), isEmpty);
+
+      await repo.restore(shop);
+      await identity.promote(shop);
+      expect(await contacts(), isEmpty);
+    });
+
+    test('sends a card only the invented name made useful back to Needs '
+        'Attention', () async {
+      final int shop = await card();
+      await readBefore(
+        shop,
+        <OcrBlock>[
+          _line('TechFix Repair Centre', top: 10, height: 60),
+          _line('Laptop and Mobile Servicing', top: 80, height: 26),
+        ],
+        <String, List<int>>{
+          FieldKeys.company: <int>[0],
+          FieldKeys.personName: <int>[1],
+        },
+      );
+      expect((await row(shop)).extractionStatus, ExtractionStatus.complete);
+
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      expect((await row(shop)).extractionStatus, ExtractionStatus.partial);
+    });
+
+    test('runs once', () async {
+      final int first = await card();
+      await readBefore(
+        first,
+        shopCard('Laptop and Mobile Servicing'),
+        taglineAsPerson,
+      );
+      expect(await repo.repairInventedPeople(identity), 1);
+
+      // Anything filed after the repair was filed by today's extractor, so a
+      // second launch has no business second-guessing it.
+      final int later = await card();
+      await readBefore(
+        later,
+        shopCard('All brands repaired'),
+        taglineAsPerson,
+      );
+      expect(await repo.repairInventedPeople(identity), 0);
+      expect(await names(first), isEmpty);
+      expect(await names(later), hasLength(1));
     });
   });
 

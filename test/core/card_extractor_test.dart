@@ -355,4 +355,161 @@ void main() {
       expect(result.firstOfKey(FieldKeys.company)?.value, isNot(contains('AQUARIUS')));
     });
   });
+
+  // A shop card is a brand, a line about the trade, a number and an address.
+  // A company keyword in the brand ("Centre") says the business is known; it
+  // says nothing about a human being, and must not turn the line under it into
+  // one.
+  group('CardFieldExtractor — shop card with a tagline', () {
+    List<OcrBlock> shopCard(String tagline) => <OcrBlock>[
+          block('TechFix Repair Centre', top: 10, height: 60),
+          block(tagline, top: 80, height: 26),
+          block('+880 1617-223311', top: 116, height: 28),
+          block('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+        ];
+
+    for (final String tagline in <String>[
+      'Laptop and Mobile Servicing',
+      'Repair and servicing since 2012',
+      'All brands repaired',
+      'Laptop, mobile and printer repair',
+      'Open 10am to 9pm',
+    ]) {
+      test('invents no person from "$tagline"', () {
+        final CardExtraction result = CardFieldExtractor.extract(
+          shopCard(tagline),
+        );
+
+        expect(result.firstOfKey(FieldKeys.personName), isNull);
+        expect(
+          result.firstOfKey(FieldKeys.company)?.value,
+          'TechFix Repair Centre',
+        );
+        // Not lost either: the line stays in the tap-to-assign picker.
+        expect(result.unassignedBlockIndices, <int>[1]);
+      });
+    }
+
+    test('invents no person from a card with no tagline', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('TechFix Repair Centre', top: 10, height: 60),
+        block('+880 1617-223311', top: 80, height: 28),
+        block('www.techfixbd.com', top: 116, height: 28),
+        block('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('a tagline set as large as the brand is still not a person', () {
+      // Weight cannot tell these apart; the words can. Names do not carry
+      // conjunctions or years.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('TechFix Repair Centre', top: 10, height: 30),
+        block('Repair and servicing since 2012', top: 48, height: 28),
+        block('+880 1617-223311', top: 90, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('a descriptor set well under the brand is not a person', () {
+      // Title case, no connectives — shaped like a name. Only its size says it
+      // is a line about the shop rather than a peer of it.
+      final CardExtraction result = CardFieldExtractor.extract(
+        shopCard('Genuine Spare Parts'),
+      );
+
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('a tagline is not a person even when a job title is on the card', () {
+      // The owner's name is in Bengali and unreadable, so the title proves a
+      // person exists but the only Latin line left over is the tagline.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('', top: 0, height: 30, script: Script.bengali, confidence: 0.2),
+        block('TechFix Repair Centre', top: 40, height: 40),
+        block('Laptop and Mobile Servicing', top: 86, height: 20),
+        block('Proprietor', top: 112, height: 14),
+        block('01617-223311', top: 132, height: 14),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.designation)?.value, 'Proprietor');
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('a person named under their employer still counts, without a title',
+        () {
+      // The ordinary spread between a name and the company it works for — the
+      // same weights as the well-formed card above, minus its job title.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Medica Books Ltd', top: 10, height: 34),
+        block('Rahim Uddin', top: 60, height: 26),
+        block('01711-223344', top: 100, height: 16),
+        block('House 42, Road 7, Dhanmondi, Dhaka', top: 122, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Medica Books Ltd');
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Rahim Uddin');
+    });
+
+    test('a name set smaller still counts, without a title or email', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Acme Trading', top: 10, height: 30),
+        block('Kamal Hossain', top: 55, height: 22),
+        block('01711-223344', top: 90, height: 14),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Kamal Hossain');
+    });
+  });
+
+  // Businesses across Bangladesh are named after where they are. A place word
+  // in the card's headline type is part of the name, not the address.
+  group('CardFieldExtractor — brand named after a place', () {
+    test('keeps the brand out of the address', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Dhaka Tech Repair', top: 10, height: 60),
+        block('Laptop and Mobile Servicing', top: 80, height: 26),
+        block('+880 1617-223311', top: 116, height: 28),
+        block('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Dhaka Tech Repair');
+      expect(
+        result.firstOfKey(FieldKeys.address)?.value,
+        'Shop 14, Elephant Road, Dhaka',
+      );
+      expect(result.firstOfKey(FieldKeys.personName), isNull);
+    });
+
+    test('still reads a unit number in headline type as the address', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('House 42, Dhanmondi', top: 10, height: 30),
+        block('01711-223344', top: 60, height: 16),
+      ]);
+
+      expect(
+        result.firstOfKey(FieldKeys.address)?.value,
+        'House 42, Dhanmondi',
+      );
+    });
+
+    test('still reads the address on a card set all in one size', () {
+      // No headline, so nothing is exempt: every line is as prominent as the
+      // brand, and a place word keeps meaning an address.
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Acme Traders', top: 10, height: 20),
+        block('Gulshan Avenue', top: 36, height: 20),
+        block('Dhaka', top: 62, height: 20),
+        block('01711-223344', top: 88, height: 20),
+      ]);
+
+      expect(
+        result.firstOfKey(FieldKeys.address)?.value,
+        'Gulshan Avenue, Dhaka',
+      );
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Acme Traders');
+    });
+  });
 }

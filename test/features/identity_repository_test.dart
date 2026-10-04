@@ -84,6 +84,20 @@ void main() {
   Future<List<Role>> roles() => db.select(db.roles).get();
   Future<List<ContactPoint>> points() => db.select(db.contactPoints).get();
 
+  /// Marks the graph as built by the rules before this one, the state every
+  /// phone is in when an update that bumps them is installed.
+  Future<void> builtByOlderRules() => db.into(db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(
+          key: 'identity_rules_version',
+          value: '${IdentityRepository.rulesVersion - 1}',
+        ),
+      );
+
+  Future<List<DuplicatePair>> pendingOrgs() async =>
+      (await identity.watchDuplicates().first)
+          .where((DuplicatePair p) => p.kind == DuplicateKind.organization)
+          .toList();
+
   group('linking', () {
     test('two cards sharing a phone number resolve to one person', () async {
       await scan(
@@ -569,6 +583,40 @@ void main() {
       );
     });
 
+    test('two companies on neighbouring roads are not one address', () async {
+      // Found on the phone: two demo cards, two unrelated businesses, and a
+      // review prompt calling them one company matched on the same address.
+      await scan(
+        company: 'Bengal Event Solutions',
+        address: 'Road 11, Banani, Dhaka',
+      );
+      await scan(company: 'Moments Studio', address: 'Road 5, Banani, Dhaka');
+
+      expect(await db.select(db.organizations).get(), hasLength(2));
+      expect(await pendingOrgs(), isEmpty,
+          reason: 'Road 11 and Road 5 are different doors');
+    });
+
+    test('a similar name on a neighbouring road is asked about, not linked',
+        () async {
+      // Similar names *and* a "same" address used to score over the link
+      // threshold, so these two were one company before anybody was asked.
+      await scan(
+        company: 'Pixel Studio',
+        address: 'House 7, Road 2, Banani, Dhaka',
+      );
+      await scan(
+        company: 'Pixel Studios',
+        address: 'House 9, Road 2, Banani, Dhaka',
+      );
+
+      expect(await db.select(db.organizations).get(), hasLength(2),
+          reason: 'nothing merges without the user');
+      final List<DuplicatePair> asked = await pendingOrgs();
+      expect(asked, hasLength(1));
+      expect(asked.single.signals, <String>['a similar name']);
+    });
+
     test('combining two companies gathers their cards under one', () async {
       await scan(company: 'TARGET, CENTER,');
       await scan(company: 'CTARGEI. CENTER');
@@ -941,6 +989,156 @@ void main() {
 
       expect(await people(), hasLength(1));
     });
+
+    test('a rebuild withdraws a question the new rules would not ask',
+        () async {
+      await scan(
+        company: 'Bengal Event Solutions',
+        address: 'Road 11, Banani, Dhaka',
+      );
+      await scan(company: 'Moments Studio', address: 'Road 5, Banani, Dhaka');
+      // What the old address rule left on the phone: the pair on the review
+      // list, "matched on the same address".
+      final List<Organization> orgs = await db.select(db.organizations).get();
+      await db.into(db.duplicateCandidates).insert(
+            DuplicateCandidatesCompanion.insert(
+              subjectType: 'organization',
+              aId: orgs.first.id,
+              bId: orgs.last.id,
+              score: 0.55,
+              signalsJson: const Value<String?>('["the same address"]'),
+            ),
+          );
+      expect(await pendingOrgs(), hasLength(1));
+      await builtByOlderRules();
+
+      await identity.backfill();
+
+      expect(await pendingOrgs(), isEmpty,
+          reason: 're-deriving the graph re-derives its open questions too');
+    });
+
+    test('a rebuild keeps the questions the rules still ask', () async {
+      await scan(name: 'Md. Rahman', company: 'Rahman Traders', phone: '01711363991');
+      await scan(name: 'Rahman', company: 'Rahman Motors', phone: '01712000000');
+      await scan(company: 'TARGET, CENTER,');
+      await scan(company: 'CTARGEI. CENTER');
+      final List<DuplicatePair> before = await identity.watchDuplicates().first;
+      expect(before, hasLength(2));
+      await builtByOlderRules();
+
+      await identity.backfill();
+
+      final List<DuplicatePair> after = await identity.watchDuplicates().first;
+      expect(after.map((DuplicatePair p) => p.id),
+          before.map((DuplicatePair p) => p.id),
+          reason: 'a question that still holds is not withdrawn and re-asked');
+    });
+
+    test('a rebuild splits a company the old rules joined, address and all',
+        () async {
+      final int first = await scan(
+        company: 'Pixel Studio',
+        address: 'House 7, Road 2, Banani, Dhaka',
+        phone: '01711363991',
+      );
+      final int second = await scan(
+        company: 'Pixel Studios',
+        address: 'House 9, Road 2, Banani, Dhaka',
+        phone: '01711363991',
+      );
+      // Rewrite the graph into the shape the old rule built: the second card
+      // linked into the first company without asking, its address filed as a
+      // second branch, and the two cards proposed as one scan.
+      final int joined = (await db.select(db.cards).get())
+          .firstWhere((CardRow c) => c.id == first)
+          .orgId!;
+      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(second)))
+          .write(CardsCompanion(orgId: Value<int?>(joined)));
+      await (db.update(db.contactPoints)
+            ..where(($ContactPointsTable c) => c.sourceCardId.equals(second)))
+          .write(ContactPointsCompanion(ownerId: Value<int>(joined)));
+      await db.into(db.orgBranches).insert(
+            OrgBranchesCompanion.insert(
+              orgId: joined,
+              address: const Value<String?>('House 9, Road 2, Banani, Dhaka'),
+            ),
+          );
+      await db.delete(db.duplicateCandidates).go();
+      await (db.delete(db.orgBranches)
+            ..where(($OrgBranchesTable b) => b.orgId.equals(joined).not()))
+          .go();
+      await (db.delete(db.organizations)
+            ..where(($OrganizationsTable o) => o.id.equals(joined).not()))
+          .go();
+      await db.into(db.duplicateCandidates).insert(
+            DuplicateCandidatesCompanion.insert(
+              subjectType: 'card',
+              aId: first,
+              bId: second,
+              score: 0.85,
+              signalsJson:
+                  const Value<String?>('["the same number","the same company"]'),
+            ),
+          );
+      await builtByOlderRules();
+
+      await identity.backfill();
+
+      final List<Organization> orgs = await db.select(db.organizations).get();
+      expect(orgs.map((Organization o) => o.name),
+          unorderedEquals(<String>['Pixel Studio', 'Pixel Studios']));
+
+      final OrgDetail? kept = await identity.watchOrganization(joined).first;
+      expect(
+        kept!.branches.map((OrgBranch b) => b.address),
+        <String>['House 7, Road 2, Banani, Dhaka'],
+        reason: "a company must not go on listing its neighbour's door",
+      );
+      expect(kept.cardIds, <int>[first]);
+
+      final List<DuplicatePair> asked = await identity.watchDuplicates().first;
+      expect(asked.map((DuplicatePair p) => p.kind),
+          <DuplicateKind>[DuplicateKind.organization],
+          reason: 'the companies are a question now; the cards, filed under '
+              'two companies, are no longer one scan');
+    });
+
+    test('a rebuild keeps the companies the user combined', () async {
+      await scan(company: 'TARGET, CENTER,');
+      await scan(company: 'CTARGEI. CENTER');
+      final List<Organization> both = await db.select(db.organizations).get();
+      await identity.mergeOrganizations(
+          survivor: both.first.id, loser: both.last.id);
+      expect(await identity.watchOrganizations().first, hasLength(1));
+      await builtByOlderRules();
+
+      // A rules change re-promotes every card. The merged-away company's own
+      // card used to find only the survivor — alike, not a match — land on a
+      // fresh row, and bring the pair back as a new question.
+      await identity.backfill();
+
+      expect(await identity.watchOrganizations().first, hasLength(1),
+          reason: 'a merge must not come apart on its own');
+      expect(await db.select(db.organizations).get(), hasLength(2),
+          reason: 'and the way back has to survive too');
+      expect(await identity.watchDuplicates().first, isEmpty);
+    });
+
+    test('a new card matching a company the user merged away joins it',
+        () async {
+      await scan(company: 'TARGET, CENTER,');
+      await scan(company: 'CTARGEI. CENTER');
+      final List<Organization> both = await db.select(db.organizations).get();
+      await identity.mergeOrganizations(
+          survivor: both.first.id, loser: both.last.id);
+
+      await scan(company: 'CTARGEI. CENTER');
+
+      expect(await identity.watchOrganizations().first, hasLength(1));
+      expect(await identity.watchDuplicates().first, isEmpty,
+          reason: 'the user already answered this');
+    });
   });
 
   group('backfill', () {
@@ -966,6 +1164,28 @@ void main() {
       expect(after, hasLength(1),
           reason: 'the stale endpoint should not survive a backfill');
       expect(after.single.value, '01819104376');
+    });
+
+    test('a question whose reason was corrected away is withdrawn', () async {
+      await scan(name: 'Md. Rahman', company: 'Rahman Traders', phone: '01711363991');
+      final int second =
+          await scan(name: 'Rahman', company: 'Rahman Motors', phone: '01712000000');
+      expect(await identity.watchDuplicates().first, hasLength(1));
+
+      // The second card was misread; its contact is renamed to what it says.
+      final CardField name = (await (db.select(db.cardFields)
+                ..where(($CardFieldsTable f) =>
+                    f.cardId.equals(second) &
+                    f.fieldKey.equals(FieldKeys.personName)))
+              .get())
+          .single;
+      await repo.updateField(fieldId: name.id, value: 'Karim Uddin');
+      await identity.promote(second);
+
+      await identity.backfill();
+
+      expect(await identity.watchDuplicates().first, isEmpty,
+          reason: '"Md. Rahman" and "Karim Uddin" are not the same name');
     });
 
     test('promotes cards saved before the graph existed', () async {

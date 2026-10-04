@@ -80,8 +80,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // asked for (Recently deleted keeps a card for 30 days), and there is no
     // point reading or indexing a card that is about to be purged.
     //
-    // Labels stored under an older rule go ahead of the backs and the index:
-    // that is a handful of rows, where reading backs is OCR.
+    // Labels and names stored under an older rule go ahead of the backs and
+    // the index: that is a handful of rows re-read from stored text, where
+    // reading backs is OCR.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_reportRestore());
       unawaited(() async {
@@ -93,6 +94,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         await ref.read(reminderEngineProvider).reconcile();
         if (!ref.context.mounted) return;
         await ref.read(cardRepositoryProvider).repairDigitRestoredLabels();
+        if (!ref.context.mounted) return;
+        await ref
+            .read(cardRepositoryProvider)
+            .repairInventedPeople(ref.read(identityRepositoryProvider));
         if (!ref.context.mounted) return;
         // Photographs from before photo encryption are sealed in place, once.
         await ref.read(photoProtectionProvider.future);

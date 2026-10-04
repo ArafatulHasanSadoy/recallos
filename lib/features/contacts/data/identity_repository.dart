@@ -7,7 +7,6 @@ import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/identity/resolution.dart';
-import '../../../core/identity/similarity.dart';
 import '../../capture/data/card_repository.dart';
 
 final identityRepositoryProvider = Provider<IdentityRepository>(
@@ -223,7 +222,11 @@ class IdentityRepository {
   /// the wrong contacts people actually have are sitting.
   /// 4 — a company is no longer created from a website alone, and a platform
   /// host such as `youtube.com` or `facebook.com` no longer counts as one.
-  static const int rulesVersion = 4;
+  /// 5 — two addresses are the same only when their house, road and shop
+  /// numbers agree (`isSameAddress`). Road 11 and Road 5 in one area used to
+  /// count as one door, which proposed unrelated businesses as duplicates and
+  /// linked similar names on neighbouring roads without asking.
+  static const int rulesVersion = 5;
 
   static const String _rulesKey = 'identity_rules_version';
 
@@ -245,13 +248,19 @@ class IdentityRepository {
         _db.contactPoints,
       )..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId))).go();
 
+      final int? previousOrgId = await _orgOf(cardId);
+
       if (facts.isEmpty) {
         await _unlink(cardId);
+        await _pruneBranches(<int?>[previousOrgId]);
         await _collectGarbage();
         return;
       }
 
-      final int? orgId = await _resolveOrganization(facts);
+      final int? orgId = await _resolveOrganization(
+        facts,
+        current: previousOrgId,
+      );
       final int? personId = await _resolvePerson(facts, cardId);
       final int? roleId = (personId != null && orgId != null)
           ? await _findOrCreateRole(
@@ -299,6 +308,9 @@ class IdentityRepository {
           updatedAt: Value<DateTime>(DateTime.now()),
         ),
       );
+      // The address this card used to give its company, if it has moved on
+      // or been corrected, goes with it.
+      await _pruneBranches(<int?>[previousOrgId, orgId]);
 
       if (personId != null) await _syncPersonName(personId);
       await _proposeDuplicateCards(
@@ -321,7 +333,9 @@ class IdentityRepository {
       await (_db.delete(
         _db.contactPoints,
       )..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId))).go();
+      final int? orgId = await _orgOf(cardId);
       await _unlink(cardId);
+      await _pruneBranches(<int?>[orgId]);
       await _collectGarbage();
     });
   }
@@ -359,6 +373,9 @@ class IdentityRepository {
       for (final QueryRow r in all) {
         await promote(r.read<int>('id'));
       }
+      // After every card, not as each one goes: until the last card is
+      // re-promoted, part of the graph is still the old rules' work.
+      await _withdrawStaleCandidates();
       await _db
           .into(_db.settings)
           .insertOnConflictUpdate(
@@ -398,6 +415,10 @@ class IdentityRepository {
     for (final QueryRow row in rows) {
       await promote(row.read<int>('id'));
     }
+    // A correction can take away the reason for a question as surely as a
+    // rules change can — a contact renamed to what the card really says is no
+    // longer "the same name" as anybody.
+    await _withdrawStaleCandidates();
   }
 
   /// Removes people made from something that was never a name.
@@ -457,7 +478,19 @@ class IdentityRepository {
   /// stays on the card and stays tappable, and if a later card from the same
   /// business carries the name, the organization is created then and this
   /// domain fills in behind it.
-  Future<int?> _resolveOrganization(CardFacts facts) async {
+  ///
+  /// **A company the user combined stays combined.** Rows merged away are
+  /// candidates too, and a card that matches one is filed under it — reads
+  /// follow the pointer, so it shows under the combined company, and an
+  /// un-merge takes it back out with the row it matched. Leaving them out made
+  /// every re-promotion undo the merge: the merged-away row's own card found
+  /// only the survivor, which it resembles but does not match, so it landed
+  /// on a fresh row and the pair came back as a new question. A rules change
+  /// re-promotes every card, so that was every merge the user had made.
+  ///
+  /// [current] is the company the card is already filed under. It is tried
+  /// first, so a card stays where it is while the rules still link it there.
+  Future<int?> _resolveOrganization(CardFacts facts, {int? current}) async {
     final String? name = facts.company?.trim();
     if (name == null || name.isEmpty) return null;
 
@@ -465,10 +498,16 @@ class IdentityRepository {
     // the key that links two organizations. See [isPlatformDomain].
     final String? domain = identityDomain(facts.websiteDomain);
 
-    final String? address = normalizeOrgName(facts.address);
-    final List<Organization> candidates = await (_db.select(
-      _db.organizations,
-    )..where(($OrganizationsTable t) => t.mergedIntoId.isNull())).get();
+    final List<Organization> all =
+        await (_db.select(_db.organizations)
+              ..orderBy(<OrderClauseGenerator<$OrganizationsTable>>[
+                ($OrganizationsTable t) => OrderingTerm(expression: t.id),
+              ]))
+            .get();
+    final List<Organization> candidates = <Organization>[
+      ...all.where((Organization o) => o.id == current),
+      ...all.where((Organization o) => o.id != current),
+    ];
 
     for (final Organization o in candidates) {
       final MatchVerdict v = scoreOrganization(
@@ -476,11 +515,13 @@ class IdentityRepository {
         candidateDomain: o.websiteDomain,
         cardName: name,
         candidateName: o.name,
-        cardAddress: address,
-        candidateAddress: normalizeOrgName(await _addressOf(o.id)),
+        cardAddress: facts.address,
+        candidateAddress: await _addressOf(o.id),
       );
-      // Alike, but not enough to act on alone. The user decides.
-      if (v.score >= MatchVerdict.proposeThreshold &&
+      // Alike, but not enough to act on alone. The user decides — except
+      // about a row they already merged away, which they have decided.
+      if (o.mergedIntoId == null &&
+          v.score >= MatchVerdict.proposeThreshold &&
           v.score < MatchVerdict.linkThreshold) {
         _pendingOrgProposals.add((o.id, v));
       }
@@ -738,6 +779,70 @@ class IdentityRepository {
         );
   }
 
+  Future<int?> _orgOf(int cardId) async {
+    final CardRow? row = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+    return row?.orgId;
+  }
+
+  /// Drops addresses no live card of the company gives any more.
+  ///
+  /// A branch is written when a card is filed under a company and nothing
+  /// took it away when the card left. The case that made it matter: under the
+  /// old address rule, "Pixel Studios" on House 9 was linked into "Pixel
+  /// Studio" on House 7, and its address became a second branch. Re-deriving
+  /// the graph puts the card back under its own company — and without this,
+  /// "Pixel Studio" would go on listing its neighbour's door as its own. The
+  /// same is true of a corrected address and of a deleted card.
+  ///
+  /// Compared the way [_findOrCreateBranch] writes them, so a branch the card
+  /// still gives is never dropped and re-added.
+  Future<void> _pruneBranches(Iterable<int?> orgIds) async {
+    for (final int orgId in orgIds.whereType<int>().toSet()) {
+      final List<OrgBranch> branches =
+          await (_db.select(_db.orgBranches)
+                ..where(($OrgBranchesTable b) => b.orgId.equals(orgId))
+                ..orderBy(<OrderClauseGenerator<$OrgBranchesTable>>[
+                  ($OrgBranchesTable b) => OrderingTerm(expression: b.id),
+                ]))
+              .get();
+      if (branches.isEmpty) continue;
+
+      final List<QueryRow> cards = await _db
+          .customSelect(
+            'SELECT id FROM cards WHERE org_id = ? AND deleted_at IS NULL',
+            variables: <Variable<Object>>[Variable<int>(orgId)],
+          )
+          .get();
+      final Set<String> given = <String>{
+        for (final QueryRow r in cards)
+          if ((await _factsOf(r.read<int>('id'))).address case final String a)
+            a.trim().toLowerCase(),
+      };
+
+      final List<OrgBranch> kept = <OrgBranch>[
+        for (final OrgBranch b in branches)
+          if (given.contains((b.address ?? '').trim().toLowerCase())) b,
+      ];
+      if (kept.length == branches.length) continue;
+
+      await (_db.delete(_db.orgBranches)..where(
+            ($OrgBranchesTable b) =>
+                b.orgId.equals(orgId) &
+                b.id.isNotIn(<int>[for (final OrgBranch k in kept) k.id]),
+          ))
+          .go();
+      // The address that went may have been the one the company is shown
+      // and matched under.
+      if (kept.isNotEmpty && !kept.any((OrgBranch b) => b.isPrimary)) {
+        await (_db.update(_db.orgBranches)
+              ..where(($OrgBranchesTable b) => b.id.equals(kept.first.id)))
+            .write(const OrgBranchesCompanion(isPrimary: Value<bool>(true)));
+      }
+    }
+  }
+
   /// Notices when this card is a second scan of one already saved.
   ///
   /// The commonest duplicate this app produces is not two people with the same
@@ -763,8 +868,7 @@ class IdentityRepository {
     int? personId,
     int? orgId,
   }) async {
-    final Set<String> mine = facts.matchKeys.toSet();
-    if (mine.isEmpty) return;
+    if (facts.matchKeys.isEmpty) return;
     if (personId == null && orgId == null) return;
 
     final List<QueryRow> others = await _db
@@ -782,41 +886,9 @@ class IdentityRepository {
 
     for (final QueryRow r in others) {
       final int other = r.read<int>('id');
-      final CardFacts theirs = await _factsOf(other);
-
-      final Set<String> shared = mine.intersection(theirs.matchKeys.toSet());
-      if (shared.isEmpty) continue;
-
-      // One card names somebody and the other does not: a personal card and a
-      // company card from the same firm, not two photographs of one thing.
-      if ((facts.personName == null) != (theirs.personName == null)) continue;
-
-      if (facts.personName != null && theirs.personName != null) {
-        final double alike = nameSimilarity(
-          normalizePersonName(facts.personName),
-          normalizePersonName(theirs.personName),
-        );
-        // Different people at the same company, sharing a switchboard.
-        if (alike < proposeSimilarity) continue;
-      }
-
-      await _proposeDuplicate(
-        cardId,
-        other,
-        MatchVerdict(
-          score: 0.85,
-          signals: <String>[
-            shared.length == 1
-                ? 'the same number'
-                : '${shared.length} of the same numbers',
-            if (facts.personName != null)
-              'the same name'
-            else
-              'the same company',
-          ],
-        ),
-        subject: 'card',
-      );
+      final MatchVerdict v = scoreCardPair(facts, await _factsOf(other));
+      if (v.isEmpty) continue;
+      await _proposeDuplicate(cardId, other, v, subject: 'card');
     }
   }
 
@@ -852,6 +924,137 @@ class IdentityRepository {
             signalsJson: Value<String?>(jsonEncode(v.signals)),
           ),
         );
+  }
+
+  /// Withdraws the open questions the current rules would no longer ask.
+  ///
+  /// A pending candidate is derived data like the rest of the graph, but
+  /// nothing re-derived it. Promotion only ever *adds* questions, and mostly
+  /// at the moment a row is created — so re-promoting every card after a rules
+  /// change rebuilt the people and companies and left every question the old
+  /// rules had asked exactly where it was. "Bengal Event Solutions" on Road 11
+  /// and "Moments Studio" on Road 5 stayed on the review list as matched on
+  /// the same address, under rules that no longer say so.
+  ///
+  /// So each one is asked again, of the rows as they stand, by the rule that
+  /// raised it. One that no longer reaches [MatchVerdict.proposeThreshold]
+  /// goes; one that still does keeps its place with the current reasons, so
+  /// the prompt explains itself in today's terms. Nothing here links anything,
+  /// whatever the score: that stays the user's call. Pairs the user already
+  /// settled are not pending and are left alone, and a pair missing a half is
+  /// garbage collection's to clear.
+  Future<void> _withdrawStaleCandidates() async {
+    final List<DuplicateCandidate> open =
+        await (_db.select(_db.duplicateCandidates)..where(
+              ($DuplicateCandidatesTable d) => d.status.equals('pending'),
+            ))
+            .get();
+
+    for (final DuplicateCandidate d in open) {
+      final MatchVerdict? now = switch (d.subjectType) {
+        'person' => await _rescorePeople(d.aId, d.bId),
+        'organization' => await _rescoreOrganizations(d.aId, d.bId),
+        'card' => await _rescoreCards(d.aId, d.bId),
+        _ => null,
+      };
+      if (now == null) continue;
+
+      if (now.score < MatchVerdict.proposeThreshold) {
+        await (_db.delete(
+          _db.duplicateCandidates,
+        )..where(($DuplicateCandidatesTable t) => t.id.equals(d.id))).go();
+      } else {
+        await (_db.update(
+          _db.duplicateCandidates,
+        )..where(($DuplicateCandidatesTable t) => t.id.equals(d.id))).write(
+          DuplicateCandidatesCompanion(
+            score: Value<double>(now.score),
+            signalsJson: Value<String?>(jsonEncode(now.signals)),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Two people, judged as [_resolvePerson] judges a card against a person:
+  /// on the endpoints they share — across everyone merged into either — and
+  /// on their names.
+  Future<MatchVerdict?> _rescorePeople(int a, int b) async {
+    final Person? left = await (_db.select(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(a))).getSingleOrNull();
+    final Person? right = await (_db.select(
+      _db.people,
+    )..where(($PeopleTable t) => t.id.equals(b))).getSingleOrNull();
+    if (left == null || right == null) return null;
+
+    final Set<String> shared = (await _endpointsOf(
+      await _identitiesOf(a),
+    )).intersection(await _endpointsOf(await _identitiesOf(b)));
+    return scorePerson(
+      sharedKeys: shared,
+      cardName: left.displayName,
+      candidateName: right.displayName,
+    );
+  }
+
+  Future<Set<String>> _endpointsOf(List<int> personIds) async {
+    final List<ContactPoint> points =
+        await (_db.select(_db.contactPoints)..where(
+              ($ContactPointsTable c) =>
+                  c.ownerType.equals('person') &
+                  c.ownerId.isIn(personIds) &
+                  c.isActive.equals(true),
+            ))
+            .get();
+    return <String>{
+      for (final ContactPoint p in points)
+        if (p.normalizedValue case final String key) key,
+    };
+  }
+
+  /// Two companies, judged as [_resolveOrganization] judged the card that
+  /// made one of them against the other — whose name, domain and address are
+  /// exactly what that card gave it.
+  Future<MatchVerdict?> _rescoreOrganizations(int a, int b) async {
+    final Organization? left = await (_db.select(
+      _db.organizations,
+    )..where(($OrganizationsTable t) => t.id.equals(a))).getSingleOrNull();
+    final Organization? right = await (_db.select(
+      _db.organizations,
+    )..where(($OrganizationsTable t) => t.id.equals(b))).getSingleOrNull();
+    if (left == null || right == null) return null;
+
+    return scoreOrganization(
+      cardDomain: left.websiteDomain,
+      candidateDomain: right.websiteDomain,
+      cardName: left.name,
+      candidateName: right.name,
+      cardAddress: await _addressOf(a),
+      candidateAddress: await _addressOf(b),
+    );
+  }
+
+  /// Two cards, judged as [_proposeDuplicateCards] judges them — including
+  /// that they are filed under the same person or company, which is exactly
+  /// what a rules change can undo.
+  Future<MatchVerdict?> _rescoreCards(int a, int b) async {
+    final CardRow? left = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(a))).getSingleOrNull();
+    final CardRow? right = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(b))).getSingleOrNull();
+    if (left == null || right == null) return null;
+    // One sitting in Recently deleted is not in the graph at all; restoring
+    // it re-promotes it, and the question should still be there when it does.
+    if (left.deletedAt != null || right.deletedAt != null) return null;
+
+    final bool filedTogether =
+        (left.personId != null && left.personId == right.personId) ||
+        (left.orgId != null && left.orgId == right.orgId);
+    if (!filedTogether) return const MatchVerdict.none();
+    return scoreCardPair(await _factsOf(a), await _factsOf(b));
   }
 
   // -------------------------------------------------------------------------
@@ -1085,7 +1288,9 @@ class IdentityRepository {
     await (_db.delete(
       _db.contactPoints,
     )..where(($ContactPointsTable c) => c.sourceCardId.equals(discard))).go();
+    final int? orgId = await _orgOf(discard);
     await _unlink(discard);
+    await _pruneBranches(<int?>[orgId]);
     await _collectGarbage();
   }
 
@@ -1139,6 +1344,24 @@ class IdentityRepository {
       _db.people,
     )..where(($PeopleTable t) => t.id.equals(personId))).getSingleOrNull();
     return p?.mergedIntoId ?? personId;
+  }
+
+  /// Whether [personId] is one half of a merge the user made — merged into
+  /// somebody, or somebody merged into it.
+  ///
+  /// A merge is the user saying whose card this is. Anything that would move
+  /// a card out of its contact without being asked checks this first.
+  Future<bool> isMerged(int personId) async {
+    final Person? hit =
+        await (_db.select(_db.people)
+              ..where(
+                ($PeopleTable t) =>
+                    (t.id.equals(personId) & t.mergedIntoId.isNotNull()) |
+                    t.mergedIntoId.equals(personId),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return hit != null;
   }
 
   /// Every row that stands for this person, the survivor included.

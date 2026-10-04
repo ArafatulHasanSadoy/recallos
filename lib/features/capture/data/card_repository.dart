@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ import '../../../core/extraction/phone.dart';
 import '../../../core/imaging/photo_keyring.dart';
 import '../../../core/imaging/photo_vault.dart';
 import '../../../core/intelligence/ocr_engine.dart' as ocr;
+import '../../contacts/data/identity_repository.dart';
 
 final databaseProvider = Provider<AppDatabase>((Ref ref) {
   final AppDatabase db = AppDatabase();
@@ -293,15 +295,7 @@ class CardRepository {
         CardsCompanion(
           backImagePath: const Value<String?>(null),
           backOcrText: const Value<String?>(null),
-          extractionStatus: Value<ExtractionStatus>(
-            settled.isEmpty
-                ? ExtractionStatus.failed
-                : CardExtraction.isUsefulSet(
-                    settled.map((CardField f) => f.fieldKey),
-                  )
-                ? ExtractionStatus.complete
-                : ExtractionStatus.partial,
-          ),
+          extractionStatus: Value<ExtractionStatus>(_statusOf(settled)),
           updatedAt: Value<DateTime>(DateTime.now()),
         ),
       );
@@ -437,9 +431,6 @@ class CardRepository {
       final List<CardField> settled = await (_db.select(
         _db.cardFields,
       )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
-      final List<String> keys = settled
-          .map((CardField f) => f.fieldKey)
-          .toList();
 
       await (_db.update(
         _db.cards,
@@ -452,13 +443,7 @@ class CardRepository {
               ? Value<String?>(result.plainText)
               : const Value<String?>.absent(),
           ocrEngine: Value<String?>(result.engine),
-          extractionStatus: Value<ExtractionStatus>(
-            settled.isEmpty
-                ? ExtractionStatus.failed
-                : CardExtraction.isUsefulSet(keys)
-                ? ExtractionStatus.complete
-                : ExtractionStatus.partial,
-          ),
+          extractionStatus: Value<ExtractionStatus>(_statusOf(settled)),
           updatedAt: Value<DateTime>(DateTime.now()),
         ),
       );
@@ -779,6 +764,215 @@ class CardRepository {
       // Deliberately ignored; see above.
       return 0;
     }
+  }
+
+  /// Marks [repairInventedPeople] as done, for the same reason as
+  /// [_digitRestoredRepairKey].
+  static const String _inventedPersonRepairKey = 'invented_person_repair';
+
+  /// Takes away people that extraction made out of a line of copy.
+  ///
+  /// A shop card — "TechFix Repair Centre" over "Laptop and Mobile Servicing"
+  /// — used to give a person called "Laptop and Mobile Servicing". The
+  /// extractor no longer does, but the name is a stored `card_fields` row and
+  /// promotion has made a contact of it. Bumping
+  /// `IdentityRepository.rulesVersion` cannot take that back: it re-runs
+  /// promotion over the stored rows, and a tagline passes
+  /// `looksLikePersonName` because it is shaped like a name. Only the
+  /// extractor can tell the two apart, so this asks it again.
+  ///
+  /// Each side is re-read from its own stored OCR blocks: no image and no
+  /// engine, so it costs a launch almost nothing. A name nobody confirmed that
+  /// the extractor would no longer give is deleted, and its lines go back to
+  /// the picker, so if the extractor is the one that is wrong now the name is
+  /// a tap away. When the re-read names somebody *else*, that name is not
+  /// written in its place: an unreviewed person is exactly what this removes,
+  /// and the line is in the picker either way.
+  ///
+  /// **Company and address are left as they are**, although the same fix
+  /// changed them for a brand named after a place — "Dhaka Tech Repair" was
+  /// joined onto the address and the tagline filed as the company. That is
+  /// real text under the wrong label, every word still on the card screen,
+  /// not a fact the card never stated. And undoing it is not a delete but a
+  /// rewrite of two fields at once, the brand moved out of one and into the
+  /// other with their blocks swapped over. Writing values nobody reviewed, on
+  /// launch and unasked, is a re-read, and that is the user's call — made on
+  /// the card screen, by picking the right line for each field.
+  ///
+  /// Also left alone: a side with no stored blocks, or one whose boxes no
+  /// longer parse, since there is nothing faithful to re-read; and a card
+  /// whose contact the user merged with another, because a merge says whose
+  /// card this is and taking the name would take the card out of it.
+  /// Recently deleted cards are repaired but not promoted: they hold no
+  /// contact until they are restored, and restoring promotes them from the
+  /// fields this fixes — skipping them would bring the contact back.
+  ///
+  /// The graph is rebuilt in the same transaction, so a failure cannot leave a
+  /// name gone and its contact still standing. Every other card that shared
+  /// the contact is promoted again too: when the owner's own card joined the
+  /// invented contact through its phone number, the contact kept the invented
+  /// name, and only promoting a card that still names somebody puts the real
+  /// one back. No re-index: the line is still in the card's OCR text, which
+  /// is what search reads.
+  ///
+  /// Runs once, recorded in `settings`, and swallows its own failure like
+  /// [repairDigitRestoredLabels]: a failed run commits nothing and is tried
+  /// again on the next launch. Returns how many names it removed.
+  Future<int> repairInventedPeople(IdentityRepository identity) async {
+    try {
+      return await _db.transaction(() async {
+        final Setting? done =
+            await (_db.select(_db.settings)..where(
+                  ($SettingsTable s) => s.key.equals(_inventedPersonRepairKey),
+                ))
+                .getSingleOrNull();
+        if (done != null) return 0;
+
+        final List<CardField> guessed =
+            await (_db.select(_db.cardFields)..where(
+                  ($CardFieldsTable f) =>
+                      f.fieldKey.equals(FieldKeys.personName) &
+                      f.source.equalsValue(FactSource.printed) &
+                      f.verifiedByUser.equals(false) &
+                      f.valueKind.equalsValue(FieldValueKind.text),
+                ))
+                .get();
+        final Map<int, List<CardField>> byCard = <int, List<CardField>>{};
+        for (final CardField f in guessed) {
+          (byCard[f.cardId] ??= <CardField>[]).add(f);
+        }
+
+        int removed = 0;
+        final Set<int> repaired = <int>{};
+        final Set<int> formerPeople = <int>{};
+        for (final MapEntry<int, List<CardField>> entry in byCard.entries) {
+          final CardRow? card =
+              await (_db.select(_db.cards)
+                    ..where(($CardsTable c) => c.id.equals(entry.key)))
+                  .getSingleOrNull();
+          if (card == null) continue;
+          final int? personId = card.personId;
+          if (personId != null && await identity.isMerged(personId)) continue;
+
+          final List<CardField> stale = <CardField>[];
+          for (final CardSide side in CardSide.values) {
+            final List<CardField> onSide = entry.value
+                .where((CardField f) => f.side == side)
+                .toList();
+            if (onSide.isEmpty) continue;
+            final List<ocr.OcrBlock>? blocks = await _storedBlocks(
+              card.id,
+              side,
+            );
+            if (blocks == null) continue;
+
+            final String? now = CardFieldExtractor.extract(
+              blocks,
+            ).firstOfKey(FieldKeys.personName)?.value;
+            stale.addAll(onSide.where((CardField f) => f.value.trim() != now));
+          }
+          if (stale.isEmpty) continue;
+
+          for (final CardField f in stale) {
+            await _releaseBlocks(f.id);
+            await (_db.delete(
+              _db.cardFields,
+            )..where(($CardFieldsTable t) => t.id.equals(f.id))).go();
+          }
+          removed += stale.length;
+
+          // The status was judged with the name counted in, and a card whose
+          // only claim to being read was a company and an invented person
+          // belongs back in Needs Attention.
+          final List<CardField> settled = await (_db.select(
+            _db.cardFields,
+          )..where(($CardFieldsTable f) => f.cardId.equals(card.id))).get();
+          await (_db.update(
+            _db.cards,
+          )..where(($CardsTable c) => c.id.equals(card.id))).write(
+            CardsCompanion(
+              extractionStatus: Value<ExtractionStatus>(_statusOf(settled)),
+              updatedAt: Value<DateTime>(DateTime.now()),
+            ),
+          );
+
+          if (card.deletedAt == null) {
+            repaired.add(card.id);
+            if (personId != null) formerPeople.add(personId);
+          }
+        }
+
+        for (final int id in repaired) {
+          await identity.promote(id);
+        }
+        if (formerPeople.isNotEmpty) {
+          final List<CardRow> sharers =
+              await (_db.select(_db.cards)..where(
+                    ($CardsTable c) =>
+                        c.personId.isIn(formerPeople) &
+                        c.deletedAt.isNull() &
+                        c.id.isNotIn(repaired),
+                  ))
+                  .get();
+          for (final CardRow c in sharers) {
+            await identity.promote(c.id);
+          }
+        }
+
+        await _db
+            .into(_db.settings)
+            .insertOnConflictUpdate(
+              SettingsCompanion.insert(
+                key: _inventedPersonRepairKey,
+                value: '1',
+              ),
+            );
+        return removed;
+      });
+    } on Object {
+      // Deliberately ignored; see above.
+      return 0;
+    }
+  }
+
+  /// One side's OCR blocks as the engine returned them, rebuilt from their
+  /// rows in reading order — or null when there are none, or when a box no
+  /// longer parses and the rebuilt card would not be the one that was read.
+  ///
+  /// Every row, blank ones included: the extractor judges prominence against
+  /// the largest box on the side, and a blank block is still a box.
+  Future<List<ocr.OcrBlock>?> _storedBlocks(int cardId, CardSide side) async {
+    final List<OcrBlockRow> rows =
+        await (_db.select(_db.ocrBlocks)
+              ..where(
+                ($OcrBlocksTable b) =>
+                    b.cardId.equals(cardId) & b.side.equalsValue(side),
+              )
+              ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+                ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
+                ($OcrBlocksTable b) => OrderingTerm(expression: b.id),
+              ]))
+            .get();
+    if (rows.isEmpty) return null;
+
+    final List<ocr.OcrBlock> blocks = <ocr.OcrBlock>[];
+    for (final OcrBlockRow r in rows) {
+      final List<double?> v = r.rect
+          .split(',')
+          .map((String s) => double.tryParse(s.trim()))
+          .toList();
+      if (v.length != 4 || v.contains(null)) return null;
+      blocks.add(
+        ocr.OcrBlock(
+          text: r.blockText,
+          rect: Rect.fromLTRB(v[0]!, v[1]!, v[2]!, v[3]!),
+          confidence: r.confidence,
+          script: ocr.Script.values.asNameMap()[r.script] ?? ocr.Script.unknown,
+          engine: r.engine,
+        ),
+      );
+    }
+    return blocks;
   }
 
   /// Saved cards, newest first, as a live stream so the library updates itself.
@@ -1230,6 +1424,14 @@ class CardRepository {
         )
         .toList();
   }
+
+  /// What a card's fields add up to, judged over the whole card rather than
+  /// over whichever run or repair last touched it.
+  static ExtractionStatus _statusOf(List<CardField> settled) => settled.isEmpty
+      ? ExtractionStatus.failed
+      : CardExtraction.isUsefulSet(settled.map((CardField f) => f.fieldKey))
+      ? ExtractionStatus.complete
+      : ExtractionStatus.partial;
 
   static String _rectOf(ocr.OcrBlock b) =>
       '${b.rect.left.round()},${b.rect.top.round()},'

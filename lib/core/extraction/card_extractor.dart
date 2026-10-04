@@ -467,10 +467,32 @@ abstract final class CardFieldExtractor {
     List<ExtractedField> out,
     Set<int> claimed,
   ) {
+    final double maxSize = _maxTextSize(blocks);
+    // On a card set all in one size every line is as prominent as the brand,
+    // and prominence stops saying anything.
+    final bool hasHeadline = blocks.any(
+      (OcrBlock b) => b.text.trim().isNotEmpty && !_isProminent(b, maxSize),
+    );
+
     final List<int> hits = <int>[];
     for (int i = 0; i < blocks.length; i++) {
       if (claimed.contains(i)) continue;
-      if (_looksLikeAddress(blocks[i].text)) hits.add(i);
+      final String text = blocks[i].text;
+      if (!_looksLikeAddress(text)) continue;
+
+      // An address is never the headline of a card, for the same reason a job
+      // title is not. Businesses here are named after where they are — "Dhaka
+      // Tech Repair", "Gulshan Pharmacy" — and without this the brand was
+      // joined onto the address and a tagline promoted to company in its
+      // place. A unit number or a postcode still makes even a headline an
+      // address; a place word alone does not.
+      if (hasHeadline &&
+          _isProminent(blocks[i], maxSize) &&
+          !_numberedUnit.hasMatch(text) &&
+          !_postcode.hasMatch(text)) {
+        continue;
+      }
+      hits.add(i);
     }
     if (hits.isEmpty) return;
 
@@ -764,6 +786,59 @@ abstract final class CardFieldExtractor {
     return narrower > 0 && overlap > narrower * 0.5;
   }
 
+  /// How small a line may be set against the company and still be read, on
+  /// layout alone, as somebody who works there.
+  ///
+  /// A person and their employer are peers; a tagline is a descriptor set well
+  /// under the brand. The test deck puts a name at 0.73–1.07 of its company's
+  /// size and a tagline at 0.42–0.45 of its brand, and this sits between them.
+  ///
+  /// Lower than [_subtitleSizeRatio] on purpose. That one only proposes a
+  /// merge that adjacency must also allow; here size is the whole of the
+  /// layout signal, so it has to leave room for a name set a little under its
+  /// employer. Provisional for the same reason as that one.
+  static const double _peerSizeRatio = 0.6;
+
+  /// Words that join the parts of a phrase and never the parts of a name.
+  static const List<String> _connectives = <String>[
+    'and',
+    'of',
+    'for',
+    'since',
+    'to',
+    'the',
+    'with',
+    'from',
+  ];
+
+  static final RegExp _number = RegExp(r'\d{2,}');
+  static final RegExp _word = RegExp('[A-Za-z]+');
+
+  /// Whether [text] reads as a line of copy rather than somebody's name.
+  ///
+  /// A check on shape, like `looksLikePersonName`, and not a guess at real
+  /// names. It knows only three things a name never has:
+  ///
+  ///  * a number of two or more digits — a year, an opening hour. A single
+  ///    digit is let through, because OCR reads an `i` inside a name as `1`;
+  ///  * a connective — "and", "since", "with", "&";
+  ///  * sentence case: a capitalised word beside a lowercase one of four or
+  ///    more letters, as in "All brands repaired". Names are set in title
+  ///    case, in capitals, or all lowercase as a style, and the particles that
+  ///    stay lowercase inside one — bin, al, ud, de — are shorter than that.
+  static bool _readsAsPhrase(String text) {
+    if (_number.hasMatch(text)) return true;
+    if (text.contains('&') || _containsWord(text, _connectives)) return true;
+
+    final List<String> words = _word
+        .allMatches(text)
+        .map((Match m) => m[0]!)
+        .toList();
+    bool capitalised(String w) => w[0] != w[0].toLowerCase();
+    return words.any(capitalised) &&
+        words.any((String w) => w.length >= 4 && !capitalised(w));
+  }
+
   /// Which leftover line, if any, is a human being.
   ///
   /// Returns null unless something on the card actually indicates a person.
@@ -771,9 +846,21 @@ abstract final class CardFieldExtractor {
   ///
   ///  1. **A job title was found.** Titles belong to people.
   ///  2. **A personal email local part** — `kamal@` rather than `info@`.
-  ///  3. **A confidently identified company plus a second prominent line with
-  ///     no company signals of its own.** If we know which line is the
-  ///     business, a different line of similar weight is usually the person.
+  ///  3. **A confidently identified company plus a second line of similar
+  ///     weight with no company signals of its own.** If we know which line is
+  ///     the business, a peer of it is usually the person.
+  ///
+  /// The third is weak because on its own it is not evidence of a person at
+  /// all: a company keyword proves the *business*, and a shop card proves that
+  /// most clearly of any. When the weight half went unchecked, every shop
+  /// whose name carried a keyword — "TechFix Repair Centre" — got its tagline
+  /// filed as its contact. So under it the line must be set as a peer of the
+  /// company, not as a descriptor under it — see [_peerSizeRatio].
+  ///
+  /// And under any of them, a line that reads as a phrase is not the person —
+  /// see [_readsAsPhrase]. Evidence says somebody is on the card, not which
+  /// line they are: when the owner's name is in Bengali and lost, the best
+  /// leftover next to "Proprietor" is the shop's tagline.
   ///
   /// Absent all three, the card is treated as a business-only card.
   static _NameCandidate? _findPerson({
@@ -787,12 +874,15 @@ abstract final class CardFieldExtractor {
     if (!hasDesignation && !hasPersonalEmail && !companyIsConfident) {
       return null;
     }
+    final bool onLayoutAlone = !hasDesignation && !hasPersonalEmail;
 
     // Whichever remaining line looks least like a business.
     for (final _NameCandidate c in candidates) {
       if (identical(c, company)) continue;
       if (looksLikeCompany(c)) continue;
       if (_looksLikeAddress(c.text)) continue;
+      if (_readsAsPhrase(c.text)) continue;
+      if (onLayoutAlone && c.size < company.size * _peerSizeRatio) continue;
       return c;
     }
     return null;

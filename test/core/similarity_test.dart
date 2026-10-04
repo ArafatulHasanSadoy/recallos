@@ -179,4 +179,123 @@ void main() {
       expect(v.signals, isEmpty);
     });
   });
+
+  group('matching organizations on an address', () {
+    // The pair found on the phone: two demo cards, two unrelated businesses a
+    // few roads apart, proposed as one company "matched on the same address".
+    // The words agree and only the road number differs — which a string
+    // measure weighs at one token in four, and which is the whole address.
+    test('Road 11 and Road 5 in one area are two addresses', () {
+      expect(
+        isSameAddress('Road 11, Banani, Dhaka', 'Road 5, Banani, Dhaka'),
+        isFalse,
+      );
+
+      final MatchVerdict v = scoreOrganization(
+        cardDomain: null,
+        candidateDomain: null,
+        cardName: 'Bengal Event Solutions',
+        candidateName: 'Moments Studio',
+        cardAddress: 'Road 11, Banani, Dhaka',
+        candidateAddress: 'Road 5, Banani, Dhaka',
+      );
+      expect(v.signals, isNot(contains('the same address')));
+      expect(v.score, lessThan(MatchVerdict.proposeThreshold),
+          reason: 'two different names on two different roads are not a '
+              'question worth asking');
+    });
+
+    test('the same address printed twice is the same address', () {
+      expect(
+        isSameAddress('House 7, Road 2, Banani, Dhaka',
+            'House 7, Road 2, Banani, Dhaka'),
+        isTrue,
+      );
+      // Punctuation, case and zero-padding are how it was printed, not where.
+      expect(
+        isSameAddress('House#7, Road-02, BANANI', 'house 7 road 2 banani'),
+        isTrue,
+      );
+    });
+
+    test('OCR damage to the words does not split one address', () {
+      expect(
+        isSameAddress('House 12, Road 5, Sector 7, Uttara, Dhaka',
+            'House 12, Road 5, Sector 7, Utara, Dhaka'),
+        isTrue,
+      );
+      // The two reads of one shop sign that motivated address matching.
+      expect(
+        isSameAddress(
+            'Shop No:300, Dhaka New Market', 'O Shop No:300, Dhaka New Markel'),
+        isTrue,
+      );
+    });
+
+    test('the same numbers in another order are another door', () {
+      // House 7 on Road 2 and House 2 on Road 7: nothing but the order says
+      // which number is the house.
+      expect(
+        isSameAddress('House 7, Road 2, Banani', 'House 2, Road 7, Banani'),
+        isFalse,
+      );
+    });
+
+    test('a number missing from one of them is not the same door', () {
+      expect(
+        isSameAddress('Road 11, Banani', 'House 5, Road 11, Banani'),
+        isFalse,
+      );
+    });
+
+    test('Bangla numerals are the numbers they write', () {
+      // Stripped as punctuation, `রোড ১১` and `রোড ৫` were both nothing, and
+      // any two addresses on one street were the same address.
+      expect(isSameAddress('Road ১১, Banani', 'Road 11, Banani'), isTrue);
+      expect(isSameAddress('Road ১১, Banani', 'Road ৫, Banani'), isFalse);
+    });
+
+    test('an area with no number is not a door', () {
+      // Every business in Banani is in "Banani, Dhaka".
+      expect(isSameAddress('Banani, Dhaka', 'Banani, Dhaka'), isFalse);
+    });
+
+    test('numbers with no words beside them are not an address', () {
+      expect(isSameAddress('11/2', '11/2'), isFalse);
+      expect(isSameAddress(null, 'Road 11, Banani'), isFalse);
+    });
+
+    test('similar names on neighbouring roads are asked about, not linked', () {
+      // Under the old rule the address "matched", and a similar name plus the
+      // same address scored 0.95 — over the link threshold, so two businesses
+      // were joined without anybody being asked.
+      final MatchVerdict v = scoreOrganization(
+        cardDomain: null,
+        candidateDomain: null,
+        cardName: 'Pixel Studio',
+        candidateName: 'Pixel Studios',
+        cardAddress: 'House 7, Road 2, Banani, Dhaka',
+        candidateAddress: 'House 9, Road 2, Banani, Dhaka',
+      );
+
+      expect(v.score, lessThan(MatchVerdict.linkThreshold),
+          reason: 'nothing merges without the user');
+      expect(v.score, greaterThanOrEqualTo(MatchVerdict.proposeThreshold),
+          reason: 'the similar name is still worth asking about');
+      expect(v.signals, <String>['a similar name']);
+    });
+
+    test('a similar name at the same door still links', () {
+      final MatchVerdict v = scoreOrganization(
+        cardDomain: null,
+        candidateDomain: null,
+        cardName: 'TARGET, CENTER,',
+        candidateName: 'CTARGEI. CENTER',
+        cardAddress: 'Shop No:300, Dhaka New Market',
+        candidateAddress: 'O Shop No:300, Dhaka New Markel',
+      );
+      expect(v.score, greaterThanOrEqualTo(MatchVerdict.linkThreshold));
+      expect(v.signals, contains('the same address'));
+    });
+  });
 }

@@ -14,6 +14,7 @@
 library;
 
 import '../db/enums.dart';
+import '../extraction/digits.dart';
 import 'similarity.dart';
 
 /// One reachable endpoint read off a card.
@@ -259,6 +260,70 @@ String? _reduce(String? raw, {required Set<String> drop}) {
   return kept.join(' ');
 }
 
+final RegExp _digitRun = RegExp(r'[0-9]+');
+final RegExp _leadingZeros = RegExp(r'^0+(?=[0-9])');
+
+/// Whether two addresses name the same door.
+///
+/// Fuzzy similarity alone got this wrong in the way that matters most. In
+/// Dhaka the house, road and shop numbers are what tell two addresses in one
+/// area apart, and they are exactly what a string measure weighs least:
+/// `Road 11, Banani, Dhaka` against `Road 5, Banani, Dhaka` differ in one
+/// token of four and scored as the same address. That turned two unrelated
+/// businesses into a duplicate candidate — and, with similar names on top,
+/// linked them without asking.
+///
+/// So the two halves of an address are judged differently:
+///
+///  * **The numbers must agree exactly, in the order printed.** Order stands
+///    in for role: `House 7, Road 2` and `House 2, Road 7` carry the same
+///    numbers and are different doors. Bangla numerals are read as the digits
+///    they are, so `রোড ১১` is `Road 11` and not `Road 5`. A misread digit
+///    therefore splits one address in two — which costs a question the user
+///    answers, where the opposite mistake costs a merge they never asked for.
+///  * **The words are compared fuzzily**, as before, because OCR damages
+///    them routinely: `Uttara` and `Utara`, `Market` and `Markel`.
+///
+/// An address with no number at all names an area, not a door — two shops in
+/// "Banani, Dhaka" are neighbours at best — so it never counts as the same
+/// address. Nor does one where nothing but numbers survives normalisation.
+bool isSameAddress(String? a, String? b) {
+  final (List<String>, String?)? left = _splitAddress(a);
+  final (List<String>, String?)? right = _splitAddress(b);
+  if (left == null || right == null) return false;
+
+  final (List<String> leftNumbers, String? leftWords) = left;
+  final (List<String> rightNumbers, String? rightWords) = right;
+  if (leftNumbers.isEmpty) return false;
+  if (leftNumbers.join(' ') != rightNumbers.join(' ')) return false;
+
+  return nameSimilarity(leftWords, rightWords) >= proposeSimilarity;
+}
+
+/// An address as the numbers printed on it, in order, and the words around
+/// them. Null when nothing survives normalisation.
+(List<String>, String?)? _splitAddress(String? raw) {
+  final String? flat = _reduce(
+    raw == null ? null : Digits.toLatin(raw),
+    drop: const <String>{},
+  );
+  if (flat == null) return null;
+
+  final List<String> numbers = <String>[
+    // `Road 05` and `Road 5` are one road.
+    for (final Match m in _digitRun.allMatches(flat))
+      m[0]!.replaceFirst(_leadingZeros, ''),
+  ];
+  // A number glued to a word — `2nd`, `H7`, `Road11` — gives up its digits
+  // to the list above and leaves the word behind.
+  final String words = flat
+      .split(' ')
+      .map((String t) => t.replaceAll(_digitRun, ''))
+      .where((String t) => t.isNotEmpty)
+      .join(' ');
+  return (numbers, words.isEmpty ? null : words);
+}
+
 /// How strongly two records agree, and on what.
 class MatchVerdict {
   const MatchVerdict({required this.score, required this.signals});
@@ -317,9 +382,12 @@ MatchVerdict scorePerson({
 
 /// Whether a card's facts describe an existing organization.
 ///
-/// [cardAddress] and [candidateAddress] are normalised addresses where both
-/// are known. A shared address is what turns "these names look alike" into
-/// something worth linking without asking: two shops do not share a door.
+/// [cardAddress] and [candidateAddress] are the addresses as printed, where
+/// both are known — they are normalised here, and must not be beforehand, or
+/// the Bangla numerals are stripped before they can be read. A shared address
+/// is what turns "these names look alike" into something worth linking without
+/// asking: two shops do not share a door. [isSameAddress] decides what counts
+/// as one door.
 MatchVerdict scoreOrganization({
   required String? cardDomain,
   required String? candidateDomain,
@@ -340,10 +408,7 @@ MatchVerdict scoreOrganization({
   final String? b = normalizeOrgName(candidateName);
   final double alike = nameSimilarity(a, b);
 
-  final bool sameAddress =
-      cardAddress != null &&
-      candidateAddress != null &&
-      nameSimilarity(cardAddress, candidateAddress) >= proposeSimilarity;
+  final bool sameAddress = isSameAddress(cardAddress, candidateAddress);
 
   if (a != null && a == b) {
     return const MatchVerdict(score: 0.92, signals: <String>['same name']);
@@ -367,4 +432,45 @@ MatchVerdict scoreOrganization({
     );
   }
   return const MatchVerdict.none();
+}
+
+/// Whether two cards are two photographs of one piece of paper.
+///
+/// Only asked of cards already filed under the same person or company — that
+/// part is a fact about the graph, and the caller's to check. What is judged
+/// here is *who the cards are about*, not whether their numbers match exactly:
+/// two scans of one card rarely extract the same set, because the read that
+/// made the second scan worth taking is the one that went differently. Two
+/// colleagues at one firm share the office line but not a name; two scans of
+/// one card agree on the name, or have none.
+MatchVerdict scoreCardPair(CardFacts card, CardFacts other) {
+  final Set<String> shared = card.matchKeys.toSet().intersection(
+    other.matchKeys.toSet(),
+  );
+  if (shared.isEmpty) return const MatchVerdict.none();
+
+  // One card names somebody and the other does not: a personal card and a
+  // company card from the same firm, not two photographs of one thing.
+  if ((card.personName == null) != (other.personName == null)) {
+    return const MatchVerdict.none();
+  }
+
+  if (card.personName != null && other.personName != null) {
+    final double alike = nameSimilarity(
+      normalizePersonName(card.personName),
+      normalizePersonName(other.personName),
+    );
+    // Different people at the same company, sharing a switchboard.
+    if (alike < proposeSimilarity) return const MatchVerdict.none();
+  }
+
+  return MatchVerdict(
+    score: 0.85,
+    signals: <String>[
+      shared.length == 1
+          ? 'the same number'
+          : '${shared.length} of the same numbers',
+      if (card.personName != null) 'the same name' else 'the same company',
+    ],
+  );
 }
