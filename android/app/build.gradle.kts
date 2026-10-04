@@ -23,6 +23,12 @@ val keystoreProperties = Properties().apply {
 val hasUploadKey = keystoreProperties.getProperty("storeFile") != null
 val allowDebugSigning = System.getenv("RECALLOS_ALLOW_DEBUG_SIGNING") == "true"
 val refuseReleaseSigning = !hasUploadKey && !allowDebugSigning
+// A build marked never-to-be-uploaded keeps the debug key even when the upload
+// key is present. The phone's install is debug-signed, and Android refuses a
+// differently signed build over it except by uninstalling — which deletes the
+// wallet. So a device check never switches keys by accident; the switch to the
+// Play-signed app is done once, deliberately, behind a backup.
+val signWithUploadKey = hasUploadKey && !allowDebugSigning
 
 android {
     namespace = "com.recallos.recallos"
@@ -66,7 +72,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (hasUploadKey) {
+            signingConfig = if (signWithUploadKey) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

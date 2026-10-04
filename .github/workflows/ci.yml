@@ -19,12 +19,16 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: GitHub moves that label to Ubuntu 26 from
+    # 19 Oct 2026, the day before the first Play release, and a gate that
+    # changes under the release is no gate. Move it deliberately, after.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      # Node 24 majors; the v4s ran on a deprecated Node 20.
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
