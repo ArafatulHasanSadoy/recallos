@@ -13,6 +13,8 @@ import 'features/contacts/presentation/duplicates_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
 import 'features/followup/presentation/today_screen.dart';
+import 'features/plus/presentation/plus_screen.dart';
+import 'features/profile/presentation/my_card_qr_screen.dart';
 import 'features/profile/presentation/my_card_screen.dart';
 import 'features/profile/presentation/profile_editor_screen.dart';
 import 'features/search/presentation/home_screen.dart';
@@ -35,6 +37,12 @@ abstract final class Routes {
   /// app that is about the person holding the phone.
   static const String myCard = '/me';
   static const String myCardEdit = '/me/edit';
+
+  /// Your card as a QR code, for handing over in person.
+  static const String myCardQr = '/me/qr';
+
+  /// RecallOS Plus: what it adds, and the one-time purchase.
+  static const String plus = '/plus';
 
   /// Phase 0 scaffolding. Delete once the OCR gate has been answered.
   static const String spike = '/spike';
@@ -116,6 +124,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.myCardEdit,
         builder: (_, _) => const ProfileEditorScreen(),
       ),
+      GoRoute(path: Routes.myCardQr, builder: (_, _) => const MyCardQrScreen()),
+      GoRoute(path: Routes.plus, builder: (_, _) => const PlusScreen()),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
       GoRoute(path: Routes.today, builder: (_, _) => const TodayScreen()),
       GoRoute(

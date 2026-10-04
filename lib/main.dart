@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/followup/presentation/reminder_responder.dart';
+import 'features/plus/presentation/plus_watch.dart';
 import 'features/settings/data/app_settings.dart';
 import 'features/settings/presentation/lock_gate.dart';
 import 'router.dart';
@@ -42,8 +43,11 @@ class RecallOsApp extends ConsumerWidget {
       //
       // Reminder taps are answered from here too: above every route, so a
       // notification can open a card from wherever the app happens to be.
+      // Plus is kept in step with Google Play from the same place.
       builder: (BuildContext context, Widget? child) => LockGate(
-        child: ReminderResponder(child: child ?? const SizedBox.shrink()),
+        child: ReminderResponder(
+          child: PlusWatch(child: child ?? const SizedBox.shrink()),
+        ),
       ),
       debugShowCheckedModeBanner: false,
     );

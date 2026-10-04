@@ -14,6 +14,7 @@ import '../../../core/ui/primitives.dart';
 import '../../../router.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../plus/data/plus_controller.dart';
 import '../../profile/data/profile_repository.dart';
 import '../data/app_info.dart';
 import '../data/app_lock.dart';
@@ -75,7 +76,7 @@ class SettingsScreen extends ConsumerWidget {
 
                   SettingGroup(
                     label: 'You',
-                    children: <Widget>[_MyCardRow()],
+                    children: <Widget>[_MyCardRow(), _PlusRow()],
                   ),
                   const SizedBox(height: Gap.lg),
 
@@ -634,6 +635,29 @@ class _MyCardRow extends ConsumerWidget {
       },
       trailing: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
       onTap: () => context.push(Routes.myCard),
+    );
+  }
+}
+
+/// Where RecallOS Plus lives, and whether it is on.
+class _PlusRow extends ConsumerWidget {
+  const _PlusRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final PlusPhase phase = ref.watch(plusProvider).phase;
+
+    return SettingRow(
+      label: 'RecallOS Plus',
+      description: switch (phase) {
+        PlusPhase.owned => 'On — no limit on reminders',
+        PlusPhase.pending => 'Waiting for Google to confirm the payment',
+        PlusPhase.checking ||
+        PlusPhase.free => 'Free — $kFreeReminders reminders at a time',
+      },
+      trailing: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+      onTap: () => context.push(Routes.plus),
     );
   }
 }
