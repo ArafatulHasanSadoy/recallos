@@ -147,7 +147,15 @@ class CardRepository {
   /// everything after this point can fail without losing the card.
   /// Returns the new row's id and the copy now under our control — the scanner
   /// hands back a cache file the system is free to reclaim.
-  Future<({int id, File image})> createPending(File source) async {
+  ///
+  /// [metAt] is the running event, in Event Mode: the card is marked as met
+  /// there, today, in the same transaction that creates it — so a card that
+  /// survives a crash survives with where it was met. Marked as Event Mode's
+  /// doing (`EncounterOrigin.event`), not the user's, until the user edits it.
+  Future<({int id, File image})> createPending(
+    File source, {
+    String? metAt,
+  }) async {
     final Directory cards = await cardsDirectory();
 
     final String name =
@@ -157,18 +165,41 @@ class CardRepository {
     final String target = p.join(cards.path, name);
     final String from = source.path;
     final Uint8List? key = await PhotoKeyring.instance.key;
+    // The only closure in this method, and it must stay that way. Dart keeps
+    // one context for every closure in a scope, and `Isolate.run` sends the
+    // whole of it: a second closure here that touched `_db` would put the
+    // open database into the isolate message, and every scan would fail with
+    // "object is unsendable". That is why the rows are written in
+    // [_insertPending], and why the inputs are copied into locals above.
     await Isolate.run(() => sealCopySync(from, target, key));
     final File stored = File(target);
 
-    final int id = await _db
-        .into(_db.cards)
-        .insert(
-          CardsCompanion.insert(
-            imagePath: stored.path,
-            capturedAt: DateTime.now(),
-          ),
-        );
+    final int id = await _insertPending(stored.path, metAt);
     return (id: id, image: stored);
+  }
+
+  /// The card row, and Event Mode's encounter for it, in one transaction.
+  Future<int> _insertPending(String imagePath, String? metAt) {
+    final DateTime now = DateTime.now();
+    final String? place = metAt?.trim();
+    return _db.transaction(() async {
+      final int id = await _db
+          .into(_db.cards)
+          .insert(CardsCompanion.insert(imagePath: imagePath, capturedAt: now));
+      if (place != null && place.isNotEmpty) {
+        await _db
+            .into(_db.encounters)
+            .insert(
+              EncountersCompanion.insert(
+                cardId: id,
+                metOn: Value<DateTime?>(DateTime(now.year, now.month, now.day)),
+                place: Value<String?>(place),
+                origin: const Value<EncounterOrigin>(EncounterOrigin.event),
+              ),
+            );
+      }
+      return id;
+    });
   }
 
   /// Where card images live, created on first use.
@@ -544,14 +575,14 @@ class CardRepository {
             );
       } else {
         // The first note is the one every screen shows; edit that one.
-        await (_db.update(_db.notes)
-              ..where(($NotesTable n) => n.id.equals(existing.first.id)))
-            .write(
-              NotesCompanion(
-                body: Value<String?>(trimmed),
-                updatedAt: Value<DateTime>(DateTime.now()),
-              ),
-            );
+        await (_db.update(
+          _db.notes,
+        )..where(($NotesTable n) => n.id.equals(existing.first.id))).write(
+          NotesCompanion(
+            body: Value<String?>(trimmed),
+            updatedAt: Value<DateTime>(DateTime.now()),
+          ),
+        );
       }
 
       await _db
@@ -566,7 +597,8 @@ class CardRepository {
               ),
             ),
           );
-      await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
+      await (_db.update(_db.cards)
+            ..where(($CardsTable c) => c.id.equals(cardId)))
           .write(CardsCompanion(updatedAt: Value<DateTime>(DateTime.now())));
     });
   }

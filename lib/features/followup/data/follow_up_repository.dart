@@ -107,6 +107,23 @@ class TodayView {
   }
 }
 
+/// A card met at one place over some days, and what is still to do about it.
+class MetCard {
+  const MetCard({
+    required this.cardId,
+    required this.title,
+    required this.openSteps,
+    this.person,
+  });
+
+  final int cardId;
+  final String title;
+  final String? person;
+
+  /// Soonest first.
+  final List<ImportantDate> openSteps;
+}
+
 /// A reminder that Android should currently be holding.
 class PendingReminder {
   const PendingReminder({
@@ -214,6 +231,72 @@ class FollowUpRepository {
         );
       }
     });
+  }
+
+  /// Live cards met at [place] on a day from [from] up to, not including,
+  /// [until] — everyone from one event — in the order they were scanned, each
+  /// with its open steps.
+  ///
+  /// Matched on what the card says now, not on how it got there: a card whose
+  /// place the user changed has left, and one they typed the same place and
+  /// day into by hand has joined. The place is compared without case, as the
+  /// user would read it; a card with no day is left out, since "not sure
+  /// when" is not "at this event".
+  Stream<List<MetCard>> watchMetAt({
+    required String place,
+    required DateTime from,
+    required DateTime until,
+  }) {
+    return _db
+        .customSelect(
+          'SELECT DISTINCT c.id AS card_id, c.captured_at AS captured_at '
+          'FROM encounters e JOIN cards c ON c.id = e.card_id '
+          'WHERE e.deleted_at IS NULL AND c.deleted_at IS NULL '
+          'AND e.place = ? COLLATE NOCASE AND e.met_on IS NOT NULL '
+          'AND e.met_on >= ? AND e.met_on < ? '
+          'ORDER BY c.captured_at, c.id',
+          variables: <Variable<Object>>[
+            Variable<String>(place),
+            Variable<DateTime>(from),
+            Variable<DateTime>(until),
+          ],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            _db.encounters,
+            _db.cards,
+            _db.cardFields,
+            _db.importantDates,
+          },
+        )
+        .watch()
+        .asyncMap((List<QueryRow> rows) async {
+          final List<MetCard> out = <MetCard>[];
+          for (final QueryRow r in rows) {
+            final int cardId = r.read<int>('card_id');
+            final ({String title, String? person}) who = await _whoIs(cardId);
+            final List<ImportantDate> steps =
+                await (_db.select(_db.importantDates)
+                      ..where(
+                        ($ImportantDatesTable d) =>
+                            d.cardId.equals(cardId) &
+                            d.status.equalsValue(DateStatus.open) &
+                            d.deletedAt.isNull(),
+                      )
+                      ..orderBy(<OrderClauseGenerator<$ImportantDatesTable>>[
+                        ($ImportantDatesTable d) => OrderingTerm.asc(d.dueOn),
+                        ($ImportantDatesTable d) => OrderingTerm.asc(d.id),
+                      ]))
+                    .get();
+            out.add(
+              MetCard(
+                cardId: cardId,
+                title: who.title,
+                person: who.person,
+                openSteps: steps,
+              ),
+            );
+          }
+          return out;
+        });
   }
 
   // ---------------------------------------------------------------------------

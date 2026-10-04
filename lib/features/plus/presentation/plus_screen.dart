@@ -7,13 +7,14 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
+import '../../../router.dart';
 import '../data/plus_controller.dart';
 
 /// RecallOS Plus: what it adds, what stays free, and the one button.
 ///
-/// Lists only what Plus does today. Event Mode and people search come to
-/// buyers in a later update and are added here when they exist, not before:
-/// a paywall that sells what is not built is a promise the app cannot keep.
+/// Lists only what Plus does today — no limit on reminders, and Event Mode.
+/// Anything planned is added here when it exists, not before: a paywall that
+/// sells what is not built is a promise the app cannot keep.
 class PlusScreen extends ConsumerStatefulWidget {
   const PlusScreen({super.key});
 
@@ -50,13 +51,30 @@ class _PlusScreenState extends ConsumerState<PlusScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.xl),
                 children: <Widget>[
-                  Text('No limit on reminders', style: AppText.title(c)),
-                  const SizedBox(height: Gap.sm),
+                  SettingGroup(
+                    label: 'Plus adds',
+                    children: <Widget>[
+                      const SettingRow(
+                        label: 'No limit on reminders',
+                        description:
+                            'The free version keeps $kFreeReminders waiting '
+                            'at a time.',
+                      ),
+                      SettingRow(
+                        label: 'Event Mode',
+                        description:
+                            'Every card you scan at an event is marked as '
+                            'met there. When it ends, everyone you met and '
+                            'what is next, in one list.',
+                        trailing: Icon(Icons.chevron_right, color: c.inkMuted),
+                        onTap: () => context.push(Routes.event),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: Gap.md),
                   Text(
-                    'The free version keeps $kFreeReminders reminders waiting '
-                    'at a time. Plus takes the limit away. One payment — no '
-                    'subscription, no account — and like the rest of '
-                    'RecallOS it works without the internet.',
+                    'One payment — no subscription, no account — and like '
+                    'the rest of RecallOS it works without the internet.',
                     style: AppText.body(c),
                   ),
                   const SizedBox(height: Gap.lg),

@@ -45,8 +45,8 @@ is public and `docs/` is served on GitHub Pages. They live in the gitignored
   (2026-09-08), tagged `cse499b-start`.
 - 499B so far is seven commits on `main`, pushed 2026-09-29: My Card, F1–F4,
   and the phone-number label fix.
-- `flutter analyze`: clean. `flutter test`: **667 pass** (2026-10-04, after
-  A7's build; 641 after A1–A4; 580 after F1–F4; 444 at the 499A baseline
+- `flutter analyze`: clean. `flutter test`: **732 pass** (2026-10-04, after
+  A5; 713 after merging the shop-card and address fixes; 667 after A7's build; 641 after A1–A4; 580 after F1–F4; 444 at the 499A baseline
   `b48d429`).
 - **Starting point:** everything after `cse499b-start` is 499B work
   (`git log cse499b-start..main`).
@@ -140,6 +140,56 @@ from OCR) — are correct for derived data and destructive for authored data.
   `android/key.properties` the signing task fails and says why;
   `RECALLOS_ALLOW_DEBUG_SIGNING=true` opts in for builds that are never
   uploaded (CI sets it). Pinned in `release_surface_test.dart`.
+- [x] ✅ **Shop cards invented a contact from their tagline** (found
+  2026-09-29, fixed in a side session that day; merged into `main`'s working
+  tree 2026-10-04): "TechFix Repair Centre" over "Laptop and Mobile
+  Servicing" gave a person called "Laptop and Mobile Servicing". A company
+  keyword in the brand was taken as evidence of a person, and the "line of
+  similar weight" half of that rule was never checked, so any leftover line
+  qualified. Now, on layout alone, the line must be set as a peer of the
+  company (`_peerSizeRatio`); under any evidence, a line that reads as a
+  phrase (a year, "and", sentence case) is never the person. Same pass: a
+  brand named after a place ("Dhaka Tech Repair") was joined onto the
+  address, because a place word claimed a line whatever its size; the card's
+  headline is now exempt unless it has a unit number or postcode. 14 tests in
+  `card_extractor_test.dart`, 9 of which fail on the old code.
+  **Cards already scanned are repaired once, on launch**
+  (`CardRepository.repairInventedPeople`, recorded in `settings`). The wrong
+  name is a stored `card_fields` row and `rulesVersion` re-runs promotion, not
+  extraction — so instead each side is re-read from its stored OCR blocks,
+  and a name nobody confirmed that the extractor would no longer give is
+  deleted, its line put back in the picker, and the card re-promoted in the
+  same transaction. Also re-promoted: other cards that shared the contact.
+  Left alone: confirmed names, contacts the user merged, sides with no usable
+  blocks. 14 tests in `card_repository_test.dart`; each guard has a test that
+  fails without it. The side session ran it on the phone on 2026-09-29 (DB
+  backed up first): all 12 contacts from its 14 cards survived.
+  **Still open — a place-named brand keeps its old company and address**:
+  the repair touches only the person, because fixing the rest means
+  rewriting two fields the user never reviewed. Fixed by hand on the card
+  screen: tap Company, pick the brand line; tap Address, pick only the
+  address lines.
+- [x] ✅ **Different roads counted as the same address** (found on the phone
+  2026-09-29, fixed in a side session 2026-09-30; merged into `main`'s
+  working tree 2026-10-04): "Bengal Event Solutions — Road 11, Banani" and
+  "Moments Studio — Road 5, Banani" were proposed as one company "matched on
+  the same address", and similar names on neighbouring roads ("Pixel Studio"
+  House 7 / "Pixel Studios" House 9) scored 0.95 and were **linked without
+  asking**. `isSameAddress` now needs the numbers to agree exactly, in printed
+  order (Bangla numerals read as digits), with only the words compared
+  fuzzily; an address with no number never matches. **Rules version 5**, so
+  the graph is rebuilt on the next launch. Two faults that rebuild would have
+  hit are fixed alongside: a rebuild **undid every company merge**
+  (merged-away rows were not candidates, so their cards landed on fresh
+  rows), and it left behind pending questions and branch addresses the new
+  rules no longer produce. Open questions are now re-asked at every backfill,
+  and a company's branches are pruned to the addresses its live cards give.
+  13 new tests fail on the old code. **On the RMX3612, release build,
+  2026-10-04** (database backed up first, `recallos-pre-rules5-…`): the
+  rules-5 rebuild over its 15 cards gave 13 people and 12 companies, Bengal
+  Event Solutions (Road 11, Banani) and Moments Studio (Road 5, Banani)
+  separate; the two questions left are Nusrat's card scanned twice and two
+  Kamal Uddins at different companies — neither matched on an address.
 
 ---
 
@@ -411,8 +461,50 @@ stable first release matter more than holding the launch for them.
 
 ### Release A, first update — ~26 Oct
 
-- [ ] **A5. Compact Event Mode** (M) — one active event; captures inherit it;
+- [x] ✅ **A5. Compact Event Mode** (M) — one active event; captures inherit it;
   the user can override; an end-of-event summary of people and next actions.
+  **Built and walked on the RMX3612, release build, 2026-10-04** — ahead of
+  its week, so it can ride in whichever build reaches testers next. Part of
+  RecallOS Plus (DECISION-RECORD: Plus unlocks event mode). The tent button
+  beside *Scan a card* opens it. **Free:** *Off to an event?*, what it does,
+  an example summary drawn by the real summary's rows and labelled as one, and
+  *Comes with RecallOS Plus* — never a Start that cannot start. **Plus:** name
+  it once, *Start the event*; home shows *At {event} · n cards* with an ochre
+  rail and the button's ring turns ochre. Every card scanned while it runs is
+  written with an encounter — the event, today, `EncounterOrigin.event` — in
+  the same transaction as the card row, so a card that survives a crash
+  survives with where it was met. The scan's review shows *Met at {event},
+  today* with **Not met there** (the override); the card's *Where you met*
+  says *Marked by Event Mode* until the user edits it, and links to
+  *Everyone met there*. **End the event** (with Undo) turns the screen into
+  the summary: "You met 6 people here. 2 still need a next step.", those two
+  first with *Add a next step* on each (the card's own sheet, free limit and
+  all), then the planned ones with their next step and due day. Earlier
+  events stay listed, open on their own summary, and can be removed (the
+  cards keep where they were met). Belonging follows what the card says now:
+  same place (any case), a day inside the event — change the place and the
+  card leaves; type it in by hand and it joins. No schema change: the events
+  are one JSON list in `settings`, so backup carries them.
+  `lib/features/events/`. **Found by the new tests before the phone:**
+  writing the encounter inside `createPending` put a second closure in the
+  scope of its `Isolate.run`, Dart shares one context per scope, and the
+  isolate message then carried the open database — every scan would have
+  failed with "object is unsendable". `back_capture_test` missed it because
+  its database was not yet open on the first call; the new test calls twice.
+  The rows are written in their own method now, with a comment saying why.
+  **Found on the phone and fixed:** the free button's label ran off the pill
+  ("…RecallOS P…"); the running event's two half-width buttons are stacked;
+  an "ended" snackbar outlived the event it offered to undo. **Same class,
+  app-wide:** section labels are wide-tracked caps and overflowed a 320dp
+  phone at 1.3× text ("Other text on the card" on the scan review);
+  `SectionHeader` now lays out its count first and wraps the label, pinned at
+  1.3× and 2× in `test/core/section_header_test.dart`. Walked with a
+  Plus-preview evaluation build (`RECALLOS_PLUS_PREVIEW`, compiled in only
+  under `kEvaluationTools`, pinned off for Play) because Play cannot sell
+  Plus yet; a normal build was put back afterwards. Light and dark checked.
+  Not walked: a real scan during an event (needs a physical card) — the
+  capture path is covered by `event_mode_test.dart` against the real
+  repository and files. 732 tests pass (19 new).
 - [ ] **A6. People search, grounded** (M) — interactions logged and fed into
   ranking; Ask for people: lookup ("Rahim's number") and need-shaped search,
   every answer citing its card. A3's hellos are the first interactions it has
@@ -585,7 +677,7 @@ instant), with the build we have then.
 | 10 – 16 Oct | A7 Offline Plus · A8 gates | update to testers; licence-test purchases |
 | ~17 Oct | — | 14 days done → **apply for production** |
 | **20 Oct** | **First release on Play: Release A core** (A1–A4, A7, A8) | public |
-| 20 – 26 Oct | A5 Event Mode · A6 people search · B1 schema v11 (rehearsed on a copy; backup first) | update |
+| 20 – 26 Oct | A5 Event Mode ✅ (built early, 4 Oct) · A6 people search · B1 schema v11 (rehearsed on a copy; backup first) | update |
 | 27 Oct – 2 Nov | B2 receipts + warranties · B3 linking + expiry · B4 spending totals | update; receipt / warranty labels; retrieval query set |
 | 3 – 7 Nov | B5 Ask RecallOS · evaluation runs (OCR, retrieval) · short usability study | update |
 | 8 – 9 Nov | freeze — fixes only; golden journeys on the phone | report and demo rehearsal |

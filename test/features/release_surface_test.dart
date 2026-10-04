@@ -89,6 +89,22 @@ void main() {
         contains('const bool kEvaluationTools = kDebugMode || kBenchBuild;'),
       );
     });
+
+    test('the Plus preview exists only inside an evaluation build', () {
+      // It treats Plus as bought, to walk paid features on a phone before
+      // Play can sell them. In a Play bundle it must be false whatever is
+      // defined — so it has to be conditional on kEvaluationTools, and read
+      // its define with no default.
+      final String flags = source('lib/core/build_flags.dart');
+      expect(
+        flags.replaceAll(RegExp(r'\s+'), ' '),
+        contains(
+          'const bool kPlusPreview = kEvaluationTools && '
+          "bool.fromEnvironment('RECALLOS_PLUS_PREVIEW');",
+        ),
+        reason: 'a Plus preview outside kEvaluationTools gives Plus away',
+      );
+    });
   });
 
   group('the manifest asks for nothing the app does not use', () {

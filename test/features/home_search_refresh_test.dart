@@ -12,6 +12,7 @@ import 'package:recallos/core/intelligence/embedding/static_embedder.dart';
 import 'package:recallos/core/intelligence/embedding/wordpiece.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
+import 'package:recallos/features/events/data/wallet_events.dart';
 import 'package:recallos/features/followup/data/follow_up_repository.dart';
 import 'package:recallos/features/search/data/search_repository.dart';
 import 'package:recallos/features/search/presentation/home_screen.dart';
@@ -197,6 +198,34 @@ void main() {
 
     expect(find.text('printing and banners'), findsOneWidget);
     expect(find.text('printing guy from fest'), findsNothing);
+    await unmount(tester);
+  });
+
+  testWidgets('a running event shows on home with its count, and goes when it '
+      'ends', (WidgetTester tester) async {
+    final int id = await seed('Green Leaf Printing', 'printing');
+    final EventStore events = EventStore(db);
+    await pumpHome(tester);
+    expect(find.textContaining('At CSE fest'), findsNothing);
+    expect(find.bySemanticsLabel('Event Mode'), findsOneWidget,
+        reason: 'the way in, beside Scan a card, when nothing runs');
+
+    await events.start('CSE fest at NSU');
+    await db.into(db.encounters).insert(
+          EncountersCompanion.insert(
+            cardId: id,
+            place: const Value<String?>('CSE fest at NSU'),
+            metOn: Value<DateTime?>(dayOf(DateTime.now())),
+            origin: const Value<EncounterOrigin>(EncounterOrigin.event),
+          ),
+        );
+    await settleRefresh(tester);
+    expect(find.text('At CSE fest at NSU · 1 card'), findsOneWidget);
+    expect(find.bySemanticsLabel('Event Mode, running'), findsOneWidget);
+
+    await events.end();
+    await settleRefresh(tester);
+    expect(find.textContaining('At CSE fest'), findsNothing);
     await unmount(tester);
   });
 }

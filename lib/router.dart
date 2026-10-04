@@ -12,6 +12,7 @@ import 'features/contacts/presentation/contacts_screen.dart';
 import 'features/contacts/presentation/duplicates_screen.dart';
 import 'features/contacts/presentation/organization_screen.dart';
 import 'features/contacts/presentation/person_screen.dart';
+import 'features/events/presentation/event_screen.dart';
 import 'features/followup/presentation/today_screen.dart';
 import 'features/plus/presentation/plus_screen.dart';
 import 'features/profile/presentation/my_card_qr_screen.dart';
@@ -43,6 +44,12 @@ abstract final class Routes {
 
   /// RecallOS Plus: what it adds, and the one-time purchase.
   static const String plus = '/plus';
+
+  /// Event Mode: the running event, or the way to start one.
+  static const String event = '/event';
+
+  /// One event's summary — everyone met there, and what is next.
+  static String eventOf(int id) => '/event/$id';
 
   /// Phase 0 scaffolding. Delete once the OCR gate has been answered.
   static const String spike = '/spike';
@@ -126,6 +133,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: Routes.myCardQr, builder: (_, _) => const MyCardQrScreen()),
       GoRoute(path: Routes.plus, builder: (_, _) => const PlusScreen()),
+      GoRoute(path: Routes.event, builder: (_, _) => const EventScreen()),
+      GoRoute(
+        path: '/event/:id',
+        builder: (_, GoRouterState state) => EventScreen(
+          eventId: int.tryParse(state.pathParameters['id'] ?? ''),
+        ),
+      ),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
       GoRoute(path: Routes.today, builder: (_, _) => const TodayScreen()),
       GoRoute(

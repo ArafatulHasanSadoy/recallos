@@ -35,3 +35,18 @@ const String kBuildCommit = String.fromEnvironment(
   'RECALLOS_COMMIT',
   defaultValue: 'local',
 );
+
+/// Treats RecallOS Plus as bought, to walk paid features on a phone before
+/// Play can sell them — Play's licence testing needs the app on a track and
+/// the product created, and a feature should be walked before either:
+///
+/// ```bash
+/// flutter build apk --release --dart-define=RECALLOS_BENCH=true \
+///   --dart-define=RECALLOS_PLUS_PREVIEW=true
+/// ```
+///
+/// Only inside an evaluation build, which is never uploaded: in a Play bundle
+/// `kEvaluationTools` is false, so this is false whatever is defined.
+/// `test/features/release_surface_test.dart` pins that.
+const bool kPlusPreview =
+    kEvaluationTools && bool.fromEnvironment('RECALLOS_PLUS_PREVIEW');

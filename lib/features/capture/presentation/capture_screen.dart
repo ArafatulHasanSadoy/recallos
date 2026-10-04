@@ -21,6 +21,8 @@ import '../../cards/presentation/widgets/card_sides_view.dart';
 import '../../cards/presentation/widgets/editable_field_list.dart';
 import '../../cards/presentation/widgets/note_sheet.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../events/data/wallet_events.dart';
+import '../../events/presentation/event_widgets.dart';
 import '../../search/data/search_repository.dart';
 import '../data/card_repository.dart';
 
@@ -72,6 +74,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
   Future<void> _capture() async {
     final CardRepository repo = ref.read(cardRepositoryProvider);
+    final EventStore events = ref.read(eventStoreProvider);
 
     // Retaking replaces the previous attempt rather than accumulating rows.
     final int? previous = _cardId;
@@ -127,7 +130,14 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
     try {
       // Save first, out of the scanner's cache and into our own storage. From
       // here on the card survives whatever happens next.
-      final ({int id, File image}) pending = await repo.createPending(scanned);
+      // In Event Mode the card is marked as met at the event as it is saved.
+      // Asked now, not when the scanner opened: the event may have ended in
+      // between, on another screen.
+      final WalletEvent? event = await events.active();
+      final ({int id, File image}) pending = await repo.createPending(
+        scanned,
+        metAt: event?.name,
+      );
       if (!mounted) return;
       setState(() => _cardId = pending.id);
 
@@ -647,6 +657,7 @@ class _ReviewBody extends ConsumerWidget {
             return ListView(
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
               children: <Widget>[
+                EventMark(cardId: cardId),
                 SectionHeader(
                   detail.fields.isEmpty
                       ? 'Nothing read yet'

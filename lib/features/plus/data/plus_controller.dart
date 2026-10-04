@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/build_flags.dart';
+
 import 'play_key.dart';
 import 'purchase_check.dart';
 import 'store_port.dart';
@@ -119,6 +121,11 @@ class PlusController extends Notifier<PlusState> {
   bool get _canSell => parsePlayKey(_key) != null;
 
   Future<void> _readKept() async {
+    if (kPlusPreview) {
+      // An evaluation build walking paid features; never a Play build.
+      state = state._with(phase: PlusPhase.owned);
+      return;
+    }
     PlusGrant? kept;
     try {
       kept = await _grants.read();
@@ -154,6 +161,12 @@ class PlusController extends Notifier<PlusState> {
 
   /// Asks Play what the account owns, and makes Plus match.
   Future<RestoreOutcome> refresh() async {
+    if (kPlusPreview) {
+      // An evaluation build walking paid features: Play, which really does
+      // hold no Plus for this account, is not asked.
+      state = state._with(phase: PlusPhase.owned);
+      return RestoreOutcome.owned;
+    }
     final OwnedPurchases owned;
     try {
       owned = await _store.owned();

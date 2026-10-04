@@ -6,6 +6,8 @@
 /// reinventing a slightly different pill.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -398,9 +400,27 @@ class SectionHeader extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          MicroLabel(label),
-          const SizedBox(width: Gap.sm + 2),
-          Expanded(child: Container(height: 1, color: c.hairline)),
+          // The count takes its width first; the label and the rule share
+          // what is left. Wide-tracked caps run long, and at 1.3× text "Other
+          // text on the card" with its count ran off a narrow phone. Now the
+          // label wraps before it pushes the count out, and the rule always
+          // keeps a stub to lead the eye across.
+          Expanded(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) => Row(
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: math.max(0, box.maxWidth - _minRule),
+                    ),
+                    child: MicroLabel(label),
+                  ),
+                  const SizedBox(width: Gap.sm + 2),
+                  Expanded(child: Container(height: 1, color: c.hairline)),
+                ],
+              ),
+            ),
+          ),
           if (n != null) ...<Widget>[
             const SizedBox(width: Gap.sm + 2),
             Text(
@@ -417,6 +437,9 @@ class SectionHeader extends StatelessWidget {
       ),
     );
   }
+
+  /// The gap after the label and the shortest rule worth drawing.
+  static const double _minRule = Gap.sm + 2 + Gap.lg;
 }
 
 /// The header every screen below home shares: a way back, a caps title, and

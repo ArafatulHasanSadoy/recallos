@@ -376,6 +376,12 @@ in. That APK is for measurement only. The bundle uploaded to Play is always
 built **without** the define; CI and `release_surface_test.dart` check that it
 defaults to off.
 
+The same evaluation build can add `--dart-define=RECALLOS_PLUS_PREVIEW=true`,
+which treats RecallOS Plus as bought — for walking a paid feature (Event Mode)
+on the phone before Play can sell it. It is `kEvaluationTools && …`, so in a
+Play bundle it is false whatever is defined; `release_surface_test.dart` pins
+that. Put a normal build back on the phone afterwards.
+
 ### Dates to keep in view
 
 | Date | What |

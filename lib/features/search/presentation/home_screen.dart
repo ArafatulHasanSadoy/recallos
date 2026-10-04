@@ -17,6 +17,7 @@ import '../../capture/data/card_repository.dart';
 import '../../cards/data/retention_sweep.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../events/data/wallet_events.dart';
 import '../../followup/data/follow_up_repository.dart';
 import '../../followup/data/reminder_engine.dart';
 import '../../settings/data/backup_service.dart';
@@ -283,6 +284,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       // answering a question, and a queue of unrelated repairs
                       // is an interruption rather than a prompt.
                       if (!searchingNow) const _AttentionRow(),
+                      if (!searchingNow) const _EventRow(),
                       if (!searchingNow) const _TodayRow(),
                     ],
                   ),
@@ -337,11 +339,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 left: Gap.lg,
                 right: Gap.lg,
                 bottom: 34,
-                child: InkPill(
-                  label: 'Scan a card',
-                  icon: Icons.document_scanner_outlined,
-                  height: 58,
-                  onTap: () => context.push(Routes.capture),
+                child: Row(
+                  children: <Widget>[
+                    const _EventButton(),
+                    const SizedBox(width: Gap.sm + 2),
+                    Expanded(
+                      child: InkPill(
+                        label: 'Scan a card',
+                        icon: Icons.document_scanner_outlined,
+                        height: 58,
+                        onTap: () => context.push(Routes.capture),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
@@ -957,6 +967,99 @@ class _AttentionRow extends ConsumerWidget {
                 ),
               ),
               Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Event Mode's way in, beside the scan button — where somebody standing at
+/// an event is about to tap anyway.
+///
+/// Filled with the page, not hollow: it sits over the bottom of the card
+/// stack, and an outline alone would show the cards through it. While an
+/// event runs, its ring turns ochre — a marker, rule 2.
+class _EventButton extends ConsumerWidget {
+  const _EventButton();
+
+  static const double _size = 58;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final bool running = ref.watch(activeEventProvider) != null;
+
+    return PressFade(
+      onTap: () => context.push(Routes.event),
+      scale: 0.92,
+      semanticLabel: running ? 'Event Mode, running' : 'Event Mode',
+      child: Container(
+        width: _size,
+        height: _size,
+        decoration: BoxDecoration(
+          color: c.page,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: running ? c.ochre : c.hairline,
+            width: running ? 2 : 1.5,
+          ),
+        ),
+        child: Icon(
+          Icons.festival_outlined,
+          size: 22,
+          color: running ? c.ochreInk : c.ink,
+        ),
+      ),
+    );
+  }
+}
+
+/// The running event, while it runs: its name and how many cards so far.
+///
+/// Says nothing when no event is running, like the rows around it.
+class _EventRow extends ConsumerWidget {
+  const _EventRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final WalletEvent? event = ref.watch(activeEventProvider);
+    if (event == null) return const SizedBox.shrink();
+    final int met = ref.watch(eventCardsProvider(event)).value?.length ?? 0;
+    final String text =
+        'At ${event.name} · ${met == 1 ? '1 card' : '$met cards'}';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.md),
+      child: PressFade(
+        onTap: () => context.push(Routes.event),
+        semanticLabel: '$text. Open Event Mode',
+        child: Container(
+          height: kMinTarget,
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: AppRadius.pocketR,
+            border: Border.all(color: c.hairlineOnCard),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: <Widget>[
+              Container(width: 4, color: c.ochre),
+              const SizedBox(width: Gap.md - 4),
+              Icon(Icons.festival_outlined, size: 18, color: c.ochreInk),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
+              const SizedBox(width: Gap.md - 4),
             ],
           ),
         ),

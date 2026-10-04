@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../router.dart';
+import '../../events/data/wallet_events.dart';
 import '../../plus/data/plus_controller.dart';
 import '../data/follow_up_actions.dart';
 import '../data/follow_up_answers.dart';
@@ -34,6 +35,55 @@ void showNotificationsOffNotice(BuildContext context, NotificationPort port) {
   );
 }
 
+/// Whether the free reminders are all in use. A step that already holds one
+/// keeps it, so it is never counted against itself.
+Future<bool> _remindersFull(
+  WidgetRef ref,
+  DateTime Function() now, {
+  NextStep? editing,
+}) async {
+  // Both resolved before the first await (CLAUDE.md: no ref across one).
+  final PlusController plus = ref.read(plusProvider.notifier);
+  final FollowUpRepository repo = ref.read(followUpRepositoryProvider);
+  final DateTime? held = editing?.reminder?.remindAt;
+  if (held != null && held.isAfter(now())) return false;
+  if (await plus.isOwned()) return false;
+  return await repo.activeReminderCount() >= kFreeReminders;
+}
+
+/// Opens RecallOS Plus, from a sheet that has closed by then.
+VoidCallback? _seePlus(BuildContext context) {
+  final GoRouter? router = GoRouter.maybeOf(context);
+  return router == null ? null : () => unawaited(router.push(Routes.plus));
+}
+
+/// Asks for a next step on [cardId] and saves it — the free limit, the
+/// notification permission and all — wherever the asking starts: the card
+/// itself, or an event's list of everyone met.
+Future<void> addNextStep(
+  BuildContext context,
+  WidgetRef ref,
+  int cardId, {
+  DateTime Function() now = DateTime.now,
+}) async {
+  // Resolved before the sheet: the screen may be gone when it closes.
+  final FollowUpActions actions = ref.read(followUpActionsProvider);
+  final NotificationPort port = ref.read(notificationPortProvider);
+  final VoidCallback? seePlus = _seePlus(context);
+  final bool full = await _remindersFull(ref, now);
+  if (!context.mounted) return;
+  final StepAnswer? a = await showNextStepSheet(
+    context,
+    now: now,
+    remindersFull: full,
+    onSeePlus: seePlus,
+  );
+  if (a == null) return;
+  final bool shown = await actions.addStep(cardId, a);
+  ref.invalidate(notificationsEnabledProvider);
+  if (!shown && context.mounted) showNotificationsOffNotice(context, port);
+}
+
 /// What happens next with this card: the open steps, each with its day and
 /// reminder, and the way to add one.
 ///
@@ -50,48 +100,14 @@ class NextStepsBlock extends ConsumerWidget {
   final int cardId;
   final DateTime Function() now;
 
-  /// Whether the free reminders are all in use. A step that already holds
-  /// one keeps it, so it is never counted against itself.
-  Future<bool> _remindersFull(WidgetRef ref, {NextStep? editing}) async {
-    // Both resolved before the first await (CLAUDE.md: no ref across one).
-    final PlusController plus = ref.read(plusProvider.notifier);
-    final FollowUpRepository repo = ref.read(followUpRepositoryProvider);
-    final DateTime? held = editing?.reminder?.remindAt;
-    if (held != null && held.isAfter(now())) return false;
-    if (await plus.isOwned()) return false;
-    return await repo.activeReminderCount() >= kFreeReminders;
-  }
-
-  /// Opens RecallOS Plus, from a sheet that has closed by then.
-  VoidCallback? _seePlus(BuildContext context) {
-    final GoRouter? router = GoRouter.maybeOf(context);
-    return router == null ? null : () => unawaited(router.push(Routes.plus));
-  }
-
-  Future<void> _add(BuildContext context, WidgetRef ref) async {
-    // Resolved before the sheet: the screen may be gone when it closes.
-    final FollowUpActions actions = ref.read(followUpActionsProvider);
-    final NotificationPort port = ref.read(notificationPortProvider);
-    final VoidCallback? seePlus = _seePlus(context);
-    final bool full = await _remindersFull(ref);
-    if (!context.mounted) return;
-    final StepAnswer? a = await showNextStepSheet(
-      context,
-      now: now,
-      remindersFull: full,
-      onSeePlus: seePlus,
-    );
-    if (a == null) return;
-    final bool shown = await actions.addStep(cardId, a);
-    ref.invalidate(notificationsEnabledProvider);
-    if (!shown && context.mounted) showNotificationsOffNotice(context, port);
-  }
+  Future<void> _add(BuildContext context, WidgetRef ref) =>
+      addNextStep(context, ref, cardId, now: now);
 
   Future<void> _edit(BuildContext context, WidgetRef ref, NextStep s) async {
     final FollowUpActions actions = ref.read(followUpActionsProvider);
     final NotificationPort port = ref.read(notificationPortProvider);
     final VoidCallback? seePlus = _seePlus(context);
-    final bool full = await _remindersFull(ref, editing: s);
+    final bool full = await _remindersFull(ref, now, editing: s);
     if (!context.mounted) return;
     final StepAnswer? a = await showNextStepSheet(
       context,
@@ -390,6 +406,14 @@ class MetBlock extends ConsumerWidget {
     final String? place = e?.place;
     final DateTime? metOn = e?.metOn;
     final String? day = metOn == null ? null : weekdayDayMonth(metOn, now());
+    // Provenance, as for every fact: a place Event Mode wrote says so until
+    // the user has made it their own by editing it.
+    final bool byEventMode = e?.origin == EncounterOrigin.event;
+    final WalletEvent? event = eventMetAt(
+      ref.watch(walletEventsProvider).value ?? const <WalletEvent>[],
+      e,
+      now(),
+    );
 
     return PressFade(
       onTap: () => unawaited(_edit(context, ref, e)),
@@ -431,6 +455,18 @@ class MetBlock extends ConsumerWidget {
                   style: place == null
                       ? AppText.rowTitle(c)
                       : AppText.body(c).copyWith(color: c.inkMuted),
+                ),
+              if (byEventMode) ...<Widget>[
+                const SizedBox(height: Gap.xs),
+                Text('Marked by Event Mode', style: AppText.small(c)),
+              ],
+              if (event != null)
+                TextAction(
+                  label: 'Everyone met there',
+                  icon: Icons.festival_outlined,
+                  onTap: () => unawaited(
+                    GoRouter.of(context).push(Routes.eventOf(event.id)),
+                  ),
                 ),
             ],
           ],
