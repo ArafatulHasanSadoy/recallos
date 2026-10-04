@@ -74,6 +74,9 @@ dependencies:
   file_selector: ^1.1.0
   flutter_local_notifications: ^22.3.1
   timezone: ^0.11.1
+  qr_flutter: ^4.1.0
+  in_app_purchase: ^3.3.1
+  in_app_purchase_android: ^0.5.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -92,6 +95,7 @@ dev_dependencies:
   # platform interface directly. Test-only.
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
+  zxing2: ^0.2.4
 # Ship SQLCipher instead of plain SQLite.
 #
 # `package:sqlite3` bundles one of three builds; this picks the one that can

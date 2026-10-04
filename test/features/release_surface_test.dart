@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:recallos/features/plus/data/play_key.dart';
+import 'package:recallos/features/plus/data/purchase_check.dart';
 
 /// What the shipped build is allowed to contain.
 ///
@@ -24,27 +26,38 @@ void main() {
   String source(String path) => File(path).readAsStringSync();
 
   group('the developer spike screen never ships', () {
-    test('the /spike route is registered only when evaluation tools are on', () {
-      final String router = source('lib/router.dart');
+    test(
+      'the /spike route is registered only when evaluation tools are on',
+      () {
+        final String router = source('lib/router.dart');
 
-      expect(
-        router,
-        contains(
-          RegExp(r'if \(kEvaluationTools\)\s*\n?\s*GoRoute\(path: Routes\.spike'),
-        ),
-        reason: 'the spike route must be behind kEvaluationTools — it reads '
-            "the user's gallery and writes raw OCR to a file",
-      );
-    });
+        expect(
+          router,
+          contains(
+            RegExp(
+              r'if \(kEvaluationTools\)\s*\n?\s*GoRoute\(path: Routes\.spike',
+            ),
+          ),
+          reason:
+              'the spike route must be behind kEvaluationTools — it reads '
+              "the user's gallery and writes raw OCR to a file",
+        );
+      },
+    );
 
     test('the Development settings group is offered only with the tools', () {
-      final String settings =
-          source('lib/features/settings/presentation/settings_screen.dart');
+      final String settings = source(
+        'lib/features/settings/presentation/settings_screen.dart',
+      );
 
       final int guard = settings.indexOf('if (kEvaluationTools) ...<Widget>[');
       final int group = settings.indexOf("label: 'Development'");
 
-      expect(guard, isNonNegative, reason: 'the kEvaluationTools guard is gone');
+      expect(
+        guard,
+        isNonNegative,
+        reason: 'the kEvaluationTools guard is gone',
+      );
       expect(group, isNonNegative, reason: 'the Development group is gone');
       expect(
         guard,
@@ -64,8 +77,11 @@ void main() {
 
       expect(
         flags,
-        contains("const bool kBenchBuild = bool.fromEnvironment('RECALLOS_BENCH');"),
-        reason: 'kBenchBuild must read RECALLOS_BENCH with no default — a '
+        contains(
+          "const bool kBenchBuild = bool.fromEnvironment('RECALLOS_BENCH');",
+        ),
+        reason:
+            'kBenchBuild must read RECALLOS_BENCH with no default — a '
             'defaultValue: true would put the spike in every Play build',
       );
       expect(
@@ -149,6 +165,26 @@ void main() {
       expect(gradle, contains('"signReleaseBundle"'));
       expect(gradle, contains('"packageRelease"'));
       expect(gradle, contains('if (refuseReleaseSigning)'));
+    });
+  });
+
+  group('RecallOS Plus', () {
+    test('the licence key, once pasted, really is an RSA public key', () {
+      // Empty until the app exists in Play Console, and then Plus is simply
+      // not offered. A key pasted with a character missing would be worse:
+      // the button would show, Play would take the money, and no receipt
+      // would ever check out.
+      expect(
+        kPlayLicenseKey.isEmpty || parsePlayKey(kPlayLicenseKey) != null,
+        isTrue,
+        reason: 'lib/features/plus/data/play_key.dart',
+      );
+    });
+
+    test('the billing permission is on the CI allowlist, with no INTERNET', () {
+      final String allowlist = source('tool/ci/check_permissions.sh');
+      expect(allowlist, contains('com.android.vending.BILLING'));
+      expect(allowlist, isNot(contains('android.permission.INTERNET ')));
     });
   });
 

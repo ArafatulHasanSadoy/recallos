@@ -21,6 +21,7 @@ allowed=(
   android.permission.POST_NOTIFICATIONS     # next-step reminders; asked at the first one
   android.permission.RECEIVE_BOOT_COMPLETED # reminders survive a restart or update
   android.permission.VIBRATE                # flutter_local_notifications, for the alert
+  com.android.vending.BILLING               # RecallOS Plus, bought through the Play Store app
   com.recallos.recallos.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION # AndroidX, app-private
 )
 
