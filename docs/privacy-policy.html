@@ -43,7 +43,7 @@
 <main>
 
 <h1>RecallOS — Privacy Policy</h1>
-<p class="meta">Last updated 30 September 2026</p>
+<p class="meta">Last updated 3 October 2026</p>
 
 <p>RecallOS is a business-card wallet that runs entirely on your phone. You
 photograph a card, the app reads it, and you find the person later by what you
@@ -71,6 +71,10 @@ itself enforces.</p>
       websites and postal addresses read from those cards or corrected by you.</li>
   <li>The raw text the on-device reader extracted from each card.</li>
   <li>Notes you write about why a card mattered.</li>
+  <li>Next steps and reminders you set, and where and when you met someone,
+      if you say.</li>
+  <li>When you wrote someone a hello, and whether it was for WhatsApp, a text
+      message or email — not the message itself.</li>
   <li>Your own card, if you make one: the name, contact details and one-line
       description you type in, and a photo of you if you choose one. The photo
       comes from Android's picker, which hands RecallOS only the single picture
@@ -131,6 +135,19 @@ is involved in it.</p>
   <li><strong>Sharing a contact, or your own card</strong> — RecallOS writes a
       <code>.vcf</code> contact file and hands it to Android's share sheet or
       your contacts app. You choose the destination.</li>
+  <li><strong>Showing your card as a QR code</strong> — the code is drawn on
+      your screen and carries only the lines you left switched on. Whoever
+      scans it gets those lines; nothing goes through a server.</li>
+  <li><strong>Buying RecallOS Plus</strong> — the payment is made to Google
+      Play, through the Play Store app; RecallOS never sees your card or
+      payment details. Play gives the app a receipt signed by Google, which
+      RecallOS checks and keeps in the phone's secure key store so Plus works
+      without a connection. The receipt is not in your backups or exports;
+      on a new phone, Play restores Plus for the same Google account.</li>
+  <li><strong>Saying hello</strong> — RecallOS writes a short message from
+      your card, shows it to you to change, and opens it in WhatsApp, your
+      messages app or your mail app. You send it from there, or don't;
+      RecallOS sends nothing.</li>
   <li><strong>Backing up your wallet</strong> — Settings → Back up the wallet
       builds one file containing your cards, notes, people and photographs,
       <strong>encrypted with a passphrase you choose</strong> (Argon2id and

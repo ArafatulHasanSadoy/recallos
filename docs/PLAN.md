@@ -26,6 +26,11 @@ this plan used to call v10 (typed facts, item assets, item links) is now
 **v11**. Schema numbers describe what happened, not the order they were once
 planned in.
 
+**2026-10-04 — what ships on 20 Oct.** Release A is split: **A1–A4, A7 and A8
+are the first release**; A5 and A6 follow as its first update around 26 Oct.
+The build order is now **A7 → A8 → (release) → A5 → A6**, A1–A4 being done.
+The billing spike's first half is answered: Play Billing adds no `INTERNET`.
+
 Pricing, revenue and competitor strategy are deliberately **not** here: this repo
 is public and `docs/` is served on GitHub Pages. They live in the gitignored
 `business/` folder.
@@ -40,12 +45,15 @@ is public and `docs/` is served on GitHub Pages. They live in the gitignored
   (2026-09-08), tagged `cse499b-start`.
 - 499B so far is seven commits on `main`, pushed 2026-09-29: My Card, F1–F4,
   and the phone-number label fix.
-- `flutter analyze`: clean. `flutter test`: **580 pass** (2026-09-29, after
-  F1–F4; 444 at the 499A baseline `b48d429`).
+- `flutter analyze`: clean. `flutter test`: **667 pass** (2026-10-04, after
+  A7's build; 641 after A1–A4; 580 after F1–F4; 444 at the 499A baseline
+  `b48d429`).
 - **Starting point:** everything after `cse499b-start` is 499B work
   (`git log cse499b-start..main`).
 - **CI** (`.github/workflows/ci.yml`) runs on every push to `main`; its first
-  run was the 2026-09-29 push.
+  run was the 2026-09-29 push. Pinned to `ubuntu-24.04` on 2026-10-04, because
+  `ubuntu-latest` moves to Ubuntu 26 from 19 Oct, the day before the first
+  release; checkout and setup-java moved to their Node 24 majors.
 
 ### What 499A built ✅
 
@@ -119,6 +127,15 @@ from OCR) — are correct for derived data and destructive for authored data.
   re-run when `cards`, `card_fields`, `notes` or `embeddings` change
   (`SearchRepository.watchChanges`). Three widget tests fail with the refresh
   off and pass with it on.
+- [x] ✅ **A finished step could not be found again** (found on the phone
+  2026-10-04, fixed the same day): two of Nusrat's demo steps vanished
+  overnight. Done and Remove only change a step's status, so nothing was
+  lost — but past the snackbar's few seconds there was no way to see that,
+  or undo it. Each card now has *Finished recently (n)* under its next steps:
+  what was done or removed in the last 30 days, when, and *Bring back*. It
+  answered the question at once: both were *Done Sun 4 Oct at 6:09 / 6:10
+  AM*, matching touches on the app in the phone's input log — taps on their
+  circles, not a fault. Both brought back. Two widget tests tap through it.
 - [x] ✅ **Release builds refuse the debug key** (2026-09-29): without
   `android/key.properties` the signing task fails and says why;
   `RECALLOS_ALLOW_DEBUG_SIGNING=true` opts in for builds that are never
@@ -238,9 +255,12 @@ generalisation). Sizes: S ≤ 1 day, M 2–4 days, L 1–2 weeks.
     review (6 fields, all "On the card") → note → search by the note →
     contacts → Recently deleted → Settings. 580 tests pass.
 
-### Release A — first sellable workflow (people)
+### Release A core — the first Play release, 20 Oct (people)
 
-Target: the **first Play release, 20 Oct 2026**, with a real one-time purchase.
+Target: the **first Play release, 20 Oct 2026**: A1–A4, A7 and A8, with a real
+one-time purchase. **Decided 2026-10-04:** Event Mode and people search (A5,
+A6) follow as the first update, around 26 Oct — billing, Play testing and a
+stable first release matter more than holding the launch for them.
 
 - [x] ✅ **A1. Context and next action** (M) — where and when you met (suggested,
   never fabricated); notes editable any time ✅ (done in F1); a next action with
@@ -257,12 +277,13 @@ Target: the **first Play release, 20 Oct 2026**, with a real one-time purchase.
   said as well as coloured) and *Where you met* (a place and a day; the scan
   day is a one-tap suggestion inside the sheet and is never stored unless
   saved). `lib/features/followup/`, schema v10.
-- [ ] **A2. Reminders and Today** (L) — obligations separate from their
+- [x] ✅ **A2. Reminders and Today** (L) — obligations separate from their
   notification attempts; inexact scheduling; `reconcile()` after reboot,
   update, restore and timezone change; notification permission asked when the
   first reminder is set; generic lock-screen text for sensitive items. Today:
   overdue, due today, upcoming, then review work.
-  **Built 2026-09-30, phone check pending.** `ReminderEngine.reconcile()` makes
+  **Built 2026-09-30; walked on the RMX3612, release build, 2026-10-03.**
+  `ReminderEngine.reconcile()` makes
   Android hold exactly the reminders the database says are due; it runs after
   every change, at launch and on every return to the app. Reminders are 9 AM
   on the due day (an hour out once that has passed), inexact, private on the
@@ -281,26 +302,125 @@ Target: the **first Play release, 20 Oct 2026**, with a real one-time purchase.
   reminders scheduled, because card deletes never called the engine; the app
   root now reconciles on any change to `cards`, `important_dates` or
   `reminders`, which covers all five delete/restore/purge paths. Verified:
-  delete → alarms gone, restore → back. Still to see: a reminder actually
-  arriving, and Done / Snooze from the notification.
-- [ ] **A3. Introduction handoff** (S) — "Say hello": a template from the
+  delete → alarms gone, restore → back. **A real reminder arrived** (set for
+  21:20, shown 21:21): the step as its title, the company under it, private on
+  the lock screen, *Done* and *Snooze 1 hour* under it. *Snooze 1 hour* took
+  it out of the shade, moved Android's alarm to 22:22 and the card's line to
+  "Reminder 10:22 PM today". **Found and fixed:** the sheet said "A
+  notification at 10:20 PM today" and Android was given 10:25 — the sheet
+  worked the time out when it was drawn and the save worked it out again a
+  minute later, across a five-minute mark. The sheet's time is now the one
+  saved, and editing a step keeps its reminder (a snoozed one included)
+  unless its day changes; on the phone, the snoozed step's edit sheet showed
+  10:22 and saving left the alarm at 22:22. 622 tests pass; both new widget
+  tests fail on the old behaviour. **Done from the notification** (22:30, app
+  in the background): the notification went, the app came forward, the home
+  row fell from "2 steps due today" to "1", and Android held only the next
+  day's 9 AM alarm. **A tap with the app closed** (`am stop-app`, which keeps
+  notifications and alarms, unlike force-stop) started RecallOS straight onto
+  Nusrat's card, through `getNotificationAppLaunchDetails`; the step stayed
+  open, as a tap only opens it. Not walked: a phone restart, which would mean
+  restarting the owner's phone — the boot receiver is in the bundle and the
+  restart path is the same reconcile the update path proved.
+- [x] ✅ **A3. Introduction handoff** (S) — "Say hello": a template from the
   user's own card, shown in full, edited, then handed to WhatsApp / SMS / mail.
-  Recorded as *opened*, never as *sent*.
-- [ ] **A4. My Card QR** (S) — `qr_flutter` over the existing `buildVCard`;
+  Recorded as *written*, never as *sent*.
+  **Built and walked on the RMX3612, release build, 2026-10-03.** *Say hello*
+  sits beside *Call* on a card that has a mobile number or an email, and
+  nowhere else (a landline-only card gets no button). The draft is a fixed
+  sentence with the facts slotted in — "Hi Nusrat, great meeting you at CSE
+  fest at NSU on Tuesday. This is Arafat from EnationX. Looking forward to
+  staying in touch." — and leaves out, never guesses, what is missing; the
+  private note is never used. "Md." and "Mohammad" are passed over in the
+  greeting and a name printed in capitals is not shouted back. Without a card
+  of your own the hello is unsigned and offers *Sign it — make your card*.
+  The record goes in `interactions` (`helloOpened`, the channel in `detail`),
+  its first real writer, for A6 to rank by. **On the phone:** the sheet in
+  dark mode; *Open as a text message* put up Android's "Open with" chooser
+  (Messages and WhatsApp both take SMS links), and Messages opened addressed
+  to 01812-445566 with the whole message intact. Nothing was sent; the text
+  was cleared. **Found and fixed on the phone:** the card first said "Hello
+  opened…", untrue for anyone who backs out of that chooser; it now says
+  "Hello written as a text message today", which is true either way.
+  WhatsApp and email were not opened on the phone, because the demo numbers
+  are made up; their links are pinned by tests. `lib/features/introduction/`.
+- [x] ✅ **A4. My Card QR** (S) — `qr_flutter` over the existing `buildVCard`;
   only the fields the user chose.
-- [ ] **A5. Compact Event Mode** (M) — one active event; captures inherit it;
-  the user can override; an end-of-event summary of people and next actions.
-- [ ] **A6. People search, grounded** (M) — interactions logged and fed into
-  ranking; Ask for people: lookup ("Rahim's number") and need-shaped search,
-  every answer citing its card.
-- [ ] **A7. Offline Plus — one-time purchase** (L) — Play Billing 8+,
+  **Built and walked on the RMX3612, release build, 2026-10-03.** *Your card
+  → Show as a QR code*: the same vCard *Send my card* shares, with a switch
+  per line (title, company, each number and email, website, address, the line
+  under the name); the address starts off, the name is always on, and the
+  choice is remembered (`settings` table). Drawn dark-on-light in both themes
+  — some camera apps do not read an inverted code — at M error correction,
+  with every square on whole device pixels. A card too long for one code says
+  so above the switches instead of drawing nothing. **On the phone:**
+  screenshots of the screen were read by macOS's own QR detector (the iPhone
+  camera's): exactly `FN:Arafat / ORG:EnationX / TITLE:Founder /
+  TEL:01711111111`; switching *Phone* off took the TEL line out of the code
+  and back on put it back; dark mode decoded the same. A Bangla card decodes
+  correctly with the same detector. zxing2 (the pure-Dart reader in the
+  tests) cannot read some codes its own encoder makes from Bangla bytes, so
+  the automated round trip uses Latin names. No new permissions.
+- [ ] **A7. RecallOS Plus — one-time purchase** (L) — Play Billing 8+,
   **verified on the phone** (see §5). Entitlements cached as a signed grant, so
   a bought feature works offline; restore on reinstall; pending / cancelled /
   refunded states; free-tier limits (5 active reminders is a hypothesis). The
   paywall lists only features that are ready, with Play's localised price.
-- [ ] **A8. Release A gates** — closed test running since ~3 Oct; production
+  **Billing spike, first half done 2026-10-04:** `in_app_purchase` 3.3.1 →
+  `in_app_purchase_android` 0.5.3 → Play Billing Library 8.0.0. Built into the
+  release bundle (in a throwaway worktree), it adds
+  `com.android.vending.BILLING` and a `<queries>` entry for the Play Store's
+  billing service — **no `INTERNET`**, and nothing else. Billing talks to the
+  Play Store app on the phone, which does the networking. When A7 lands,
+  `BILLING` goes on the CI allowlist with its reason. Second half, a
+  licence-test purchase, waits on the Play Console account, the app on a test
+  track, a merchant profile and a product.
+  **Decided 2026-10-04:** it is called **RecallOS Plus** (product ID
+  `recallos_plus`, permanent in Play Console); the purchase is on from the
+  first release; Plus at launch is **no limit on reminders**, the free version
+  keeping **5 waiting at a time**; buyers get Event Mode and people search in
+  the ~26 Oct update; scanning, search, notes, Say hello, the QR code,
+  backup, restore and the lock are always free.
+  **Built 2026-10-04** (`lib/features/plus/`): the receipt Play signs is
+  checked on the phone (SHA1withRSA against the app's licence key, and it
+  must be a paid purchase of `recallos_plus`) and kept in the Keystore — not
+  the database, so never in a backup or export — and re-checked every launch.
+  Play is asked again at launch, on every return to the app and on
+  *Restore*: that brings Plus back after a reinstall and takes it away after a
+  refund, while *not reaching* Play (offline) changes nothing. Pending
+  payments say so and turn Plus on when confirmed; cancelled says nothing was
+  charged; a receipt that does not check out is not acknowledged, so Play
+  refunds it. Without the licence key the app offers no purchase at all. At
+  the free limit the step sheet shows no Remind me switch but says why, with
+  *No limit with RecallOS Plus*; a step already holding a reminder keeps it.
+  Settings → You → *RecallOS Plus*. 665 tests pass (25 new, against real RSA
+  signatures made with openssl); `BILLING` is on the CI allowlist.
+  **Walked on the RMX3612, release build, 2026-10-04:** eight permissions,
+  `BILLING` new, still no `INTERNET`; Settings shows *RecallOS Plus · Free —
+  5 reminders at a time*; the Plus screen, with no licence key in this build,
+  offers no Buy button and says why, with *Try again*; with five reminders
+  waiting, the sixth step's sheet showed no switch, the limit sentence and
+  *No limit with RecallOS Plus*, which opened the Plus screen. The five test
+  steps were then removed and Android held no RecallOS alarms again.
+  **Still to do, needing Play Console** — the product, the licence key pasted
+  into `play_key.dart`, licence testers: a real test purchase, a refund and a
+  restore.
+- [ ] **A8. Release A gates** — **store listing ready 2026-10-04 and saved in Play Console** the same day (title *RecallOS: Business Card Wallet*; `store/`: text within Play's limits, six captioned 1080×1920 screenshots of real screens with demo cards, the 1024×500 feature graphic, the 512 icon — saved, not yet sent for review); **App content, 7 of 10 saved 2026-10-04:** privacy policy URL, no ads, content rating (IARC: utility, digital purchases — Everyone / PEGI 3 / USK 0 / 3+, Brazil 14+ for in-app purchases), no advertising ID, not a government app, no financial features, no health features; Data safety drafted as *collects and shares nothing* (Play Billing and user-started sharing are exempt), submittable once Target audience (18+) is in, which waits on Sign-in details — Plus is paid content, so the answer is *Yes — no account; Plus unlocked with a reviewer promo code for `recallos_plus`*, entered once the product exists after the first upload (a redeemed code turns Plus on when the app returns to the foreground); closed test running since ~3 Oct; production
   access applied for the day its 14 days are up (~17 Oct); Data safety and privacy policy match the build;
   golden journeys on the phone.
+
+### Release A, first update — ~26 Oct
+
+- [ ] **A5. Compact Event Mode** (M) — one active event; captures inherit it;
+  the user can override; an end-of-event summary of people and next actions.
+- [ ] **A6. People search, grounded** (M) — interactions logged and fed into
+  ranking; Ask for people: lookup ("Rahim's number") and need-shaped search,
+  every answer citing its card. A3's hellos are the first interactions it has
+  to rank by. **Seen on the phone 2026-10-04:** "AC repair" ranked TechFix
+  (note: *laptop repair*) above CoolAir (note: *AC servicing*) — one shared
+  word each, and "repair" won. The person who services ACs is the answer;
+  term specificity (an acronym like "AC" is rarer than "repair") or the
+  semantic arm should carry it.
 
 ### Release B — people plus purchases (core 499B)
 
@@ -355,7 +475,9 @@ be driven to zero; a working paid user matters more than always-online DRM.
 `INTERNET` permission. A one-day spike: add `in_app_purchase`, build the
 bundle, run `tool/ci/check_permissions.sh`, and complete a licence-test
 purchase from internal testing. If `INTERNET` does come in, this decision
-reopens.
+reopens. **Half proven, 2026-10-04:** Play Billing Library 8.0.0 adds only
+`com.android.vending.BILLING` and a `<queries>` entry — no `INTERNET` (A7).
+The licence-test purchase waits on Play Console.
 
 A server (a Supabase Edge Function that checks purchases with Google) arrives
 with Pro and cloud, when `INTERNET` returns anyway.
@@ -372,7 +494,7 @@ side:
 | Typed facts | `card_fields` — key, value, normalised value, `FactSource`, confidence, verified, region, side | add `valueType`, `amountMinor` (INTEGER) + `currency`, `dateValue` (a local date, not a timestamp), `status`; a controlled key vocabulary in code |
 | Many pages / PDFs | `imagePath`, `backImagePath`, `thumbPath` | new `item_assets`; front and back migrate into it |
 | Links between things | `duplicate_candidates` shows the reversible pattern | new `item_links` with a `reasons` JSON column |
-| Dates and reminders | built in **v10** (A1/A2, phone check pending): `encounters`, `important_dates` (obligations) and `reminders`, with `ReminderEngine` owning the platform side through `reconcile()` | warranty expiry, ticket and ID dates become more `DateKind` values, not new tables |
+| Dates and reminders | built in **v10** (A1/A2, walked on the phone 2026-10-03): `encounters`, `important_dates` (obligations) and `reminders`, with `ReminderEngine` owning the platform side through `reconcile()` | warranty expiry, ticket and ID dates become more `DateKind` values, not new tables |
 
 **Money is an integer in minor units plus a currency code** — paisa, cents —
 never a floating-point number. BDT and USD are never added together.
@@ -459,10 +581,10 @@ instant), with the build we have then.
 |---|---|---|
 | 29 Sep – 2 Oct | ✅ F1–F4 · store listing, screenshots, upload-key bundle | **Owner:** Play Console account and ID check, upload key, `applicationId`, 12+ testers (aim for 20), merchant profile |
 | **by ~3 Oct** | current build (F1–F4) | internal test → **closed test live**: Google's 14-day clock starts |
-| 3 – 9 Oct | A1 + A2 checked on the phone · A3 intro handoff · A4 My Card QR · billing no-INTERNET spike | update to testers; OCR labels from real cards |
+| 3 – 9 Oct | A1 ✅ + A2 ✅ checked on the phone · A3 ✅ intro handoff · A4 ✅ My Card QR · billing no-INTERNET spike ✅ (permissions; purchase waits on Play Console) · CI runner pinned ✅ | update to testers; OCR labels from real cards |
 | 10 – 16 Oct | A7 Offline Plus · A8 gates | update to testers; licence-test purchases |
 | ~17 Oct | — | 14 days done → **apply for production** |
-| **20 Oct** | **First release on Play: Release A** | public |
+| **20 Oct** | **First release on Play: Release A core** (A1–A4, A7, A8) | public |
 | 20 – 26 Oct | A5 Event Mode · A6 people search · B1 schema v11 (rehearsed on a copy; backup first) | update |
 | 27 Oct – 2 Nov | B2 receipts + warranties · B3 linking + expiry · B4 spending totals | update; receipt / warranty labels; retrieval query set |
 | 3 – 7 Nov | B5 Ask RecallOS · evaluation runs (OCR, retrieval) · short usability study | update |
@@ -482,11 +604,13 @@ instant), with the build we have then.
 
 - [x] ✅ Tagged `b48d429` as `cse499b-start` and committed the 499B work so far (2026-09-29, pushed at the owner's request). If a separate 499A submission exists, tag that commit too.
 - [ ] **A written agreement with the group partner** (and the university, if its rules need it) on ownership, revenue and maintenance **before anything is sold**.
-- [ ] **Now (by 2 Oct):** Play Console account — 2-Step Verification, ID check, $25. Identity verification can take days, and everything on Play waits for it.
-- [ ] Choose Personal or Organization — a Personal account that sells anything shows its full address publicly.
-- [ ] **By 2 Oct:** generate the upload key (`RELEASE.md` §1); back it up in two places off this laptop.
-- [ ] **By 2 Oct:** settle the permanent `applicationId` and the store title before the first upload — search Play and trademarks for "RecallOS" first.
-- [ ] **By 2 Oct:** merchant payments profile, so the purchase can be tested before 16 Oct.
+- [x] ✅ **Play Console account** — exists and verified (email and phone), checked 2026-10-04.
+- [x] ✅ **Personal account.** Once Plus is on sale, Google Play shows the account's address publicly.
+- [x] ✅ **Upload key made and wired** (2026-10-04): the key file outside the repository, `android/key.properties` written by the owner (gitignored, mode 600). The first signed bundle verified: signed by the upload key (CN=Arafat, O=RecallOS, SHA256withRSA 2048), the eight allowlisted permissions, no `INTERNET`. Still the owner's: back the key file and its passwords up in two places off this laptop.
+- [x] ✅ **App created in Play Console, 2026-10-04:** title *RecallOS*, package `com.recallos.recallos` — registered at creation under Android developer verification, so it is permanent now — English (US), App, **Free** (Plus is sold inside it), Play App Signing terms accepted, Google's automatic protection left on. **To check after the first upload:** download the APK Play delivers (App bundle explorer) and confirm it still carries no `INTERNET` — the protection adds code after upload, where our own check cannot see it; if it does, turn protection off.
+- [x] ✅ **Payments profile created** (2026-10-04). Still the owner's: the bank details for payouts when Google asks, and the **15% service-fee enrolment** (Play Console notification of 4 Oct) — without it Google takes 30%.
+- [x] ✅ **Licence key in the app** (2026-10-04, `lib/features/plus/data/play_key.dart`; a 2048-bit RSA key, checked by `release_surface_test.dart`). Plus is offered from this build on.
+- [ ] **For RecallOS Plus (A7):** create the one-time product `recallos_plus` and set its price; add licence testers (Settings → Licence testing) so test purchases are free.
 - [ ] **By 2 Oct:** about 20 closed testers lined up (Gmail addresses); at least 12 must opt in and stay for all 14 days.
 - [ ] Hand-label cards (by 16 Oct), receipts and warranties (by 2 Nov) for §6.
 - [x] ✅ Dates set (2026-09-29): first Play release 20 Oct, final submission 10 Nov.

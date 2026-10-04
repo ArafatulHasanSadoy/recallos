@@ -179,8 +179,10 @@ unzip -o -p /tmp/recallos.apks universal.apk > /tmp/recallos-universal.apk
 # Permissions, read from the bundle itself and compared with the allowlist.
 # Expect exactly: CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, the app's own
 # DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, and — since reminders (A2, 30 Sep)
-# — POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED and VIBRATE. No INTERNET, no
-# RECORD_AUDIO, no SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM.
+# — POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED and VIBRATE, and since RecallOS
+# Plus (A7, 4 Oct) com.android.vending.BILLING. No INTERNET, no RECORD_AUDIO,
+# no SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM. Play Billing talks to the Play
+# Store app on the phone, which does the networking; the app does none.
 # (The AICore BIND_SERVICE permission left with flutter_local_ai, 2026-09-28.)
 # CI runs the same script on every push.
 tool/ci/check_permissions.sh
@@ -272,10 +274,10 @@ Required before closed testing, not before internal.
 | Asset | Requirement | Where |
 |---|---|---|
 | Icon | 512×512, 32-bit PNG **with alpha**, ≤1024 KB | `assets/brand/png/appicon-512-play.png` — ready. (`appicon-512.png` is the App Store one and has *no* alpha, which Apple requires and Play rejects; they cannot be the same file) |
-| Feature graphic | 1024×500, JPEG or 24-bit PNG, no alpha | to make; `design/BRAND.md` has the material |
-| Phone screenshots | 2–8, each side 320–3840 px | `adb exec-out screencap -p > shot.png` on the RMX3612 (1080×2408). Crop to 1080×1920 for Play's 9:16 featuring eligibility |
-| Short description | ≤80 characters | to write |
-| Full description | ≤4000 characters | to write |
+| Feature graphic | 1024×500, JPEG or 24-bit PNG, no alpha | `store/feature-graphic.jpg` — ready (2026-10-04) |
+| Phone screenshots | 2–8, each side 320–3840 px | `store/screenshots/` — six, 1080×1920, real RMX3612 screens with demo cards and a caption each — ready (2026-10-04) |
+| Short description | ≤80 characters | `store/listing.md` — ready |
+| Full description | ≤4000 characters | `store/listing.md` — ready; every claim checked against the build |
 
 ---
 
@@ -312,8 +314,12 @@ Keystore, which is wiped with the app; a copied `.sqlite` comes back as
 so once a release build is installed the file cannot even be read.
 
 So before switching keys on a phone that holds real cards: open **Settings →
-Take a copy**, which writes one archive with the contacts, the notes, the
-provenance and the photographs, and share it somewhere off the phone. A debug
+Back up the wallet** (F3), keep the file somewhere off the phone, and after the
+reinstall use **Restore from a backup** — it brings back every card, photo,
+note and step. (*Take a copy* is a readable export only; it cannot be
+restored.) Builds made with `RECALLOS_ALLOW_DEBUG_SIGNING=true` stay
+debug-signed even once `key.properties` exists, so device checks never trip
+this by accident; the phone moves to the Play-signed app once, on purpose. A debug
 build still installs over a debug-signed release build, so this can be done
 after the fact only if the current install is debug-signed — pull the installed
 APK with `adb shell pm path com.recallos.recallos` and check it with
@@ -352,7 +358,7 @@ the row before the feature ships, not after a rejection.
 
 | When this lands | What Play requires |
 |---|---|
-| **Any purchase** (Lifetime, Pro) | Play Billing only — no link, button or web view to bKash or a web checkout; Bangladesh has no alternative-billing programme. Billing Library **8 or later** (Flutter: `in_app_purchase_android` 0.5.0+). The merchant profile above must exist first |
+| **Any purchase** (Lifetime, Pro) | Play Billing only — no link, button or web view to bKash or a web checkout; Bangladesh has no alternative-billing programme. Billing Library **8 or later** (Flutter: `in_app_purchase_android` 0.5.0+). The merchant profile above must exist first. **RecallOS Plus (A7):** create a one-time product with the ID `recallos_plus` — permanent, it can never be changed or reused — and paste the app's licence key (Monetize with Play → Monetization setup → Licensing) into `lib/features/plus/data/play_key.dart`. Until the key is there the app offers no purchase at all; `release_surface_test.dart` checks a pasted key parses. Add licence testers (Setup → License testing) so test purchases are never charged |
 | **A subscription** | The real price and billing period on the paywall — not only a monthly equivalent of an annual price; a trial's length and the price after it; a way to cancel; value that continues (a subscription for a one-time unlock is a violation) |
 | **Reminders** | Never declare `USE_EXACT_ALARM` — it is for alarm-clock and calendar apps. Schedule inexactly. Ask for `POST_NOTIFICATIONS` when the first reminder is set, not at launch |
 | **IDs** | Treat as sensitive: encrypted photos first, generic lock-screen text, `FLAG_SECURE` on their screens, redaction before sharing |
