@@ -39,9 +39,9 @@ class FollowUpActions {
       cardId: cardId,
       title: a.title,
       dueOn: a.dueOn,
-      remindAt: a.remind ? reminderTimeFor(a.dueOn, now()) : null,
+      remindAt: _when(a),
     );
-    return _settle(askedForReminder: a.remind);
+    return _settle(askedForReminder: a.remindAt != null);
   }
 
   /// Saves an edit, or drops the step when the sheet said remove.
@@ -54,9 +54,9 @@ class FollowUpActions {
       stepId,
       title: a.title,
       dueOn: a.dueOn,
-      remindAt: a.remind ? reminderTimeFor(a.dueOn, now()) : null,
+      remindAt: _when(a),
     );
-    return _settle(askedForReminder: a.remind);
+    return _settle(askedForReminder: a.remindAt != null);
   }
 
   Future<void> complete(int stepId) async {
@@ -72,6 +72,19 @@ class FollowUpActions {
   Future<void> snooze(int reminderId, Duration by) async {
     await repo.snooze(reminderId, by);
     await engine.reconcile();
+  }
+
+  /// The reminder time to save: the one the sheet showed, so the card never
+  /// says a different time from the sheet. Found on the phone: the sheet
+  /// worked its time out when it was drawn and this worked it out again on
+  /// save, so a save that crossed a five-minute mark promised 10:20 and
+  /// scheduled 10:25. Only a time that went by while the sheet stood open is
+  /// worked out afresh — a reminder in the past would never fire.
+  DateTime? _when(StepAnswer a) {
+    final DateTime? shown = a.remindAt;
+    if (shown == null) return null;
+    final DateTime t = now();
+    return shown.isAfter(t) ? shown : reminderTimeFor(a.dueOn, t);
   }
 
   Future<bool> _settle({required bool askedForReminder}) async {

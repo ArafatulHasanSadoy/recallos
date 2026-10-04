@@ -53,12 +53,12 @@ void main() {
     return id;
   }
 
-  test('a step with a reminder is scheduled at 9 AM on its day', () async {
+  test('a step is scheduled at the reminder time the sheet showed', () async {
     final int id = await card('Test Card Printing Ltd');
     final bool ok = await actions.addStep(id, (
       title: 'Send sponsorship proposal',
       dueOn: DateTime(2026, 10, 2),
-      remind: true,
+      remindAt: DateTime(2026, 10, 2, 9),
       remove: false,
     ));
 
@@ -76,7 +76,7 @@ void main() {
       await actions.addStep(id, (
         title: 'No reminder here',
         dueOn: DateTime(2026, 10, 2),
-        remind: false,
+        remindAt: null,
         remove: false,
       ));
       expect(port.asked, 0, reason: 'a step without a reminder asks nothing');
@@ -84,7 +84,7 @@ void main() {
       await actions.addStep(id, (
         title: 'Remind me',
         dueOn: DateTime(2026, 10, 3),
-        remind: true,
+        remindAt: DateTime(2026, 10, 3, 9),
         remove: false,
       ));
       expect(port.asked, 1);
@@ -92,7 +92,7 @@ void main() {
       await actions.addStep(id, (
         title: 'And me',
         dueOn: DateTime(2026, 10, 4),
-        remind: true,
+        remindAt: DateTime(2026, 10, 4, 9),
         remove: false,
       ));
       expect(port.asked, 1, reason: 'once granted, never asked again');
@@ -105,7 +105,7 @@ void main() {
     final bool ok = await actions.addStep(id, (
       title: 'Send CVs',
       dueOn: DateTime(2026, 10, 2),
-      remind: true,
+      remindAt: DateTime(2026, 10, 2, 9),
       remove: false,
     ));
     expect(ok, isFalse);
@@ -117,7 +117,7 @@ void main() {
     await actions.addStep(id, (
       title: 'Send CVs',
       dueOn: DateTime(2026, 10, 2),
-      remind: true,
+      remindAt: DateTime(2026, 10, 2, 9),
       remove: false,
     ));
     final int step = (await repo.watchOpenSteps(id).first).single.date.id;
@@ -136,7 +136,7 @@ void main() {
       await actions.addStep(id, (
         title: 'Send CVs',
         dueOn: DateTime(2026, 10, 2),
-        remind: true,
+        remindAt: DateTime(2026, 10, 2, 9),
         remove: false,
       ));
       final int step = (await repo.watchOpenSteps(id).first).single.date.id;
@@ -144,11 +144,27 @@ void main() {
       await actions.editStep(step, (
         title: 'Send CVs',
         dueOn: DateTime(2026, 10, 2),
-        remind: true,
+        remindAt: DateTime(2026, 10, 2, 9),
         remove: true,
       ));
       expect(port.held, isEmpty);
       expect(await repo.watchOpenSteps(id).first, isEmpty);
+    },
+  );
+
+  test(
+    'a reminder time that went by while the sheet stood open is renewed',
+    () async {
+      final int id = await card('Padma Soft Ltd');
+      // The sheet said 9 AM; it was saved at 10:30. A time in the past would
+      // never fire, so the usual "an hour from now" is used instead.
+      await actions.addStep(id, (
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 1),
+        remindAt: DateTime(2026, 10, 1, 9),
+        remove: false,
+      ));
+      expect(port.held.values.single.remindAt, DateTime(2026, 10, 1, 11, 30));
     },
   );
 
@@ -157,7 +173,7 @@ void main() {
     await actions.addStep(id, (
       title: 'Send CVs',
       dueOn: DateTime(2026, 10, 2),
-      remind: true,
+      remindAt: DateTime(2026, 10, 2, 9),
       remove: false,
     ));
     final int reminderId = port.held.keys.single;
@@ -183,7 +199,7 @@ void main() {
     await actions.addStep(id, (
       title: 'Return samples',
       dueOn: DateTime(2026, 10, 2),
-      remind: true,
+      remindAt: DateTime(2026, 10, 2, 9),
       remove: false,
     ));
     expect(port.held.keys, isNot(contains(999)));

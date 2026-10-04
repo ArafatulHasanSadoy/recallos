@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
+import '../../plus/data/plus_controller.dart' show kFreeReminders;
 import '../data/follow_up_answers.dart';
 import '../data/follow_up_repository.dart' show dayOf;
 
@@ -40,6 +41,9 @@ Future<StepAnswer?> showNextStepSheet(
   String title = '',
   DateTime? dueOn,
   bool remind = true,
+  DateTime? remindAt,
+  bool remindersFull = false,
+  VoidCallback? onSeePlus,
   bool editing = false,
   DateTime Function() now = DateTime.now,
 }) {
@@ -52,6 +56,9 @@ Future<StepAnswer?> showNextStepSheet(
       title: title,
       dueOn: dueOn,
       remind: remind,
+      remindAt: remindAt,
+      remindersFull: remindersFull,
+      onSeePlus: onSeePlus,
       editing: editing,
       now: now,
     ),
@@ -166,6 +173,9 @@ class NextStepSheet extends StatefulWidget {
     this.title = '',
     this.dueOn,
     this.remind = true,
+    this.remindAt,
+    this.remindersFull = false,
+    this.onSeePlus,
     this.editing = false,
     this.now = DateTime.now,
     super.key,
@@ -174,6 +184,17 @@ class NextStepSheet extends StatefulWidget {
   final String title;
   final DateTime? dueOn;
   final bool remind;
+
+  /// The step's current reminder, when editing one that has it.
+  final DateTime? remindAt;
+
+  /// The free version's reminders are all in use, and this step does not
+  /// already hold one. The switch is not offered — it could not work — and
+  /// the sheet says why, with the way out.
+  final bool remindersFull;
+
+  /// Opens RecallOS Plus. Null where there is no router to open it with.
+  final VoidCallback? onSeePlus;
   final bool editing;
   final DateTime Function() now;
 
@@ -185,10 +206,13 @@ class _NextStepSheetState extends State<NextStepSheet> {
   late final TextEditingController _title = TextEditingController(
     text: widget.title,
   );
+  // Every time on the sheet is worked out from this one moment, so what it
+  // shows cannot drift from what it saves while it stands open.
+  late final DateTime _opened = widget.now();
   late DateTime _due = dayOf(
-    widget.dueOn ?? widget.now().add(const Duration(days: 1)),
+    widget.dueOn ?? _opened.add(const Duration(days: 1)),
   );
-  late bool _remind = widget.remind;
+  late bool _remind = widget.remind && !widget.remindersFull;
   bool _emptyTitle = false;
 
   @override
@@ -197,8 +221,24 @@ class _NextStepSheetState extends State<NextStepSheet> {
     super.dispose();
   }
 
+  /// The reminder this sheet shows, and the one it saves. Editing keeps the
+  /// step's own reminder — a snoozed one included — while its day is
+  /// unchanged, so correcting the words does not move it; a new day gets that
+  /// day's usual time.
+  DateTime get _remindAt {
+    final DateTime? kept = widget.remindAt;
+    final DateTime? keptDay = widget.dueOn;
+    if (kept != null &&
+        keptDay != null &&
+        _due == dayOf(keptDay) &&
+        kept.isAfter(_opened)) {
+      return kept;
+    }
+    return reminderTimeFor(_due, _opened);
+  }
+
   Future<void> _pick() async {
-    final DateTime today = dayOf(widget.now());
+    final DateTime today = dayOf(_opened);
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _due.isBefore(today) ? today : _due,
@@ -217,7 +257,7 @@ class _NextStepSheetState extends State<NextStepSheet> {
     Navigator.of(context).pop<StepAnswer>((
       title: _title.text,
       dueOn: _due,
-      remind: _remind,
+      remindAt: _remind ? _remindAt : null,
       remove: false,
     ));
   }
@@ -225,7 +265,7 @@ class _NextStepSheetState extends State<NextStepSheet> {
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
-    final DateTime now = widget.now();
+    final DateTime now = _opened;
     final DateTime today = dayOf(now);
     final Map<String, DateTime> quick = <String, DateTime>{
       'Today': today,
@@ -234,7 +274,7 @@ class _NextStepSheetState extends State<NextStepSheet> {
       'Next week': today.add(const Duration(days: 7)),
     };
     final bool custom = !quick.containsValue(_due);
-    final DateTime remindAt = reminderTimeFor(_due, now);
+    final DateTime remindAt = _remindAt;
 
     return _SheetFrame(
       question: "What's the next step?",
@@ -282,35 +322,38 @@ class _NextStepSheetState extends State<NextStepSheet> {
           ],
         ),
         const SizedBox(height: Gap.md),
-        PressFade(
-          onTap: () => setState(() => _remind = !_remind),
-          semanticLabel: _remind
-              ? 'Remind me, on, ${reminderWords(remindAt, now)}'
-              : 'Remind me, off',
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('Remind me', style: AppText.rowTitle(c)),
-                    const SizedBox(height: 2),
-                    Text(
-                      _remind
-                          ? 'A notification at ${reminderWords(remindAt, now)}'
-                          : 'No notification; it still shows on Today',
-                      style: AppText.small(c),
-                    ),
-                  ],
+        if (widget.remindersFull)
+          _RemindersFull(onSeePlus: widget.onSeePlus)
+        else
+          PressFade(
+            onTap: () => setState(() => _remind = !_remind),
+            semanticLabel: _remind
+                ? 'Remind me, on, ${reminderWords(remindAt, now)}'
+                : 'Remind me, off',
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Remind me', style: AppText.rowTitle(c)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _remind
+                            ? 'A notification at ${reminderWords(remindAt, now)}'
+                            : 'No notification; it still shows on Today',
+                        style: AppText.small(c),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              AppSwitch(
-                value: _remind,
-                onChanged: (bool v) => setState(() => _remind = v),
-              ),
-            ],
+                AppSwitch(
+                  value: _remind,
+                  onChanged: (bool v) => setState(() => _remind = v),
+                ),
+              ],
+            ),
           ),
-        ),
       ],
       primaryLabel: widget.editing ? 'Save' : 'Add step',
       onPrimary: _save,
@@ -324,7 +367,7 @@ class _NextStepSheetState extends State<NextStepSheet> {
               onTap: () => Navigator.of(context).pop<StepAnswer>((
                 title: widget.title,
                 dueOn: _due,
-                remind: false,
+                remindAt: null,
                 remove: true,
               )),
             )
@@ -447,6 +490,42 @@ class _Field extends StatelessWidget {
           hintStyle: AppText.body(c).copyWith(fontSize: 15),
         ),
       ),
+    );
+  }
+}
+
+/// In place of the switch when the free reminders are all in use: how many,
+/// what frees one, and where the limit goes away.
+class _RemindersFull extends StatelessWidget {
+  const _RemindersFull({required this.onSeePlus});
+
+  final VoidCallback? onSeePlus;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final VoidCallback? seePlus = onSeePlus;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('Remind me', style: AppText.rowTitle(c)),
+        const SizedBox(height: 2),
+        Text(
+          'All $kFreeReminders free reminders are waiting. The step is saved '
+          'and shows on Today; finishing a step frees a reminder.',
+          style: AppText.small(c),
+        ),
+        if (seePlus != null)
+          TextAction(
+            label: 'No limit with RecallOS Plus',
+            icon: Icons.all_inclusive,
+            onTap: () {
+              Navigator.of(context).pop();
+              seePlus();
+            },
+          ),
+      ],
     );
   }
 }

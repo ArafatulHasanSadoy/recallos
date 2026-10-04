@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/db/database.dart';
+import '../../../core/db/enums.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
+import '../../../router.dart';
+import '../../plus/data/plus_controller.dart';
 import '../data/follow_up_actions.dart';
 import '../data/follow_up_answers.dart';
 import '../data/follow_up_repository.dart';
@@ -46,11 +50,37 @@ class NextStepsBlock extends ConsumerWidget {
   final int cardId;
   final DateTime Function() now;
 
+  /// Whether the free reminders are all in use. A step that already holds
+  /// one keeps it, so it is never counted against itself.
+  Future<bool> _remindersFull(WidgetRef ref, {NextStep? editing}) async {
+    // Both resolved before the first await (CLAUDE.md: no ref across one).
+    final PlusController plus = ref.read(plusProvider.notifier);
+    final FollowUpRepository repo = ref.read(followUpRepositoryProvider);
+    final DateTime? held = editing?.reminder?.remindAt;
+    if (held != null && held.isAfter(now())) return false;
+    if (await plus.isOwned()) return false;
+    return await repo.activeReminderCount() >= kFreeReminders;
+  }
+
+  /// Opens RecallOS Plus, from a sheet that has closed by then.
+  VoidCallback? _seePlus(BuildContext context) {
+    final GoRouter? router = GoRouter.maybeOf(context);
+    return router == null ? null : () => unawaited(router.push(Routes.plus));
+  }
+
   Future<void> _add(BuildContext context, WidgetRef ref) async {
     // Resolved before the sheet: the screen may be gone when it closes.
     final FollowUpActions actions = ref.read(followUpActionsProvider);
     final NotificationPort port = ref.read(notificationPortProvider);
-    final StepAnswer? a = await showNextStepSheet(context, now: now);
+    final VoidCallback? seePlus = _seePlus(context);
+    final bool full = await _remindersFull(ref);
+    if (!context.mounted) return;
+    final StepAnswer? a = await showNextStepSheet(
+      context,
+      now: now,
+      remindersFull: full,
+      onSeePlus: seePlus,
+    );
     if (a == null) return;
     final bool shown = await actions.addStep(cardId, a);
     ref.invalidate(notificationsEnabledProvider);
@@ -60,11 +90,17 @@ class NextStepsBlock extends ConsumerWidget {
   Future<void> _edit(BuildContext context, WidgetRef ref, NextStep s) async {
     final FollowUpActions actions = ref.read(followUpActionsProvider);
     final NotificationPort port = ref.read(notificationPortProvider);
+    final VoidCallback? seePlus = _seePlus(context);
+    final bool full = await _remindersFull(ref, editing: s);
+    if (!context.mounted) return;
     final StepAnswer? a = await showNextStepSheet(
       context,
       title: s.date.title,
       dueOn: s.date.dueOn,
       remind: s.reminder != null,
+      remindAt: s.reminder?.remindAt,
+      remindersFull: full,
+      onSeePlus: seePlus,
       editing: true,
       now: now,
     );
@@ -143,8 +179,84 @@ class NextStepsBlock extends ConsumerWidget {
               onTap: () => unawaited(_add(context, ref)),
             ),
           ],
+          _FinishedSteps(cardId: cardId, now: now()),
         ],
       ),
+    );
+  }
+}
+
+/// Steps finished in the last month, folded away under one quiet line.
+///
+/// Done and Remove keep the step — only its status changes — but past the
+/// snackbar's few seconds there was no way to see one again, so a mis-tap
+/// on a small circle lost it for good as far as the user could tell. Each
+/// row says what happened and when, and brings the step back.
+class _FinishedSteps extends ConsumerStatefulWidget {
+  const _FinishedSteps({required this.cardId, required this.now});
+
+  final int cardId;
+  final DateTime now;
+
+  @override
+  ConsumerState<_FinishedSteps> createState() => _FinishedStepsState();
+}
+
+class _FinishedStepsState extends ConsumerState<_FinishedSteps> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final List<ImportantDate> finished =
+        ref.watch(finishedStepsProvider(widget.cardId)).value ??
+        const <ImportantDate>[];
+    if (finished.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        TextAction(
+          label: _open
+              ? 'Hide finished steps'
+              : 'Finished recently (${finished.length})',
+          icon: _open ? Icons.expand_less : Icons.expand_more,
+          tint: c.inkMuted,
+          onTap: () => setState(() => _open = !_open),
+        ),
+        if (_open)
+          for (final ImportantDate d in finished)
+            Padding(
+              padding: const EdgeInsets.only(left: Gap.sm, bottom: Gap.xs),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          d.title,
+                          style: AppText.body(c).copyWith(color: c.inkMuted),
+                        ),
+                        Text(
+                          '${d.status == DateStatus.done ? 'Done' : 'Removed'} '
+                          '${weekdayDayMonth(d.updatedAt, widget.now)} at '
+                          '${clock(d.updatedAt)}',
+                          style: AppText.small(c),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextAction(
+                    label: 'Bring back',
+                    onTap: () => unawaited(
+                      ref.read(followUpActionsProvider).reopen(d.id),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ],
     );
   }
 }

@@ -22,6 +22,12 @@ final openStepsProvider = StreamProvider.family<List<NextStep>, int>(
       ref.watch(followUpRepositoryProvider).watchOpenSteps(cardId),
 );
 
+/// Steps on one card finished — done or removed — in the last 30 days.
+final finishedStepsProvider = StreamProvider.family<List<ImportantDate>, int>(
+  (Ref ref, int cardId) =>
+      ref.watch(followUpRepositoryProvider).watchFinishedSteps(cardId),
+);
+
 /// Every open next step on a live card: what Today is made of.
 final openFollowUpsProvider = StreamProvider<List<TodayEntry>>(
   (Ref ref) => ref.watch(followUpRepositoryProvider).watchOpen(),
@@ -214,6 +220,30 @@ class FollowUpRepository {
   // Next steps
   // ---------------------------------------------------------------------------
 
+  /// Steps on [cardId] that were finished in the last [days] days — marked
+  /// done or removed — most recent first.
+  ///
+  /// Finishing a step only ever changes its status, so it is still here;
+  /// this is what lets the card show it, and bring it back, long after the
+  /// snackbar's Undo has gone. Found on the phone: two steps vanished from a
+  /// card overnight and there was no way to see when, or to get them back.
+  Stream<List<ImportantDate>> watchFinishedSteps(int cardId, {int days = 30}) {
+    final DateTime since = _now().subtract(Duration(days: days));
+    return (_db.select(_db.importantDates)
+          ..where(
+            ($ImportantDatesTable d) =>
+                d.cardId.equals(cardId) &
+                d.status.equalsValue(DateStatus.open).not() &
+                d.deletedAt.isNull() &
+                d.updatedAt.isBiggerOrEqualValue(since),
+          )
+          ..orderBy(<OrderClauseGenerator<$ImportantDatesTable>>[
+            ($ImportantDatesTable d) => OrderingTerm.desc(d.updatedAt),
+            ($ImportantDatesTable d) => OrderingTerm.desc(d.id),
+          ]))
+        .watch();
+  }
+
   /// Open next steps on one card, soonest first, each with its live reminder.
   Stream<List<NextStep>> watchOpenSteps(int cardId) {
     return _db
@@ -401,6 +431,12 @@ class FollowUpRepository {
           return out;
         });
   }
+
+  /// How many reminders are waiting — exactly the ones Android should hold,
+  /// so the free limit counts what the user can see coming and nothing else.
+  /// A reminder already sent, a finished step or a deleted card frees its
+  /// place.
+  Future<int> activeReminderCount() async => (await pendingReminders()).length;
 
   /// The reminders Android should be holding right now: scheduled, still
   /// ahead, for an open step on a live card.
