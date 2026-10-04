@@ -15,7 +15,11 @@ import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../capture/data/card_repository.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../followup/data/follow_up_repository.dart' show encounterProvider;
 import '../../followup/presentation/card_follow_up_blocks.dart';
+import '../../introduction/data/hello.dart';
+import '../../introduction/presentation/say_hello_sheet.dart';
+import '../../profile/data/profile_repository.dart';
 import '../../search/data/search_repository.dart';
 import 'widgets/card_sides_view.dart';
 import 'widgets/editable_field_list.dart';
@@ -341,14 +345,14 @@ class _NoteBlock extends StatelessWidget {
   }
 }
 
-/// Call, message, mail, map.
-class _Actions extends StatelessWidget {
+/// Call, say hello, message, mail, map.
+class _Actions extends ConsumerWidget {
   const _Actions({required this.detail});
 
   final CardDetail detail;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final List<CardField> phones = detail.allOf(FieldKeys.phone);
     final String? email = detail.valueOf(FieldKeys.email);
     final String? address = detail.valueOf(FieldKeys.address);
@@ -357,9 +361,22 @@ class _Actions extends StatelessWidget {
         ? null
         : (phones.first.normalizedValue ?? phones.first.value);
 
+    // A hello goes to the first *mobile* on the card, which need not be the
+    // first number: an office line printed above a mobile is common.
+    final HelloReach reach = HelloReach(
+      mobile: phones
+          .map((CardField f) => f.normalizedValue ?? f.value)
+          .where(PhoneExtractor.isMobile)
+          .firstOrNull,
+      email: email,
+    );
+    // Watched here so both are ready by the time the button is pressed.
+    final Encounter? met = ref.watch(encounterProvider(detail.card.id)).value;
+    final ProfileDetail? me = ref.watch(myProfileProvider).value;
+
     // Derived, never four fixed buttons. A landline wa.me link opens to an
     // error, which reads as the app being broken.
-    return Wrap(
+    final Widget pills = Wrap(
       spacing: Gap.sm,
       runSpacing: Gap.sm,
       children: <Widget>[
@@ -370,6 +387,27 @@ class _Actions extends StatelessWidget {
             label: 'Call',
             primary: true,
             onTap: () => _open(context, Uri(scheme: 'tel', path: primaryPhone)),
+          ),
+        // Only where a hello can go: a card with nothing but a landline has
+        // no button, rather than one that opens a sheet with no way out.
+        if (!reach.isEmpty)
+          _ActionPill(
+            label: 'Say hello',
+            onTap: () => sayHello(
+              context,
+              ref,
+              cardId: detail.card.id,
+              reach: reach,
+              signed: me != null && me.name.isNotEmpty,
+              message: helloMessage(
+                now: DateTime.now(),
+                theirName: detail.valueOf(FieldKeys.personName),
+                place: met?.place,
+                metOn: met?.metOn,
+                myName: me?.name,
+                myCompany: me?.valueOf(FieldKeys.company),
+              ),
+            ),
           ),
         if (primaryPhone != null && PhoneExtractor.isMobile(primaryPhone))
           _ActionPill(
@@ -395,6 +433,14 @@ class _Actions extends StatelessWidget {
               }),
             ),
           ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        pills,
+        HelloLine(cardId: detail.card.id),
       ],
     );
   }

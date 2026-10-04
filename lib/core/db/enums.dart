@@ -77,6 +77,12 @@ enum InteractionKind {
   used,
   reminded,
   edited,
+
+  /// A "Say hello" message was written and handed to Android for WhatsApp,
+  /// SMS or mail. Never "sent": whether an app was chosen and the message
+  /// went is out of sight, so the record claims only what RecallOS did.
+  /// `detail` names the channel.
+  helloOpened,
 }
 
 /// Result of one run of one engine over one image.
