@@ -116,6 +116,14 @@ class _Card extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: Gap.sm),
+        // In person, the code is quicker than either of the others: the
+        // other phone's camera does the rest.
+        OutlinePill(
+          label: 'Show as a QR code',
+          icon: Icons.qr_code_2,
+          onTap: () => context.push(Routes.myCardQr),
+        ),
+        const SizedBox(height: Gap.sm),
         OutlinePill(
           label: 'Send my card',
           icon: Icons.share_outlined,
