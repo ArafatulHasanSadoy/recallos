@@ -322,6 +322,220 @@ void main() {
     });
   });
 
+  group('role titles', () {
+    Future<CardField> designationOf(int cardId) =>
+        (db.select(db.cardFields)..where(
+              ($CardFieldsTable f) =>
+                  f.cardId.equals(cardId) &
+                  f.fieldKey.equals(FieldKeys.designation),
+            ))
+            .getSingle();
+
+    test('correcting a designation updates the contact and company', () async {
+      final int cardId = await scan(
+        name: 'Nusrat Jahan',
+        company: 'Techland',
+        designation: 'Sales Manager',
+        phone: '01711111111',
+      );
+      final Role before = (await roles()).single;
+      await repo.updateField(
+        fieldId: (await designationOf(cardId)).id,
+        value: 'Account Manager',
+      );
+      await identity.promote(cardId);
+
+      final Role after = (await roles()).single;
+      expect(after.id, before.id, reason: 'a correction preserves the job');
+      expect(after.title, 'Account Manager');
+      expect(
+        (await identity.watchPeople().first).single.subtitle,
+        'Account Manager · Techland',
+      );
+      expect(
+        (await identity.watchPerson(after.personId).first)!.roles.single.title,
+        'Account Manager',
+      );
+      expect(
+        (await identity.watchOrganization(after.orgId).first)!
+            .people
+            .single
+            .subtitle,
+        'Account Manager',
+      );
+    });
+
+    test('removing the only designation clears the job title', () async {
+      final int cardId = await scan(
+        name: 'Nusrat Jahan',
+        company: 'Techland',
+        designation: 'Sales Manager',
+        phone: '01711111111',
+      );
+      await repo.deleteField((await designationOf(cardId)).id);
+      await identity.promote(cardId);
+
+      expect((await roles()).single.title, isNull);
+      expect((await identity.watchPeople().first).single.subtitle, 'Techland');
+    });
+
+    test(
+      'a confirmed designation wins across shared cards in either order',
+      () async {
+        final int older = await scan(
+          name: 'Nusrat Jahan',
+          company: 'Techland',
+          designation: 'Sales Manager',
+          phone: '01711111111',
+        );
+        final int newer = await scan(
+          name: 'Nusrat Jahan',
+          company: 'Techland',
+          designation: 'Operations Manager',
+          phone: '01711111111',
+        );
+        await repo.updateField(
+          fieldId: (await designationOf(older)).id,
+          value: 'Account Manager',
+        );
+
+        for (final int cardId in <int>[older, newer, newer, older]) {
+          await identity.promote(cardId);
+          expect(await roles(), hasLength(1));
+          expect((await roles()).single.title, 'Account Manager');
+        }
+
+        await repo.deleteField((await designationOf(older)).id);
+        await identity.promote(older);
+        expect(
+          (await roles()).single.title,
+          'Operations Manager',
+          reason: 'removing one card\'s title preserves the other card\'s',
+        );
+      },
+    );
+
+    test(
+      'the latest printed designation survives re-promoting an older card',
+      () async {
+        final int older = await scan(
+          name: 'Nusrat Jahan',
+          company: 'Techland',
+          designation: 'Sales Manager',
+          phone: '01711111111',
+        );
+        final int newer = await scan(
+          name: 'Nusrat Jahan',
+          company: 'Techland',
+          designation: 'Account Manager',
+          phone: '01711111111',
+        );
+        await identity.promote(older);
+        expect((await roles()).single.title, 'Account Manager');
+
+        await repo.softDelete(newer);
+        await identity.detach(newer);
+        expect(
+          (await roles()).single.title,
+          'Sales Manager',
+          reason: 'the remaining card still supplies its job title',
+        );
+      },
+    );
+
+    test(
+      'backfill repairs a job title left stale by an earlier edit',
+      () async {
+        final int cardId = await scan(
+          name: 'Nusrat Jahan',
+          company: 'Techland',
+          designation: 'Sales Manager',
+          phone: '01711111111',
+        );
+        await repo.updateField(
+          fieldId: (await designationOf(cardId)).id,
+          value: 'Account Manager',
+        );
+        await builtByOlderRules();
+
+        await identity.backfill();
+
+        expect((await roles()).single.title, 'Account Manager');
+      },
+    );
+
+    test('moving a card to another company refreshes both jobs', () async {
+      await scan(
+        name: 'Nusrat Jahan',
+        company: 'Techland',
+        designation: 'Sales Manager',
+        phone: '01711111111',
+      );
+      final int newer = await scan(
+        name: 'Nusrat Jahan',
+        company: 'Techland',
+        designation: 'Account Manager',
+        phone: '01711111111',
+      );
+      final CardField company =
+          await (db.select(db.cardFields)..where(
+                ($CardFieldsTable f) =>
+                    f.cardId.equals(newer) &
+                    f.fieldKey.equals(FieldKeys.company),
+              ))
+              .getSingle();
+      await repo.updateField(fieldId: company.id, value: 'Dental Care');
+      await identity.promote(newer);
+
+      final PersonDetail detail = (await identity
+          .watchPerson((await people()).single.id)
+          .first)!;
+      expect(
+        <String, String?>{
+          for (final RoleDetail r in detail.roles) r.orgName: r.title,
+        },
+        <String, String?>{
+          'Techland': 'Sales Manager',
+          'Dental Care': 'Account Manager',
+        },
+      );
+    });
+
+    test('a back designation does not replace the front designation', () async {
+      final int cardId = await scan(
+        name: 'Nusrat Jahan',
+        company: 'Techland',
+        designation: 'Sales Manager',
+        phone: '01711111111',
+      );
+      final CardField front = await designationOf(cardId);
+      await repo.deleteField(front.id);
+      await db
+          .into(db.cardFields)
+          .insert(
+            CardFieldsCompanion.insert(
+              cardId: cardId,
+              fieldKey: FieldKeys.designation,
+              value: 'Director',
+              source: FactSource.printed,
+              side: const Value<CardSide>(CardSide.back),
+            ),
+          );
+      await repo.addField(
+        cardId: cardId,
+        fieldKey: FieldKeys.designation,
+        value: 'Account Manager',
+      );
+      await identity.promote(cardId);
+
+      expect(
+        (await roles()).single.title,
+        'Account Manager',
+        reason: 'a re-read front comes after the back in insertion order',
+      );
+    });
+  });
+
   group('correcting a mislabelled field', () {
     test('re-labelling a job title as the designation removes the contact',
         () async {

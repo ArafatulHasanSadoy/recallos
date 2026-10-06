@@ -50,7 +50,30 @@ void main() {
             ),
           ),
     );
-    await tester.pumpAndSettle();
+    // Fake test time does not finish File.readAsBytes. Finish the real image
+    // stream before a pop or teardown can delete its file on Windows. Build
+    // the route in the real async zone so its read can complete there too.
+    await tester.runAsync(() async {
+      await tester.pumpAndSettle();
+      final Completer<void> done = Completer<void>();
+      final Image image = tester.widget<Image>(find.byType(Image));
+      final ImageStream stream = image.image.resolve(ImageConfiguration.empty);
+      final ImageStreamListener listener = ImageStreamListener(
+        (ImageInfo info, bool _) {
+          info.dispose();
+          done.complete();
+        },
+        onError: (Object error, StackTrace? stack) =>
+            done.completeError(error, stack),
+      );
+      stream.addListener(listener);
+      try {
+        await done.future;
+      } finally {
+        stream.removeListener(listener);
+      }
+      await tester.pumpAndSettle();
+    });
   }
 
   for (final (String mode, ThemeData Function() theme) in <(

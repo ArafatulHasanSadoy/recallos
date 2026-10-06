@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -41,15 +42,37 @@ void main() {
     return file;
   }
 
-  /// Advances animations without waiting for the tree to go quiet.
+  /// Completes real file reads before advancing animations.
   ///
-  /// `pumpAndSettle` cannot be used anywhere in this file: the overlay spins
-  /// until its image resolves, and these files never resolve, so an animation
-  /// is in flight for the whole test. Two pumps cover the transitions that
-  /// matter here — a popup menu and a dialog.
+  /// Pumping fake time does not finish the asynchronous image reads. Wait for
+  /// their expected decode errors before a side can be removed or the fixture
+  /// directory deleted, because Windows keeps an open reader locked.
+  /// Build in the real async zone so those reads can complete there too.
+  /// Two pumps cover the popup menu and dialog transitions.
   Future<void> settle(WidgetTester tester) async {
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.runAsync(() async {
+      await tester.pump();
+      for (final Image image in tester.widgetList<Image>(find.byType(Image))) {
+        final Completer<void> done = Completer<void>();
+        final ImageStream stream = image.image.resolve(
+          ImageConfiguration.empty,
+        );
+        final ImageStreamListener listener = ImageStreamListener((
+          ImageInfo info,
+          bool _,
+        ) {
+          info.dispose();
+          done.complete();
+        }, onError: (Object _, StackTrace? _) => done.complete());
+        stream.addListener(listener);
+        try {
+          await done.future;
+        } finally {
+          stream.removeListener(listener);
+        }
+      }
+      await tester.pump(const Duration(milliseconds: 400));
+    });
   }
 
   Future<void> pump(
@@ -62,27 +85,29 @@ void main() {
     AppDatabase? db,
     BackCaptureService Function(Ref)? backCapture,
   }) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          if (db != null) databaseProvider.overrideWithValue(db),
-          if (backCapture != null)
-            backCaptureServiceProvider.overrideWith(backCapture),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light(),
-          home: Scaffold(
-            body: CardSidesView(
-              cardId: cardId,
-              front: front,
-              backPath: backPath,
-              highlight: highlight,
-              heroTag: heroTag,
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            if (db != null) databaseProvider.overrideWithValue(db),
+            if (backCapture != null)
+              backCaptureServiceProvider.overrideWith(backCapture),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: CardSidesView(
+                cardId: cardId,
+                front: front,
+                backPath: backPath,
+                highlight: highlight,
+                heroTag: heroTag,
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    });
     await settle(tester);
   }
 

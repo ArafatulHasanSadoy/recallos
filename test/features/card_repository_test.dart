@@ -24,9 +24,15 @@ import 'package:recallos/features/contacts/data/identity_repository.dart';
 /// a card exists before OCR runs, and survives OCR failing.
 void main() {
   late AppDatabase db;
+  Directory? databaseDirectory;
 
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
-  tearDown(() async => db.close());
+  tearDown(() async {
+    await db.close();
+    // Windows cannot remove a database file while its connection is open.
+    await databaseDirectory?.delete(recursive: true);
+    databaseDirectory = null;
+  });
 
   Future<int> createPending() => db.into(db.cards).insert(
         CardsCompanion.insert(
@@ -535,7 +541,7 @@ void main() {
       // refused that would throw, the repair would swallow it, and every
       // launch would quietly change nothing.
       final Directory dir = Directory.systemTemp.createTempSync('recallos_');
-      addTearDown(() => dir.deleteSync(recursive: true));
+      databaseDirectory = dir;
       await db.close();
       db = AppDatabase(
         NativeDatabase.createInBackground(File(p.join(dir.path, 'w.sqlite'))),

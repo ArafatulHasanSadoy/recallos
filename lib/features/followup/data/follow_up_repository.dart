@@ -234,8 +234,9 @@ class FollowUpRepository {
   }
 
   /// Live cards met at [place] on a day from [from] up to, not including,
-  /// [until] — everyone from one event — in the order they were scanned, each
-  /// with its open steps.
+  /// [until] when given — everyone from one event — in the order they were
+  /// scanned, each with its open steps. A running event leaves [until] null so
+  /// this same stream also includes cards scanned on its later days.
   ///
   /// Matched on what the card says now, not on how it got there: a card whose
   /// place the user changed has left, and one they typed the same place and
@@ -245,7 +246,7 @@ class FollowUpRepository {
   Stream<List<MetCard>> watchMetAt({
     required String place,
     required DateTime from,
-    required DateTime until,
+    required DateTime? until,
   }) {
     return _db
         .customSelect(
@@ -253,12 +254,13 @@ class FollowUpRepository {
           'FROM encounters e JOIN cards c ON c.id = e.card_id '
           'WHERE e.deleted_at IS NULL AND c.deleted_at IS NULL '
           'AND e.place = ? COLLATE NOCASE AND e.met_on IS NOT NULL '
-          'AND e.met_on >= ? AND e.met_on < ? '
+          'AND e.met_on >= ? '
+          '${until == null ? '' : 'AND e.met_on < ? '}'
           'ORDER BY c.captured_at, c.id',
           variables: <Variable<Object>>[
             Variable<String>(place),
             Variable<DateTime>(from),
-            Variable<DateTime>(until),
+            if (until != null) Variable<DateTime>(until),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             _db.encounters,
@@ -402,7 +404,7 @@ class FollowUpRepository {
         ),
       );
       if (remindAt == null) {
-        await _cancelReminders(stepId);
+        await _removeReminders(stepId);
       } else {
         await _replaceReminder(stepId, remindAt);
       }
@@ -435,6 +437,7 @@ class FollowUpRepository {
       await (_db.update(_db.reminders)..where(
             ($RemindersTable r) =>
                 r.importantDateId.equals(stepId) &
+                r.deletedAt.isNull() &
                 r.remindAt.isBiggerThanValue(_now()),
           ))
           .write(
@@ -594,12 +597,32 @@ class FollowUpRepository {
       );
       return;
     }
+    // A previously cancelled reminder is no longer this step's chosen time.
+    // Retire it before adding its replacement so reopening cannot revive it.
+    await _removeReminders(stepId);
     await _db
         .into(_db.reminders)
         .insert(
           RemindersCompanion.insert(
             importantDateId: stepId,
             remindAt: remindAt,
+          ),
+        );
+  }
+
+  /// Removing a reminder is a lasting choice; finishing a step only pauses it
+  /// so Undo can bring it back. Keep a tombstone to distinguish the two.
+  Future<void> _removeReminders(int stepId) async {
+    final DateTime removedAt = _now();
+    await (_db.update(_db.reminders)..where(
+          ($RemindersTable r) =>
+              r.importantDateId.equals(stepId) & r.deletedAt.isNull(),
+        ))
+        .write(
+          RemindersCompanion(
+            status: const Value<ReminderStatus>(ReminderStatus.cancelled),
+            deletedAt: Value<DateTime?>(removedAt),
+            updatedAt: Value<DateTime>(removedAt),
           ),
         );
   }
