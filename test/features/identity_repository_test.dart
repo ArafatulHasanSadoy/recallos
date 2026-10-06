@@ -1033,6 +1033,61 @@ void main() {
           reason: 'a settled pair does not come back as a new question');
     });
 
+    test(
+      'backfill preserves both same-company job titles for un-merge',
+      () async {
+        final int firstCard = await scan(
+          name: 'Md. Rahman',
+          company: 'Techland',
+          designation: 'Sales Manager',
+          phone: '01711363991',
+        );
+        final int secondCard = await scan(
+          name: 'Rahman',
+          company: 'Techland',
+          designation: 'Account Manager',
+          phone: '01712000000',
+        );
+        final List<Role> before = await roles();
+        expect(before, hasLength(2));
+        final Role firstRole = before.first;
+        final Role secondRole = before.last;
+        expect(firstRole.orgId, secondRole.orgId);
+
+        await identity.merge(
+          survivor: firstRole.personId,
+          loser: secondRole.personId,
+        );
+        await builtByOlderRules();
+        await identity.backfill();
+
+        final PersonDetail merged = (await identity
+            .watchPerson(firstRole.personId)
+            .first)!;
+        expect(
+          merged.roles.map((RoleDetail r) => r.title),
+          unorderedEquals(<String>['Sales Manager', 'Account Manager']),
+          reason: 'each preserved job still has its own card designation',
+        );
+        final List<CardRow> cards = await db.select(db.cards).get();
+        expect(
+          <int, int?>{for (final CardRow c in cards) c.id: c.roleId},
+          <int, int?>{firstCard: firstRole.id, secondCard: secondRole.id},
+          reason: 'rebuilding must not move one card into the other job',
+        );
+
+        await identity.unmerge(secondRole.personId);
+        final PersonDetail first = (await identity
+            .watchPerson(firstRole.personId)
+            .first)!;
+        final PersonDetail second = (await identity
+            .watchPerson(secondRole.personId)
+            .first)!;
+        expect(first.roles.single.title, 'Sales Manager');
+        expect(second.roles.single.title, 'Account Manager');
+      },
+    );
+
     test('keeping them separate settles the question for good', () async {
       final (int a, int b) = await twoRahmans();
       expect(await identity.watchDuplicates().first, hasLength(1));

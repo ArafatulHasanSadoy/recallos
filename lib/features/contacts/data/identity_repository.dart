@@ -272,6 +272,7 @@ class IdentityRepository {
               personId: personId,
               orgId: orgId,
               title: facts.designation,
+              currentRoleId: previous?.roleId,
             )
           : null;
 
@@ -733,6 +734,7 @@ class IdentityRepository {
     required int personId,
     required int orgId,
     String? title,
+    int? currentRoleId,
   }) async {
     // Across the whole merge group, not just this row. After two contacts are
     // combined, a card belonging to the row that was merged away re-promotes
@@ -745,6 +747,14 @@ class IdentityRepository {
               ..where(
                 ($RolesTable r) => r.personId.isIn(ids) & r.orgId.equals(orgId),
               )
+              // Both halves of a merge may already have a job here. Keep
+              // this card's matching job so backfill preserves its title and
+              // the role the user can recover by separating the contacts.
+              ..orderBy(<OrderClauseGenerator<$RolesTable>>[
+                if (currentRoleId != null)
+                  ($RolesTable r) =>
+                      OrderingTerm.desc(r.id.equals(currentRoleId)),
+              ])
               ..limit(1))
             .getSingleOrNull();
 
