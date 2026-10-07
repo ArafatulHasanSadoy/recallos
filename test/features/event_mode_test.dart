@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull;
@@ -189,6 +190,78 @@ void main() {
     File photo() =>
         File(p.join(documents.path, 'scan_${DateTime.now().microsecond}.jpg'))
           ..writeAsBytesSync(img.encodeJpg(img.Image(width: 100, height: 60)));
+
+    test('a running event keeps seeing scans after midnight without '
+        'restarting its provider', () async {
+      final DateTime today = dayOf(DateTime.now());
+      final DateTime tomorrow = DateTime(
+        today.year,
+        today.month,
+        today.day + 1,
+      );
+      final EventStore store = EventStore(db, now: () => today);
+      final WalletEvent event = await store.start('Two-day expo');
+      final int first = await seedCard('First-day person');
+      await meet(first, event.name, today);
+
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[databaseProvider.overrideWithValue(db)],
+      );
+      addTearDown(container.dispose);
+      final members = eventCardsProvider(event);
+      final Completer<List<MetCard>> nextDay = Completer<List<MetCard>>();
+      container.listen(members, (_, AsyncValue<List<MetCard>> value) {
+        final List<MetCard>? cards = value.value;
+        if (cards != null && cards.length == 2 && !nextDay.isCompleted) {
+          nextDay.complete(cards);
+        }
+      });
+      expect(
+        (await container.read(members.future)).map((MetCard m) => m.cardId),
+        <int>[first],
+      );
+
+      // The original provider stays subscribed: only a later-day encounter is
+      // written, as happens when scanning after midnight while an event runs.
+      final int second = await seedCard('Second-day person');
+      await meet(second, event.name, tomorrow);
+      expect(
+        (await nextDay.future.timeout(
+          const Duration(seconds: 5),
+        )).map((MetCard m) => m.cardId),
+        <int>[first, second],
+      );
+      expect(await store.active(), event);
+    });
+
+    test('an ended event still stops after its last day', () async {
+      final DateTime today = dayOf(DateTime.now());
+      final DateTime tomorrow = DateTime(
+        today.year,
+        today.month,
+        today.day + 1,
+      );
+      final EventStore store = EventStore(db, now: () => today);
+      await store.start('One-day expo');
+      final WalletEvent event = (await store.end())!;
+      final int during = await seedCard('Met on the last day');
+      final int later = await seedCard('Met after it ended');
+      await meet(during, event.name, today);
+      await meet(later, event.name, tomorrow);
+
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[databaseProvider.overrideWithValue(db)],
+      );
+      addTearDown(container.dispose);
+      final members = eventCardsProvider(event);
+      // Keep the stream observed, as it is on screen: Riverpod pauses streams
+      // that have no listeners.
+      container.listen(members, (_, _) {});
+      expect(
+        (await container.read(members.future)).map((MetCard m) => m.cardId),
+        <int>[during],
+      );
+    });
 
     test('a card saved during an event is marked as met there, today, by '
         'Event Mode', () async {

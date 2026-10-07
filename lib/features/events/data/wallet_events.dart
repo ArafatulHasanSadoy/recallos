@@ -29,10 +29,16 @@ final eventCardsProvider = StreamProvider.family<List<MetCard>, WalletEvent>((
   Ref ref,
   WalletEvent event,
 ) {
-  final ({DateTime from, DateTime until}) span = event.days(DateTime.now());
+  // A running event's stream can stay alive across midnight. Its upper bound
+  // must stay open until the event ends, rather than freeze on the day this
+  // provider was first read and silently exclude the next day's scans.
   return ref
       .watch(followUpRepositoryProvider)
-      .watchMetAt(place: event.name, from: span.from, until: span.until);
+      .watchMetAt(
+        place: event.name,
+        from: dayOf(event.startedAt),
+        until: event.active ? null : event.days(event.endedAt!).until,
+      );
 });
 
 /// Something the user went to and named in Event Mode: "CSE fest at NSU".

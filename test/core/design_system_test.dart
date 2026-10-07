@@ -22,7 +22,8 @@ void main() {
       .where((File f) => !f.path.endsWith('.g.dart'))
       // The theme is where Material is configured, so it is the one place
       // allowed to name Material's own colours.
-      .where((File f) => !f.path.endsWith('core/theme/app_theme.dart'))
+      // URI paths use forward slashes on Windows as well as Unix.
+      .where((File f) => !f.uri.path.endsWith('core/theme/app_theme.dart'))
       .toList();
 
   /// Lines matching [pattern], ignoring comments — the rules are discussed in

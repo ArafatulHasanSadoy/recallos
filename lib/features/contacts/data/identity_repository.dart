@@ -226,7 +226,9 @@ class IdentityRepository {
   /// numbers agree (`isSameAddress`). Road 11 and Road 5 in one area used to
   /// count as one door, which proposed unrelated businesses as duplicates and
   /// linked similar names on neighbouring roads without asking.
-  static const int rulesVersion = 5;
+  /// 6 — role titles follow current card designations, including corrections
+  /// and removals, instead of keeping the first title extracted forever.
+  static const int rulesVersion = 6;
 
   static const String _rulesKey = 'identity_rules_version';
 
@@ -248,7 +250,10 @@ class IdentityRepository {
         _db.contactPoints,
       )..where(($ContactPointsTable c) => c.sourceCardId.equals(cardId))).go();
 
-      final int? previousOrgId = await _orgOf(cardId);
+      final CardRow? previous = await (_db.select(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+      final int? previousOrgId = previous?.orgId;
 
       if (facts.isEmpty) {
         await _unlink(cardId);
@@ -267,6 +272,7 @@ class IdentityRepository {
               personId: personId,
               orgId: orgId,
               title: facts.designation,
+              currentRoleId: previous?.roleId,
             )
           : null;
 
@@ -311,6 +317,14 @@ class IdentityRepository {
       // The address this card used to give its company, if it has moved on
       // or been corrected, goes with it.
       await _pruneBranches(<int?>[previousOrgId, orgId]);
+
+      final Set<int> affectedRoles = <int?>[
+        previous?.roleId,
+        roleId,
+      ].whereType<int>().toSet();
+      for (final int id in affectedRoles) {
+        await _syncRoleTitle(id);
+      }
 
       if (personId != null) await _syncPersonName(personId);
       await _proposeDuplicateCards(
@@ -720,6 +734,7 @@ class IdentityRepository {
     required int personId,
     required int orgId,
     String? title,
+    int? currentRoleId,
   }) async {
     // Across the whole merge group, not just this row. After two contacts are
     // combined, a card belonging to the row that was merged away re-promotes
@@ -732,22 +747,18 @@ class IdentityRepository {
               ..where(
                 ($RolesTable r) => r.personId.isIn(ids) & r.orgId.equals(orgId),
               )
+              // Both halves of a merge may already have a job here. Keep
+              // this card's matching job so backfill preserves its title and
+              // the role the user can recover by separating the contacts.
+              ..orderBy(<OrderClauseGenerator<$RolesTable>>[
+                if (currentRoleId != null)
+                  ($RolesTable r) =>
+                      OrderingTerm.desc(r.id.equals(currentRoleId)),
+              ])
               ..limit(1))
             .getSingleOrNull();
 
-    if (existing != null) {
-      if (existing.title == null && title != null && title.trim().isNotEmpty) {
-        await (_db.update(
-          _db.roles,
-        )..where(($RolesTable r) => r.id.equals(existing.id))).write(
-          RolesCompanion(
-            title: Value<String?>(title.trim()),
-            updatedAt: Value<DateTime>(DateTime.now()),
-          ),
-        );
-      }
-      return existing.id;
-    }
+    if (existing != null) return existing.id;
 
     return _db
         .into(_db.roles)
@@ -758,6 +769,51 @@ class IdentityRepository {
             title: Value<String?>(title?.trim()),
           ),
         );
+  }
+
+  /// Re-derives a job title after a card joins, changes or leaves the role.
+  ///
+  /// A role can be shared by several cards, so whichever card happened to
+  /// promote last must not overwrite a correction. A confirmed designation
+  /// wins, then the most recent card. Within one card, the front-first text
+  /// field is the same designation [_factsOf] uses. If none remain, the old
+  /// title goes too: it is derived from the cards, not independently authored.
+  Future<void> _syncRoleTitle(int roleId) async {
+    final Role? role = await (_db.select(
+      _db.roles,
+    )..where(($RolesTable r) => r.id.equals(roleId))).getSingleOrNull();
+    if (role == null) return;
+
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT f.value AS value FROM card_fields f '
+          'JOIN cards c ON c.id = f.card_id '
+          'WHERE c.role_id = ? AND c.deleted_at IS NULL '
+          "AND f.field_key = 'designation' AND f.value_kind = 'text' "
+          'AND f.id = (SELECT chosen.id FROM card_fields chosen '
+          'WHERE chosen.card_id = c.id '
+          "AND chosen.field_key = 'designation' AND chosen.value_kind = 'text' "
+          "ORDER BY CASE chosen.side WHEN 'front' THEN 0 ELSE 1 END, "
+          'chosen.id LIMIT 1) '
+          "AND TRIM(f.value) != '' "
+          'ORDER BY f.verified_by_user DESC, c.captured_at DESC, c.id DESC '
+          'LIMIT 1',
+          variables: <Variable<Object>>[Variable<int>(roleId)],
+        )
+        .get();
+    final String? title = rows.isEmpty
+        ? null
+        : rows.single.read<String>('value').trim();
+    if (role.title == title) return;
+
+    await (_db.update(
+      _db.roles,
+    )..where(($RolesTable r) => r.id.equals(roleId))).write(
+      RolesCompanion(
+        title: Value<String?>(title),
+        updatedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
   }
 
   Future<void> _findOrCreateBranch(int orgId, String address) async {
@@ -1380,6 +1436,9 @@ class IdentityRepository {
   // -------------------------------------------------------------------------
 
   Future<void> _unlink(int cardId) async {
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     await (_db.update(
       _db.cards,
     )..where(($CardsTable c) => c.id.equals(cardId))).write(
@@ -1389,6 +1448,7 @@ class IdentityRepository {
         roleId: Value<int?>(null),
       ),
     );
+    if (card?.roleId case final int roleId) await _syncRoleTitle(roleId);
   }
 
   /// Removes entities nothing points at any more.

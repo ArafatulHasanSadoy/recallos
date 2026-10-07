@@ -230,6 +230,64 @@ void main() {
       },
     );
 
+    test('a removed reminder stays off when a finished step is reopened', () async {
+      final int id = await card(company: 'Padma Soft Ltd');
+      final int step = await repo.addStep(
+        cardId: id,
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 4),
+        remindAt: DateTime(2026, 10, 4, 9),
+      );
+      await repo.editStep(
+        step,
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 4),
+      );
+
+      await repo.complete(step);
+      await repo.reopen(step);
+      expect(await repo.pendingReminders(), isEmpty);
+      expect((await repo.watchOpenSteps(id).first).single.reminder, isNull);
+
+      await repo.dismiss(step);
+      await repo.reopen(step);
+      expect(await repo.pendingReminders(), isEmpty);
+      expect((await repo.watchOpenSteps(id).first).single.reminder, isNull);
+    });
+
+    test('reopening restores only the replacement reminder', () async {
+      final int id = await card(company: 'Padma Soft Ltd');
+      final int step = await repo.addStep(
+        cardId: id,
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 4),
+        remindAt: DateTime(2026, 10, 4, 9),
+      );
+      await repo.editStep(
+        step,
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 4),
+      );
+      final DateTime replacement = DateTime(2026, 10, 4, 15);
+      await repo.editStep(
+        step,
+        title: 'Send CVs',
+        dueOn: DateTime(2026, 10, 4),
+        remindAt: replacement,
+      );
+
+      await repo.complete(step);
+      await repo.reopen(step);
+
+      final List<PendingReminder> pending = await repo.pendingReminders();
+      expect(pending, hasLength(1));
+      expect(pending.single.remindAt, replacement);
+      expect(
+        (await repo.watchOpenSteps(id).first).single.reminder!.remindAt,
+        replacement,
+      );
+    });
+
     test('snooze moves the reminder, never the due day', () async {
       final int id = await card(company: 'Padma Soft Ltd');
       await repo.addStep(
