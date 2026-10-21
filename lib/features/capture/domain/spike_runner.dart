@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
+import '../../../core/extraction/document_reader.dart';
 import '../../../core/intelligence/engines/mlkit_ocr_engine.dart';
 import '../../../core/intelligence/engines/routed_ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine.dart';
@@ -15,9 +17,16 @@ class SpikeCardResult {
     required this.fields,
     required this.blockCount,
     this.failure,
+    this.kind,
+    this.kindConfidence,
   });
 
   final String engineId;
+
+  /// What the paper was read as — "card", "receipt" or "warranty" — and how
+  /// sure the classifier was (B2), for PLAN §6's classification score.
+  final String? kind;
+  final double? kindConfidence;
   final int durationMs;
   final String plainText;
 
@@ -37,8 +46,17 @@ class SpikeCardResult {
     'fields': fields,
     'blockCount': blockCount,
     'failure': failure,
+    'kind': kind,
+    'kindConfidence': kindConfidence,
   };
 }
+
+/// The kind of paper as a label file names it.
+String paperKind(CardType type) => switch (type) {
+  CardType.receipt || CardType.invoice => 'receipt',
+  CardType.warrantyCard => 'warranty',
+  _ => 'card',
+};
 
 /// Every engine's output for one card.
 class SpikeCard {
@@ -118,16 +136,24 @@ class SpikeRunner {
   Future<SpikeCardResult> _runOne(OcrEngine engine, File image) async {
     try {
       final OcrResult result = await engine.recognize(image);
-      final CardExtraction extraction = CardFieldExtractor.extract(
-        result.blocks,
-      );
+      // Read the way capture reads (B2): classified, then by that kind's
+      // reader, so receipts and warranties are scored on their own fields.
+      final DocumentReading reading = readDocument(result.blocks);
+      final CardExtraction extraction = reading.extraction;
+      final List<String> keys = switch (reading.type) {
+        CardType.receipt || CardType.invoice => ReceiptKeys.all,
+        CardType.warrantyCard => WarrantyKeys.all,
+        _ => FieldKeys.all,
+      };
 
       return SpikeCardResult(
         engineId: engine.id,
         durationMs: result.duration.inMilliseconds,
         plainText: result.plainText,
+        kind: paperKind(reading.type),
+        kindConfidence: reading.classification.confidence,
         fields: <String, String>{
-          for (final String key in FieldKeys.all)
+          for (final String key in keys)
             if (extraction.firstOfKey(key) case final ExtractedField f)
               key: f.normalizedValue ?? f.value,
         },

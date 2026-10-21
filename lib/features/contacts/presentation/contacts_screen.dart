@@ -57,7 +57,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             ScreenHeader(
-              title: 'Contacts',
+              // One name for people (M7½): the section below and the
+              // home button both say People.
+              title: 'People',
               onBack: () => context.pop(),
               actions: <Widget>[
                 // The banner below advertises the review list when it has

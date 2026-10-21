@@ -245,29 +245,23 @@ class SettingsScreen extends ConsumerWidget {
   /// every phone call costs a fingerprint on the way back. That is a real
   /// choice, and the one a password manager makes — but not one to make blind.
   Future<void> _pickLockAfter(BuildContext context, WidgetRef ref) async {
-    final AppColors c = AppColors.of(context);
     final Duration? picked = await showModalBottomSheet<Duration>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (BuildContext sheet) => Padding(
-        padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text('Lock after', style: AppText.rowSerif(c)),
-            const SizedBox(height: Gap.sm),
-            for (final Duration option in AppSettings.lockAfterChoices)
-              SettingRow(
-                label: lockAfterLabel(option),
-                description: option == Duration.zero
-                    ? 'Also every time you scan a card or make a call.'
-                    : null,
-                onTap: () => Navigator.of(sheet).pop(option),
-              ),
-          ],
-        ),
+      builder: (BuildContext sheet) => ChoiceSheet<Duration>(
+        title: 'Lock after',
+        current: ref.read(appSettingsProvider).lockAfter,
+        choices: <(Duration, String, String?)>[
+          for (final Duration option in AppSettings.lockAfterChoices)
+            (
+              option,
+              lockAfterLabel(option),
+              option == Duration.zero
+                  ? 'Also every time you scan a card or make a call.'
+                  : null,
+            ),
+        ],
       ),
     );
     if (picked == null) return;
@@ -275,34 +269,69 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _pickAppearance(BuildContext context, WidgetRef ref) async {
-    final AppColors c = AppColors.of(context);
     final ThemeMode? picked = await showModalBottomSheet<ThemeMode>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (BuildContext sheet) => Padding(
-        padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text('Appearance', style: AppText.rowSerif(c)),
-            const SizedBox(height: Gap.sm),
-            for (final (ThemeMode mode, String label) in <(ThemeMode, String)>[
-              (ThemeMode.system, 'Follow system'),
-              (ThemeMode.light, 'Always light'),
-              (ThemeMode.dark, 'Always dark'),
-            ])
-              SettingRow(
-                label: label,
-                onTap: () => Navigator.of(sheet).pop(mode),
-              ),
-          ],
-        ),
+      builder: (BuildContext sheet) => ChoiceSheet<ThemeMode>(
+        title: 'Appearance',
+        current: ref.read(appSettingsProvider).themeMode,
+        choices: const <(ThemeMode, String, String?)>[
+          (ThemeMode.system, 'Follow system', null),
+          (ThemeMode.light, 'Always light', null),
+          (ThemeMode.dark, 'Always dark', null),
+        ],
       ),
     );
     if (picked == null) return;
     await ref.read(appSettingsProvider.notifier).setThemeMode(picked);
+  }
+}
+
+/// A short list to pick one setting from, with the one in use marked.
+///
+/// The first version listed the choices and nothing else, so on a phone
+/// showing the dark theme, opening Appearance gave no way to tell whether
+/// "Always dark" or "Follow system" was doing it. The mark is a word, not a
+/// tint, so it is read aloud too. Public so a test can pump it on its own.
+class ChoiceSheet<T> extends StatelessWidget {
+  const ChoiceSheet({
+    required this.title,
+    required this.choices,
+    required this.current,
+    super.key,
+  });
+
+  final String title;
+
+  /// Each choice: its value, its label, and an optional line under it.
+  final List<(T, String, String?)> choices;
+  final T current;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(title, style: AppText.rowSerif(c)),
+          const SizedBox(height: Gap.sm),
+          for (final (T value, String label, String? description) in choices)
+            SettingRow(
+              label: label,
+              description: description,
+              trailing: value == current
+                  ? MicroLabel('In use', color: c.ochreInk)
+                  : null,
+              onTap: () => Navigator.of(context).pop(value),
+            ),
+        ],
+      ),
+    );
   }
 }
 

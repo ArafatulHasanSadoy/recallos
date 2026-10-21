@@ -94,7 +94,7 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
+    await tester.tap(find.text('01711-363991'));
     await tester.pumpAndSettle();
 
     expect(find.text('Edit this detail'), findsOneWidget);
@@ -111,7 +111,7 @@ void main() {
     final Offset saveCard =
         tester.getCenter(find.widgetWithText(FilledButton, 'Save card'));
 
-    await tester.tap(find.text('01711363991'));
+    await tester.tap(find.text('01711-363991'));
     await tester.pumpAndSettle();
 
     // Tapped at the coordinates the thumb was already heading for. The sheet
@@ -129,7 +129,7 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
+    await tester.tap(find.text('01711-363991'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '01711363992');
@@ -157,7 +157,7 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
+    await tester.tap(find.text('01711-363991'));
     await tester.pumpAndSettle();
 
     await tester.tapAt(const Offset(400, 40));
@@ -173,7 +173,7 @@ void main() {
     final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
     await pump(tester, detail);
 
-    await tester.tap(find.text('01711363991'));
+    await tester.tap(find.text('01711-363991'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '01819104376');

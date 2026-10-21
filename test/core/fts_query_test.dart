@@ -43,7 +43,7 @@ void main() {
         // Every term is quoted, so nothing reaches the parser as an operator.
         expect(
           built,
-          matches(RegExp(r'^"[^"]*"\*( OR "[^"]*"\*)*$')),
+          matches(RegExp(r'^"[^"]*"\*?( OR "[^"]*"\*?)*$')),
           reason: 'unsafe query built from ${hostile.toString()}',
         );
       }
@@ -53,6 +53,33 @@ void main() {
       // The indexed side tokenises 01711-223344 into two words, so the query
       // has to break identically or it can never match.
       expect(buildFtsQuery('01711-223344'), '"01711"* OR "223344"*');
+    });
+  });
+
+  group('short terms', () {
+    test('a finished short word matches only itself', () {
+      // "ac" as a prefix matched accounts, academy and accountant.
+      expect(buildFtsQuery('AC repair'), '"ac" OR "repair"*');
+      expect(buildFtsQuery('ac '), '"ac"');
+      expect(buildFtsQuery('road 12, dhaka'), '"road"* OR "12" OR "dhaka"*');
+    });
+
+    test('a short word still being typed also matches as a prefix', () {
+      // Search runs on every keystroke: "pr" on the way to "printing" must
+      // not empty the screen. The bare word is in the query too, so a card
+      // with the whole word outranks one that only starts with it.
+      expect(buildFtsQuery('pr'), '"pr" OR "pr"*');
+      expect(buildFtsQuery('repair ac'), '"repair"* OR "ac" OR "ac"*');
+    });
+
+    test('three letters and more keep the prefix', () {
+      expect(buildFtsQuery('lap'), '"lap"*');
+    });
+
+    test('matchedTerms follows the same rule', () {
+      expect(matchedTerms('AC repair', 'Karim Accounts & Audit'), isEmpty);
+      expect(matchedTerms('AC repair', 'AC servicing'), <String>['ac']);
+      expect(matchedTerms('ac', 'Karim Accounts'), <String>['ac']);
     });
   });
 
@@ -120,6 +147,44 @@ void main() {
 
     test('finds a card by a word from the printed text', () async {
       expect(await run('Sonar'), <int>[1]);
+    });
+
+    test('a finished short word does not match a longer one', () async {
+      await db.customStatement(
+        'INSERT INTO search_index(subject_type, subject_id, card_text, '
+        'note_text) VALUES (?, ?, ?, ?)',
+        <Object?>['card', 2, 'Karim Accounts & Audit', 'accounting'],
+      );
+      expect(await run('ac '), isEmpty);
+      expect(await run('ac'), <int>[2]);
+    });
+
+    // bm25() takes one weight per column *including* the two unindexed
+    // ones, so the note's weight is the fourth number, not the second. Two
+    // rows with the same word, once in the card text and once in the note:
+    // swapping the third and fourth weights must swap the order, or the
+    // weights are landing on the wrong columns.
+    test('bm25 weights land on the columns they are meant for', () async {
+      await db.customStatement('DELETE FROM search_index');
+      await db.customStatement(
+        'INSERT INTO search_index(subject_type, subject_id, card_text, '
+        'note_text) VALUES '
+        "('card', 10, 'biryani house', 'family run'), "
+        "('card', 11, 'family run', 'biryani house')",
+      );
+
+      Future<int> top(String weights) async =>
+          (await db
+                  .customSelect(
+                    'SELECT subject_id, bm25(search_index, $weights) AS s '
+                    "FROM search_index WHERE search_index MATCH '\"biryani\"*' "
+                    'ORDER BY s LIMIT 1',
+                  )
+                  .getSingle())
+              .read<int>('subject_id');
+
+      expect(await top('0.0, 0.0, 1.0, 2.0, 1.0, 1.0'), 11);
+      expect(await top('0.0, 0.0, 2.0, 1.0, 1.0, 1.0'), 10);
     });
 
     test('survives every hostile query without throwing', () async {

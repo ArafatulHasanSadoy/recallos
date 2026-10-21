@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/platform/external_opener.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
@@ -32,7 +33,7 @@ Future<void> sayHello(
 }) async {
   // Resolved before the sheet: the card screen can be gone when it closes.
   final HelloRepository repo = ref.read(helloRepositoryProvider);
-  final Future<bool> Function(Uri) open = ref.read(helloOpenerProvider);
+  final Future<bool> Function(Uri) open = ref.read(externalOpenerProvider);
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
   final GoRouter? router = GoRouter.maybeOf(context);
 

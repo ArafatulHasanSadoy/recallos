@@ -8,12 +8,12 @@ import 'package:go_router/go_router.dart';
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/platform/external_opener.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
 import 'package:recallos/features/cards/presentation/card_detail_screen.dart';
 import 'package:recallos/features/followup/data/follow_up_repository.dart';
 import 'package:recallos/features/followup/data/reminder_engine.dart';
-import 'package:recallos/features/introduction/data/hello_repository.dart';
 import 'package:recallos/features/profile/data/profile_repository.dart';
 import 'package:recallos/router.dart';
 
@@ -79,7 +79,7 @@ void main() {
   List<Override> overrides() => <Override>[
     databaseProvider.overrideWithValue(db),
     notificationPortProvider.overrideWithValue(FakePort()),
-    helloOpenerProvider.overrideWithValue((Uri u) async {
+    externalOpenerProvider.overrideWithValue((Uri u) async {
       opened.add(u);
       return openWorks;
     }),

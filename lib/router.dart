@@ -22,6 +22,7 @@ import 'features/search/presentation/home_screen.dart';
 import 'features/settings/data/app_settings.dart';
 import 'features/settings/presentation/onboarding_screen.dart';
 import 'features/settings/presentation/settings_screen.dart';
+import 'features/spending/presentation/spending_screen.dart';
 
 /// Route paths, in one place so links never drift apart from the router.
 abstract final class Routes {
@@ -50,6 +51,9 @@ abstract final class Routes {
 
   /// One event's summary — everyone met there, and what is next.
   static String eventOf(int id) => '/event/$id';
+
+  /// What the saved receipts add up to (B4).
+  static const String receiptTotals = '/receipts';
 
   /// Phase 0 scaffolding. Delete once the OCR gate has been answered.
   static const String spike = '/spike';
@@ -141,6 +145,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
+      GoRoute(
+        path: Routes.receiptTotals,
+        builder: (_, _) => const SpendingScreen(),
+      ),
       GoRoute(path: Routes.today, builder: (_, _) => const TodayScreen()),
       GoRoute(
         path: Routes.onboarding,

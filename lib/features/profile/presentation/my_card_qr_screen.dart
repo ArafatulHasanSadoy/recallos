@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/extraction/phone.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
@@ -118,7 +119,9 @@ class _Code extends ConsumerWidget {
           children: <Widget>[
             for (final QrLine line in lines)
               SettingRow(
-                label: line.value,
+                // Only a Bangladeshi mobile is regrouped; any other line
+                // comes back exactly as written.
+                label: PhoneExtractor.display(line.value),
                 description: line.label,
                 onTap: () => toggle(line),
                 trailing: AppSwitch(

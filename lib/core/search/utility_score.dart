@@ -207,6 +207,62 @@ double freshnessFromAge(
   return math.pow(0.5, halfLives).toDouble();
 }
 
+/// How specific a query word is, given how many cards contain it.
+///
+/// BM25's inverse document frequency: a word on every card says nothing
+/// about which card is meant, a word on one card says a lot. Never negative,
+/// so a word every card carries still counts for a little rather than
+/// against.
+double inverseDocumentFrequency({
+  required int cards,
+  required int cardsWithTerm,
+}) {
+  final int n = math.max(cards, cardsWithTerm);
+  return math.log(1 + (n - cardsWithTerm + 0.5) / (cardsWithTerm + 0.5));
+}
+
+/// The share of a query's specificity that the user's notes account for.
+///
+/// [termWeights] gives each query word its weight — its
+/// [inverseDocumentFrequency] — and [matchedInNotes] the words found in the
+/// notes. A note that matches the rare word of "AC repair" covers more of
+/// the question than one that matches the common word, where a yes/no "the
+/// note matched" counted them the same.
+double noteCoverage({
+  required Map<String, double> termWeights,
+  required Iterable<String> matchedInNotes,
+}) {
+  final double total = termWeights.values.fold<double>(
+    0,
+    (double a, double b) => a + b,
+  );
+  if (total <= 0) return 0;
+  final double matched = matchedInNotes
+      .toSet()
+      .map((String t) => termWeights[t] ?? 0)
+      .fold<double>(0, (double a, double b) => a + b);
+  return _clamp01(matched / total);
+}
+
+/// Cosine similarity between the query and a note, rescaled to 0..1.
+///
+/// Below [floor] two texts are unrelated — the same floor the vector arm
+/// cuts at — so that maps to 0 rather than to a quarter of a match.
+double noteSimilarity(double cosine, {double floor = 0.25}) =>
+    _clamp01((cosine - floor) / (1 - floor));
+
+/// How strongly the user's own notes answer the query.
+///
+/// Wording and meaning both count, because each catches what the other
+/// misses: "AC servicing" shares only "AC" with "AC repair", while "laptop
+/// repair" shares "repair" — on words alone they tie, and on meaning the
+/// first is plainly the answer. Without a note vector (the embedder failed
+/// to load) wording carries it alone.
+double noteRelevance({required double coverage, double? similarity}) =>
+    similarity == null
+    ? _clamp01(coverage)
+    : _clamp01((coverage + similarity) / 2);
+
 /// Trust from the user's own feedback on past results.
 ///
 /// Starts at 0.5 — no signal — and moves with evidence, damped so that one

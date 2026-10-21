@@ -217,24 +217,27 @@ class _CardImageOverlayState extends State<CardImageOverlay> {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          // Under everything, for the frames before the full decode lands.
-          // `cover` and the wallet's own cache width, because this is the
-          // wallet's own decode — see [CardImageOverlay.preview].
-          if (thumb != null)
-            Image(
-              image: sealedPhoto(
-                thumb,
-                cacheWidth:
-                    (Gap.cardFaceThumb.width *
-                            MediaQuery.devicePixelRatioOf(context))
-                        .round(),
-              ),
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.medium,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          Image(image: _provider, fit: BoxFit.contain, gaplessPlayback: true),
+          StandInImage(
+            image: _provider,
+            // For the frames before the full decode lands. `cover` and the
+            // wallet's own cache width, because this is the wallet's own
+            // decode — see [CardImageOverlay.preview].
+            standIn: thumb == null
+                ? null
+                : Image(
+                    image: sealedPhoto(
+                      thumb,
+                      cacheWidth:
+                          (Gap.cardFaceThumb.width *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round(),
+                    ),
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.medium,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+          ),
           if (region != null && size != null)
             CustomPaint(
               painter: _RegionPainter(
@@ -314,4 +317,34 @@ class _RegionPainter extends CustomPainter {
       old.region != region ||
       old.imageSize != imageSize ||
       old.colour != colour;
+}
+
+/// A photograph, with [standIn] shown only until its first frame.
+///
+/// The stand-in used to stay underneath for good. A business card fills
+/// its box, so the photograph covered it; a receipt or a warranty is taller
+/// than the box, `contain` leaves room down both sides, and the wallet
+/// thumbnail — stretched to cover — showed there as a blurred second copy
+/// (found on the phone, 15 Oct). Gone at the first frame, it can only ever
+/// stand in.
+class StandInImage extends StatelessWidget {
+  const StandInImage({required this.image, this.standIn, super.key});
+
+  final ImageProvider image;
+  final Widget? standIn;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget? stand = standIn;
+    return Image(
+      image: image,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      frameBuilder:
+          (BuildContext context, Widget child, int? frame, bool sync) =>
+              frame == null && !sync && stand != null
+              ? Stack(fit: StackFit.expand, children: <Widget>[stand, child])
+              : child,
+    );
+  }
 }

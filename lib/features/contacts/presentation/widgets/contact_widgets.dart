@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/db/database.dart';
 import '../../../../core/db/enums.dart';
@@ -12,6 +11,7 @@ import '../../../../core/ui/card_face.dart';
 import '../../../../core/ui/primitives.dart';
 import '../../../../router.dart';
 import '../../../capture/data/card_repository.dart';
+import '../../../cards/presentation/reach_out.dart';
 import '../../data/contact_export.dart';
 
 /// The endpoints on a person or a company, each with the one action that
@@ -32,13 +32,13 @@ class Endpoints extends StatelessWidget {
   }
 }
 
-class _EndpointRow extends StatelessWidget {
+class _EndpointRow extends ConsumerWidget {
   const _EndpointRow({required this.contact});
 
   final ContactPoint contact;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final AppColors c = AppColors.of(context);
     final String canonical = contact.normalizedValue ?? contact.value;
     final bool isPhone = contact.kind == ContactKind.phone;
@@ -51,19 +51,30 @@ class _EndpointRow extends StatelessWidget {
         : <String>['Email'];
 
     return PressFade(
+      // Recorded against the card this endpoint was read from, so calling
+      // someone from their contact page counts the same as from their card.
       onTap: () => unawaited(
-        _open(
+        reachOut(
           context,
+          ref,
           isPhone
               ? Uri(scheme: 'tel', path: canonical)
               : Uri(scheme: 'mailto', path: canonical),
+          cardId: contact.sourceCardId,
+          kind: isPhone
+              ? InteractionKind.callOpened
+              : InteractionKind.emailOpened,
         ),
       ),
       onLongPress: mobile
           ? () => unawaited(
-              _open(
+              reachOut(
                 context,
+                ref,
                 Uri.parse('https://wa.me/${canonical.replaceAll("+", "")}'),
+                cardId: contact.sourceCardId,
+                kind: InteractionKind.messageOpened,
+                detail: 'whatsapp',
               ),
             )
           : null,
@@ -79,7 +90,9 @@ class _EndpointRow extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   Text(
-                    contact.value,
+                    isPhone
+                        ? PhoneExtractor.display(contact.value)
+                        : contact.value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.rowTitle(c).copyWith(fontSize: 16),
@@ -99,15 +112,6 @@ class _EndpointRow extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static Future<void> _open(BuildContext context, Uri uri) async {
-    final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Nothing on this phone can open $uri')),
-      );
-    }
   }
 }
 

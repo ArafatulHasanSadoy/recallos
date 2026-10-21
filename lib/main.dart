@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme/app_theme.dart';
@@ -25,6 +26,17 @@ void main() {
   runApp(const ProviderScope(child: RecallOsApp()));
 }
 
+/// The app's language: English, written day-first (M7½). The app's own
+/// words already put the day first ("Fri, 16 Oct"), the way dates are
+/// written in Bangladesh; Material's date picker followed US English and
+/// wrote "Fri, Oct 16" above the same calendar. In GB English it writes
+/// "Fri 16 Oct".
+const Locale kAppLocale = Locale('en', 'GB');
+
+/// What gives Material, the widgets and Cupertino that language.
+const List<LocalizationsDelegate<dynamic>> kAppLocalizations =
+    GlobalMaterialLocalizations.delegates;
+
 class RecallOsApp extends ConsumerWidget {
   const RecallOsApp({super.key});
 
@@ -32,6 +44,9 @@ class RecallOsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'RecallOS',
+      locale: kAppLocale,
+      supportedLocales: const <Locale>[kAppLocale],
+      localizationsDelegates: kAppLocalizations,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       // Frame 15: dark is not an inversion, and one widget tree serves both,

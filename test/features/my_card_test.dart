@@ -55,7 +55,9 @@ void main() {
     expect(find.text('Arafatul Hasan Sadoy'), findsOneWidget);
     expect(find.text('Founder'), findsOneWidget);
     expect(find.text('EnationX'), findsOneWidget);
-    expect(find.text('01711 363991'), findsOneWidget);
+    // Grouped as every list in the app shows a Bangladeshi mobile.
+    expect(find.text('01711-363991'), findsOneWidget);
+    expect(find.text('sadoy@enationx.com'), findsOneWidget);
     // The label the user gave, upper-cased by MicroLabel.
     expect(find.text('MOBILE'), findsOneWidget);
     expect(find.text('cheap t-shirt printing, low quantity'), findsOneWidget);
@@ -79,7 +81,7 @@ void main() {
     // forbids it for body copy. A phone number read off this card at arm's
     // length is the payload — putting it at 10px in the faintest ink on the
     // palette would render perfectly and be unusable.
-    final Text value = t.widget<Text>(find.text('01711 363991'));
+    final Text value = t.widget<Text>(find.text('01711-363991'));
     final AppColors c = AppColors.light;
     expect(value.style!.color, isNot(c.inkFaint));
     expect(value.style!.fontSize, greaterThanOrEqualTo(12.0));
@@ -125,7 +127,7 @@ void main() {
     await t.pump();
 
     // Small enough for the header button: the face, not the contents.
-    expect(find.text('01711 363991'), findsNothing);
+    expect(find.text('01711-363991'), findsNothing);
     expect(t.takeException(), isNull);
   });
 }

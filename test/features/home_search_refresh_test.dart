@@ -134,7 +134,7 @@ void main() {
     // pinned to its bottom sat on top of the answer being typed for.
     await tester.runAsync(() => seed('Padma Soft Ltd', 'Flutter internships'));
     await pumpHome(tester);
-    final Finder pill = find.text('Scan a card');
+    final Finder pill = find.text('Scan');
     expect(pill, findsOneWidget);
 
     tester.view.viewInsets = const FakeViewPadding(bottom: 900);

@@ -6,10 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/db/database.dart';
 import '../../../../core/db/enums.dart';
+import '../../../../core/db/field_provenance.dart';
 import '../../../../core/extraction/card_extractor.dart';
+import '../../../../core/extraction/phone.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/primitives.dart';
 import '../../../capture/data/card_repository.dart';
+import '../../../capture/presentation/kind_sheet.dart' show paperNoun;
 import '../../../contacts/data/identity_repository.dart';
 import '../../../search/data/search_repository.dart';
 import 'card_sides_view.dart';
@@ -23,7 +26,35 @@ String fieldLabel(String key) => switch (key) {
   FieldKeys.email => 'Email',
   FieldKeys.website => 'Website',
   FieldKeys.address => 'Address',
+  ReceiptKeys.merchant => 'Shop',
+  ReceiptKeys.purchaseDate => 'Date',
+  ReceiptKeys.total => 'Total',
+  ReceiptKeys.invoiceNumber => 'Invoice no.',
+  ReceiptKeys.category => 'Category',
+  WarrantyKeys.product => 'Product',
+  WarrantyKeys.brand => 'Brand',
+  WarrantyKeys.model => 'Model',
+  WarrantyKeys.serial => 'Serial or IMEI',
+  WarrantyKeys.coverMonths => 'Cover',
+  WarrantyKeys.startBasis => 'Counts from',
+  WarrantyKeys.expiryDate => 'Expires',
   _ => key,
+};
+
+/// The fields a card of [type] can have, in the order the editor offers
+/// them: a receipt's are not a business card's (B2).
+List<String> fieldKeysFor(CardType type) => switch (type) {
+  CardType.receipt || CardType.invoice => ReceiptKeys.all,
+  CardType.warrantyCard => WarrantyKeys.all,
+  _ => FieldKeys.all,
+};
+
+/// What *Add something it missed* starts as: whatever a card of [type]
+/// misses most and matters most — a receipt's total, a warranty's expiry.
+String defaultMissingKey(CardType type) => switch (type) {
+  CardType.receipt || CardType.invoice => ReceiptKeys.total,
+  CardType.warrantyCard => WarrantyKeys.expiryDate,
+  _ => FieldKeys.phone,
 };
 
 /// The fields read off a card, each one repairable in place.
@@ -79,6 +110,7 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
       title: 'Edit this detail',
       initialKey: field.fieldKey,
       initialValue: field.value,
+      keys: _keys,
       initialBlockIds: <int>[
         for (final OcrBlockRow b in widget.detail.blocks)
           if (b.fieldId == field.id) b.id,
@@ -112,10 +144,11 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
   Future<void> _add() async {
     final _EditorOutcome? outcome = await _openEditor(
       title: 'Add a detail',
-      // Whatever the card is missing most often; the user re-labels in one tap
-      // if it is something else.
-      initialKey: FieldKeys.phone,
+      // Whatever a card of this kind is missing most often; the user
+      // re-labels in one tap if it is something else.
+      initialKey: defaultMissingKey(widget.detail.card.type),
       initialValue: '',
+      keys: _keys,
       initialBlockIds: const <int>[],
       removable: false,
     );
@@ -143,12 +176,23 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
   /// Modal fixes it by construction rather than by labelling: while a field is
   /// open the card's Save cannot be reached at all, and the only Save on
   /// screen is the one for the thing being edited.
+  /// The labels this card's fields can take, plus any older one a field
+  /// already has, so re-labelling never loses it.
+  List<String> get _keys {
+    final List<String> base = fieldKeysFor(widget.detail.card.type);
+    return <String>{
+      ...base,
+      for (final CardField f in widget.detail.fields) f.fieldKey,
+    }.toList();
+  }
+
   Future<_EditorOutcome?> _openEditor({
     required String title,
     required String initialKey,
     required String initialValue,
     required List<int> initialBlockIds,
     required bool removable,
+    required List<String> keys,
   }) {
     return showModalBottomSheet<_EditorOutcome>(
       context: context,
@@ -171,8 +215,10 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
             ? () => Navigator.of(sheet).pop(const _RemoveField())
             : null,
         child: _FieldEditor(
+          paper: paperNoun(widget.detail.card.type),
           initialKey: initialKey,
           initialValue: initialValue,
+          keys: keys,
           blocks: widget.detail.blocks,
           initialBlockIds: initialBlockIds,
           // `maybePop`, not `pop`: it goes through the unsaved-changes guard
@@ -197,6 +243,7 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
           _FieldRow(
             key: ValueKey<int>(field.id),
             field: field,
+            paper: paperNoun(widget.detail.card.type),
             onOpen: () => _edit(field),
           ),
         const SizedBox(height: Gap.sm),
@@ -308,21 +355,32 @@ class _EditorSheet extends StatelessWidget {
 }
 
 class _FieldRow extends StatelessWidget {
-  const _FieldRow({required this.field, required this.onOpen, super.key});
+  const _FieldRow({
+    required this.field,
+    required this.onOpen,
+    this.paper = 'card',
+    super.key,
+  });
 
   final CardField field;
   final VoidCallback onOpen;
+
+  /// The paper this was printed on, for the provenance chip.
+  final String paper;
 
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
     final bool flagged = needsALook(field);
+    final bool unchecked = !flagged && needsChecking(field);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: Gap.sm),
       child: PressFade(
         onTap: onOpen,
-        semanticLabel: '${fieldLabel(field.fieldKey)}: ${field.value}',
+        semanticLabel:
+            '${fieldLabel(field.fieldKey)}: ${field.value}'
+            '${unchecked ? ', needs checking' : ''}',
         child: Container(
           padding: const EdgeInsets.fromLTRB(
             Gap.md,
@@ -346,7 +404,12 @@ class _FieldRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(field.value, style: AppText.rowTitle(c)),
+                    Text(
+                      field.fieldKey == FieldKeys.phone
+                          ? PhoneExtractor.display(field.value)
+                          : field.value,
+                      style: AppText.rowTitle(c),
+                    ),
                     const SizedBox(height: Gap.xs),
                     // Wrapped because a long label beside a long provenance
                     // chip runs past the edge of a narrow screen.
@@ -356,7 +419,11 @@ class _FieldRow extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: <Widget>[
                         MicroLabel(fieldLabel(field.fieldKey)),
-                        SourceChip(field: field),
+                        SourceChip(field: field, paper: paper),
+                        // Said in words, not only in colour: a total or a
+                        // date nobody has confirmed yet.
+                        if (unchecked)
+                          MetaLabel('check this', color: c.ochreInk),
                         // Only the back is named. Saying "front" on nearly
                         // every row would be noise; the back is the exception
                         // worth knowing about, because it is the side you are
@@ -372,7 +439,11 @@ class _FieldRow extends StatelessWidget {
               Icon(
                 flagged ? Icons.flag_outlined : Icons.edit_outlined,
                 size: 19,
-                color: flagged ? c.vermilion : c.inkFaint,
+                color: flagged
+                    ? c.vermilion
+                    : unchecked
+                    ? c.ochreInk
+                    : c.inkFaint,
               ),
             ],
           ),
@@ -390,16 +461,24 @@ typedef _SaveField =
 /// Repairs one field, cheapest option first.
 class _FieldEditor extends StatefulWidget {
   const _FieldEditor({
+    required this.paper,
     required this.initialKey,
     required this.initialValue,
+    required this.keys,
     required this.blocks,
     required this.initialBlockIds,
     required this.onCancel,
     required this.onSave,
   });
 
+  /// "card", "receipt", "warranty", for the picker's heading.
+  final String paper;
+
   final String initialKey;
   final String initialValue;
+
+  /// The labels offered, for the kind of card this is.
+  final List<String> keys;
   final List<OcrBlockRow> blocks;
   final List<int> initialBlockIds;
   final VoidCallback onCancel;
@@ -612,7 +691,7 @@ class _FieldEditorState extends State<_FieldEditor> {
                     spacing: Gap.xs,
                     runSpacing: Gap.xs,
                     children: <Widget>[
-                      for (final String key in FieldKeys.all)
+                      for (final String key in widget.keys)
                         SelectChip(
                           label: fieldLabel(key),
                           selected: _key == key,
@@ -664,7 +743,7 @@ class _FieldEditorState extends State<_FieldEditor> {
                   ),
                   if (offerable.isNotEmpty) ...<Widget>[
                     const SizedBox(height: Gap.md),
-                    MicroLabel('Or take it from the card'),
+                    MicroLabel('Or take it from the ${widget.paper}'),
                     const SizedBox(height: Gap.xs),
                     Text(
                       'Tap more than one to join them.',
@@ -757,6 +836,20 @@ const Set<String> _provenanceIssues = <String>{
   'ocr_repaired',
 };
 
+/// Whether [field] is one a person must look at before anything counts on
+/// it, and nobody has yet (B2): a receipt's total and date, a warranty's
+/// cover and expiry. Read wrong, these are wrong totals and late reminders.
+/// Opening the field and saving it — changed or not — confirms it.
+///
+/// A calculated expiry is not asked about: it is redone whenever its inputs
+/// change, so what a person checks is the purchase date and the cover it was
+/// worked out from, which ask for themselves.
+bool needsChecking(CardField field) =>
+    (ReceiptKeys.critical.contains(field.fieldKey) ||
+        WarrantyKeys.critical.contains(field.fieldKey)) &&
+    field.origin != FactOrigin.derived &&
+    !isConfirmed(field);
+
 /// Whether a field still has an objection nobody has resolved.
 bool needsALook(CardField field) =>
     field.validationIssue != null &&
@@ -767,9 +860,13 @@ bool needsALook(CardField field) =>
 /// Provenance is what separates this from a card scanner: an OCR guess or a
 /// repaired digit never gets to look like something printed on the card.
 class SourceChip extends StatelessWidget {
-  const SourceChip({required this.field, super.key});
+  const SourceChip({required this.field, this.paper = 'card', super.key});
 
   final CardField field;
+
+  /// What it was printed on — "card", "receipt", "warranty" — so a value
+  /// read off a receipt does not say *on the card*.
+  final String paper;
 
   @override
   Widget build(BuildContext context) {
@@ -795,17 +892,21 @@ class SourceChip extends StatelessWidget {
     // tapped Save on it — silent wrong data is the failure mode that costs
     // trust in everything else the app says.
     if (needsALook(field)) return ('needs a look', c.vermilion);
-    if (field.verifiedByUser) return ('you confirmed', c.ochreInk);
+    if (isConfirmed(field)) return ('you confirmed', c.ochreInk);
+    if (field.validity == FactValidity.outdated) {
+      return ('may be old', c.vermilion);
+    }
 
     return switch (field.validationIssue) {
       'digit_restored' => ('digit restored', c.olive),
       'ocr_repaired' => ('OCR repaired', c.olive),
-      _ => switch (field.source) {
-        FactSource.printed => ('on the card', c.inkMuted),
-        FactSource.user => ('you typed', c.ochreInk),
-        FactSource.aiInferred => ('guess', c.olive),
-        FactSource.outdated => ('may be old', c.vermilion),
-        FactSource.verified => ('verified', c.ochreInk),
+      _ => switch (field.origin) {
+        FactOrigin.printed => ('on the $paper', c.inkMuted),
+        FactOrigin.user => ('you typed', c.ochreInk),
+        // Worked out from other facts by a rule — a warranty's expiry from
+        // its purchase date. Said so, never shown as printed.
+        FactOrigin.derived => ('calculated', c.olive),
+        FactOrigin.inferred => ('guess', c.olive),
       },
     };
   }

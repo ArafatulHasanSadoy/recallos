@@ -12,7 +12,9 @@ import '../data/plus_controller.dart';
 
 /// RecallOS Plus: what it adds, what stays free, and the one button.
 ///
-/// Lists only what Plus does today — no limit on reminders, and Event Mode.
+/// Lists only what Plus does today — no limit on reminders, Event Mode,
+/// finding people by when, where or what is next, and receipt totals beyond
+/// this month.
 /// Anything planned is added here when it exists, not before: a paywall that
 /// sells what is not built is a promise the app cannot keep.
 class PlusScreen extends ConsumerStatefulWidget {
@@ -69,6 +71,35 @@ class _PlusScreenState extends ConsumerState<PlusScreen> {
                         trailing: Icon(Icons.chevron_right, color: c.inkMuted),
                         onTap: () => context.push(Routes.event),
                       ),
+                      // Not a row that goes anywhere: it is used by typing
+                      // in search, which this describes.
+                      const SettingRow(
+                        label: 'Find people by when you met',
+                        description:
+                            'Type “met at CSE fest”, “met last week” or “who '
+                            'needs a next step” in search, and get exactly '
+                            'those people.',
+                      ),
+                      SettingRow(
+                        label: 'Receipt totals for any month',
+                        description:
+                            'Any month or year, and what went to each shop '
+                            'and category. The free version shows this '
+                            'month.',
+                        trailing: Icon(Icons.chevron_right, color: c.inkMuted),
+                        onTap: () => context.push(Routes.receiptTotals),
+                      ),
+                      // B5's date and total questions, which Plus answers
+                      // (business/STRATEGY.md). Listed because a purchase
+                      // must say exactly what it unlocks; like the people
+                      // filters, it is used by typing in search.
+                      const SettingRow(
+                        label: 'Ask about dates and totals',
+                        description:
+                            'Type “what expires in the next 90 days?” or '
+                            '“how much on electronics in September?” in '
+                            'search, and get the answer with its papers.',
+                      ),
                     ],
                   ),
                   const SizedBox(height: Gap.md),
@@ -96,6 +127,12 @@ class _PlusScreenState extends ConsumerState<PlusScreen> {
                         label: 'Scanning, reading and correcting cards',
                       ),
                       SettingRow(label: 'Search, notes and next steps'),
+                      SettingRow(
+                        label: 'Receipts, warranties and this month’s total',
+                      ),
+                      SettingRow(
+                        label: 'When a warranty ends, and its reminder',
+                      ),
                       SettingRow(label: 'Say hello and your QR code'),
                       SettingRow(label: 'Backup, restore and the lock'),
                     ],

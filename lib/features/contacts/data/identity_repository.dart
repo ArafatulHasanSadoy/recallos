@@ -230,6 +230,31 @@ class IdentityRepository {
 
   static const String _rulesKey = 'identity_rules_version';
 
+  /// The kinds of card that are about a person, or a business someone works
+  /// at, and so become contacts.
+  ///
+  /// A receipt names a shop and sometimes a cashier; a warranty names a
+  /// brand and a service centre. None of them is somebody the user met, and
+  /// promoting them would fill the contacts with strangers. A list of what
+  /// may enter rather than of what may not, so a type added later stays out
+  /// until someone decides otherwise. `unknown` is every card captured before
+  /// types were recorded (schema v11) — all of them business cards.
+  static const Set<CardType> peopleCardTypes = <CardType>{
+    CardType.visitingCard,
+    CardType.serviceCentreCard,
+    CardType.unknown,
+  };
+
+  static String get _peopleTypesSql =>
+      peopleCardTypes.map((CardType t) => "'${t.name}'").join(', ');
+
+  Future<bool> _makesPeople(int cardId) async {
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+    return card == null || peopleCardTypes.contains(card.type);
+  }
+
   /// Rebuilds one card's contribution to the graph.
   ///
   /// Idempotent by construction: the card's own `contact_points` rows are
@@ -239,6 +264,7 @@ class IdentityRepository {
   /// duplicate endpoint per retry.
   Future<void> promote(int cardId) async {
     final CardFacts facts = await _factsOf(cardId);
+    final bool aboutPeople = await _makesPeople(cardId);
 
     _pendingOrgProposals.clear();
     await _db.transaction(() async {
@@ -250,7 +276,10 @@ class IdentityRepository {
 
       final int? previousOrgId = await _orgOf(cardId);
 
-      if (facts.isEmpty) {
+      // A receipt or a warranty contributes nothing to the graph — and a
+      // card re-typed as one leaves it, the same way a card with nothing on
+      // it does.
+      if (!aboutPeople || facts.isEmpty) {
         await _unlink(cardId);
         await _pruneBranches(<int?>[previousOrgId]);
         await _collectGarbage();
@@ -390,7 +419,10 @@ class IdentityRepository {
 
     final List<QueryRow> rows = await _db
         .customSelect(
-          'SELECT id FROM cards WHERE deleted_at IS NULL AND ('
+          'SELECT id FROM cards WHERE deleted_at IS NULL '
+          // Only cards that make contacts: a receipt is never promoted, so
+          // without this it would look "never promoted" on every launch.
+          'AND type IN ($_peopleTypesSql) AND ('
           // Never promoted.
           '  (person_id IS NULL AND org_id IS NULL)'
           // Or promoted under rules that have since changed. The graph is a

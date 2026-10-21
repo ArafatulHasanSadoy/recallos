@@ -168,7 +168,7 @@ class _CardSidesViewState extends ConsumerState<CardSidesView> {
         // into an image that is about to stop existing.
         content: const Text(
           'The photo of the back will be deleted, along with '
-          'everything read from it. The card and the front stay.',
+          'everything read from it. The front stays.',
         ),
         actions: <Widget>[
           TextButton(

@@ -707,6 +707,63 @@ abstract final class AppTheme {
         contentTextStyle: AppText.body(c),
       ),
 
+      // The next step's day is picked in Material's calendar, which fell
+      // back to its own colours (M7½). Dressed like the dialogs: a paper card,
+      // the serif for the date, the selected day filled the way a primary
+      // button is (ink, or ochre in dark — rule 2), today ringed in ochre as
+      // a marker.
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: c.card,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        headerBackgroundColor: c.card,
+        headerForegroundColor: c.ink,
+        headerHeadlineStyle: AppText.title(c),
+        headerHelpStyle: AppText.micro(c),
+        weekdayStyle: AppText.small(c),
+        dayStyle: AppText.body(c),
+        yearStyle: AppText.body(c),
+        dividerColor: c.hairline,
+        dayForegroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.onOchre : c.onInk)
+              : s.contains(WidgetState.disabled)
+              ? c.inkFaint
+              : c.ink,
+        ),
+        dayBackgroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.ochre : c.ink)
+              : Colors.transparent,
+        ),
+        todayForegroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.onOchre : c.onInk)
+              : c.ink,
+        ),
+        todayBackgroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.ochre : c.ink)
+              : Colors.transparent,
+        ),
+        todayBorder: BorderSide(color: c.ochre, width: 1.5),
+        yearForegroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.onOchre : c.onInk)
+              : c.ink,
+        ),
+        yearBackgroundColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? (isDark ? c.ochre : c.ink)
+              : Colors.transparent,
+        ),
+        cancelButtonStyle: TextButton.styleFrom(foregroundColor: c.inkMuted),
+        confirmButtonStyle: TextButton.styleFrom(
+          foregroundColor: isDark ? c.ochre : c.ochreInk,
+        ),
+      ),
+
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: c.page,
         surfaceTintColor: Colors.transparent,

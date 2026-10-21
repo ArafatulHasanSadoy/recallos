@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/backup/restore_swap.dart';
+import '../../../core/search/match_evidence.dart';
+import '../../../core/search/query_plan.dart';
+import '../../../core/spending/spending_totals.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/brand.dart';
 import '../../../core/ui/card_face.dart';
@@ -12,6 +15,7 @@ import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../../router.dart';
+import '../../ask/presentation/ask_answers.dart';
 import '../../capture/data/back_capture_service.dart';
 import '../../capture/data/card_repository.dart';
 import '../../cards/data/retention_sweep.dart';
@@ -20,9 +24,15 @@ import '../../contacts/data/identity_repository.dart';
 import '../../events/data/wallet_events.dart';
 import '../../followup/data/follow_up_repository.dart';
 import '../../followup/data/reminder_engine.dart';
+import '../../plus/data/plus_controller.dart' show PlusState, plusProvider;
 import '../../settings/data/backup_service.dart';
 import '../../settings/data/photo_protection.dart';
+import '../../spending/data/spending_repository.dart';
+import '../../spending/presentation/spending_screen.dart'
+    show homeReceiptsWords;
 import '../data/search_repository.dart';
+import 'lookup_answers.dart';
+import 'people_answers.dart';
 
 /// Live list of saved cards, newest first.
 final savedCardsProvider = StreamProvider<List<CardSummary>>(
@@ -46,7 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _debounce;
 
   String _query = '';
-  List<SearchHit> _hits = const <SearchHit>[];
+  SearchAnswer _answer = SearchAnswer.empty;
   bool _searching = false;
 
   /// Keeps open results true to the data. See [SearchRepository.watchChanges]:
@@ -148,7 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (trimmed.isEmpty) {
       setState(() {
         _query = '';
-        _hits = const <SearchHit>[];
+        _answer = SearchAnswer.empty;
         _searching = false;
       });
       return;
@@ -164,12 +174,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _run(String query) async {
-    final List<SearchHit> hits = await ref
+    final SearchAnswer answer = await ref
         .read(searchRepositoryProvider)
-        .search(query);
+        .ask(query, plus: ref.read(plusProvider).owned);
     if (!mounted || _query != query) return;
     setState(() {
-      _hits = hits;
+      _answer = answer;
       _searching = false;
     });
   }
@@ -191,10 +201,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // Drop it from the visible results too, or a deleted card lingers on screen
     // until the next keystroke.
-    if (mounted && _hits.isNotEmpty) {
+    if (mounted && !_answer.isEmpty) {
       setState(
-        () =>
-            _hits = _hits.where((SearchHit h) => h.card.id != card.id).toList(),
+        () => _answer = SearchAnswer(
+          plan: _answer.plan,
+          lookups: <LookupAnswer>[
+            for (final LookupAnswer l in _answer.lookups)
+              if (l.card.id != card.id) l,
+          ],
+          hits: <SearchHit>[
+            for (final SearchHit h in _answer.hits)
+              if (h.card.id != card.id) h,
+          ],
+        ),
       );
     }
     if (!mounted) return;
@@ -244,6 +263,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
+    // Plus is read from the kept receipt a moment after launch, and can be
+    // bought or refunded while results are open: a people filter answered
+    // as words a second ago is answered as a list now, and the other way.
+    ref.listen<bool>(plusProvider.select((PlusState s) => s.owned), (
+      bool? before,
+      bool now,
+    ) {
+      if (before != now && _query.isNotEmpty) unawaited(_run(_query));
+    });
     final AsyncValue<List<CardSummary>> saved = ref.watch(savedCardsProvider);
     final bool searchingNow = _query.isNotEmpty;
     // While the keyboard is up the body shrinks to the space above it, and a
@@ -266,11 +294,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      const SizedBox(height: Gap.lg),
-                      // Rule 3: the serif italic is the app asking, and this is
-                      // the question the whole product is built around.
-                      Text('What do you\nneed?', style: AppText.displayAsk(c)),
-                      const SizedBox(height: Gap.lg),
+                      // Folded away while there is a question (M7½). With
+                      // the keyboard up, the heading kept a quarter of the
+                      // screen and left one answer showing; the answers need
+                      // the room more than the question needs repeating.
+                      // Clearing the field brings it back. `AnimatedAlign`
+                      // over `AnimatedSize`, as in the profile editor: it
+                      // animates a factor rather than re-measuring a child.
+                      ExcludeSemantics(
+                        excluding: searchingNow,
+                        child: ClipRect(
+                          child: AnimatedAlign(
+                            duration: AppMotion.normal,
+                            curve: AppMotion.curve,
+                            alignment: Alignment.topCenter,
+                            heightFactor: searchingNow ? 0 : 1,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                const SizedBox(height: Gap.lg),
+                                // Rule 3: the serif italic is the app asking,
+                                // and this is the question the whole product
+                                // is built around.
+                                Text(
+                                  'What do you\nneed?',
+                                  style: AppText.displayAsk(c),
+                                ),
+                                const SizedBox(height: Gap.lg),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Always here, only its height changes. Found on the
+                      // phone: an `if` here put a new widget in front of the
+                      // field the moment the first letter folded the heading,
+                      // Flutter built the field again, and the keyboard lost
+                      // it — "When does…" arrived as "Wh". The children
+                      // around the field must keep their places.
+                      SizedBox(height: searchingNow ? Gap.sm : 0),
                       _SearchPocket(
                         controller: _controller,
                         onChanged: _onQueryChanged,
@@ -286,6 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       if (!searchingNow) const _AttentionRow(),
                       if (!searchingNow) const _EventRow(),
                       if (!searchingNow) const _TodayRow(),
+                      if (!searchingNow) const _ReceiptsRow(),
                     ],
                   ),
                 ),
@@ -294,7 +357,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: searchingNow
                       ? _SearchResults(
                           query: _query,
-                          hits: _hits,
+                          answer: _answer,
                           searching: _searching,
                           onClear: () {
                             _controller.clear();
@@ -319,7 +382,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       'Scan the first card and say one line '
                                       'about why it mattered.',
                                   actionLabel: 'Scan a card',
-                                  onAction: () => context.push(Routes.capture),
+                                  onAction: () => _leaveHomeFor<void>(
+                                    context,
+                                    Routes.capture,
+                                  ),
                                 )
                               : _Library(cards: cards, onDelete: _delete),
                         ),
@@ -344,11 +410,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const _EventButton(),
                     const SizedBox(width: Gap.sm + 2),
                     Expanded(
+                      // "Scan", not "Scan a card": since B2 the same button
+                      // saves a receipt or a warranty, read and typed as one.
                       child: InkPill(
-                        label: 'Scan a card',
+                        label: 'Scan',
                         icon: Icons.document_scanner_outlined,
                         height: 58,
-                        onTap: () => context.push(Routes.capture),
+                        onTap: () =>
+                            _leaveHomeFor<void>(context, Routes.capture),
                       ),
                     ),
                   ],
@@ -359,6 +428,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+}
+
+/// Leaves home for [route], letting go of the search field's focus first,
+/// as opening a card already does (`openCardDetail`). Found on the phone:
+/// back from a scan, the field still held focus and raised the keyboard by
+/// itself over the wallet.
+Future<T?> _leaveHomeFor<T>(BuildContext context, String route) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  return context.push<T>(route);
 }
 
 /// The wordmark, and the three ways out of this screen.
@@ -389,19 +467,19 @@ class _HomeHeader extends StatelessWidget {
           _RoundButton(
             icon: Icons.badge_outlined,
             tooltip: 'Your card',
-            onTap: () => context.push(Routes.myCard),
+            onTap: () => _leaveHomeFor<void>(context, Routes.myCard),
           ),
           const SizedBox(width: Gap.sm),
           _RoundButton(
             icon: Icons.people_outline,
-            tooltip: 'Contacts',
-            onTap: () => context.push(Routes.contacts),
+            tooltip: 'People',
+            onTap: () => _leaveHomeFor<void>(context, Routes.contacts),
           ),
           const SizedBox(width: Gap.sm),
           _RoundButton(
             icon: Icons.tune,
             tooltip: 'Settings',
-            onTap: () => context.push(Routes.settings),
+            onTap: () => _leaveHomeFor<void>(context, Routes.settings),
           ),
         ],
       ),
@@ -648,7 +726,7 @@ class _SwipeableTile extends StatelessWidget {
                     'Needs attention',
                     color: AppColors.of(context).vermilion,
                   )
-                : MetaLabel(_age(card.capturedAt)),
+                : MetaLabel(compactAge(card.capturedAt)),
             onTap: () => openCardDetail(
               context,
               cardId: card.id,
@@ -658,19 +736,6 @@ class _SwipeableTile extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// "3D", "1W", "2MO" — the frames use an age, not a date. A date on every
-  /// row is precision nobody asked for; how long ago is what places a card in
-  /// memory.
-  static String _age(DateTime at) {
-    final Duration since = DateTime.now().difference(at);
-    if (since.inDays >= 365) return '${since.inDays ~/ 365}Y';
-    if (since.inDays >= 30) return '${since.inDays ~/ 30}MO';
-    if (since.inDays >= 7) return '${since.inDays ~/ 7}W';
-    if (since.inDays >= 1) return '${since.inDays}D';
-    if (since.inHours >= 1) return '${since.inHours}H';
-    return 'JUST NOW';
   }
 }
 
@@ -682,27 +747,58 @@ class _SwipeableTile extends StatelessWidget {
 class _SearchResults extends StatelessWidget {
   const _SearchResults({
     required this.query,
-    required this.hits,
+    required this.answer,
     required this.searching,
     required this.onClear,
   });
 
   final String query;
-  final List<SearchHit> hits;
+  final SearchAnswer answer;
   final bool searching;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
+    final List<SearchHit> hits = answer.hits;
+    final QueryPlan plan = answer.plan;
+    // A lookup's direct answers go first, then the other cards.
+    // People filters (Plus) put their exact list here instead; without
+    // Plus, one line saying so sits above the words' results.
+    final Widget? lookups = switch (plan) {
+      LookupPlan() when answer.lookups.isNotEmpty => LookupAnswers(
+        plan: plan,
+        answers: answer.lookups,
+      ),
+      PeopleFilterPlan() when answer.plusNeeded => const PlusFilterLine(),
+      PeopleFilterPlan() => PeopleAnswers(plan: plan, people: answer.people),
+      // Purchases (B5). A question understood but not answerable is a
+      // sentence in the answer's place, with the words still searched below.
+      WarrantyPlan() when answer.cannot != null => CannotLine(answer.cannot!),
+      WarrantyPlan() => WarrantyAnswers(plan: plan, answers: answer.warranties),
+      ExpiringPlan() when answer.plusNeeded => const PlusFilterLine(
+        text: 'Questions about dates come with RecallOS Plus',
+      ),
+      ExpiringPlan() => ExpiringAnswers(plan: plan, answers: answer.expiring),
+      SpendingPlan() when answer.plusNeeded => const PlusFilterLine(
+        text:
+            'Totals by category, shop and other months come with '
+            'RecallOS Plus',
+      ),
+      SpendingPlan() when answer.spending != null => SpendingAnswerBlock(
+        plan: plan,
+        answer: answer.spending!,
+      ),
+      _ => null,
+    };
 
-    if (searching && hits.isEmpty) {
+    if (searching && answer.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(horizontal: 22),
         child: GhostStack(count: 2),
       );
     }
-    if (hits.isEmpty) {
+    if (answer.isEmpty) {
       return EmptyState(
         label: 'No results',
         title: 'Nothing matched that',
@@ -716,23 +812,34 @@ class _SearchResults extends StatelessWidget {
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(22, 0, 22, 132),
-      itemCount: hits.length + 2,
+      itemCount: (lookups == null ? 0 : 1) + hits.length + 2,
       separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
       itemBuilder: (BuildContext context, int i) {
+        if (lookups != null) {
+          if (i == 0) return lookups;
+          i -= 1;
+        }
         if (i == 0) {
+          if (lookups != null && hits.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
             child: SectionHeader(
-              hits.length == 1 ? '1 answer' : '${hits.length} answers',
+              lookups != null && !answer.plusNeeded
+                  ? 'Other cards'
+                  : hits.length == 1
+                  ? '1 answer'
+                  : '${hits.length} answers',
               trailing: MicroLabel('By relevance'),
             ),
           );
         }
         if (i == hits.length + 1) {
+          if (hits.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(top: Gap.sm),
             child: Text(
-              'Ranked on your notes first, then the printed fields.',
+              'Ranked on your notes and where you met first, then the '
+              'printed fields.',
               textAlign: TextAlign.center,
               style: AppText.small(c).copyWith(color: c.inkFaint),
             ),
@@ -754,6 +861,19 @@ class _SearchHitCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppColors c = AppColors.of(context);
     final CardSummary card = hit.card;
+    // One answer, one "why". When the words were found in the note, the
+    // block under the tile carries the note — whole, matched words marked —
+    // and the tile's second line says who it is instead of repeating it cut
+    // off. Otherwise the tile shows the note as the library does. A card
+    // with no name or number read has nothing else for that line, so its
+    // note stays on the tile and is not said twice.
+    final MatchEvidence? e = _Evidence.adds(hit) ? hit.evidence : null;
+    final bool fromNote =
+        e != null &&
+        (e.source == EvidenceSource.note ||
+            e.source == EvidenceSource.noteMeaning);
+    final MatchEvidence? why = fromNote && card.subtitle == null ? null : e;
+    final bool noteBelow = why != null && fromNote;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -761,28 +881,91 @@ class _SearchHitCard extends StatelessWidget {
         WalletCardTile(
           flat: true,
           title: card.title ?? 'Unread card',
-          subtitle: card.note ?? card.subtitle ?? 'No details read',
+          subtitle: noteBelow
+              ? card.subtitle!
+              : card.note ?? card.subtitle ?? 'No details read',
           imagePath: card.displayPath,
           hasNote: card.note != null && card.note!.trim().isNotEmpty,
           heroTag: cardHeroTag(card.id),
-          meta: MetaLabel(
-            // Straight from the signals that actually ranked this. Never
-            // prose, never written after the fact.
-            hit.matchedOnMeaningOnly
-                ? 'Similar meaning'
-                : hit.reasons.join(' · '),
-            color: c.ochreInk,
-          ),
+          meta: why != null
+              // The why is said in full below; the caps line places the card
+              // in time, as a library tile's does.
+              ? MetaLabel(compactAge(card.capturedAt))
+              : MetaLabel(
+                  // Straight from the signals that actually ranked this.
+                  // Never prose, never written after the fact.
+                  hit.matchedOnMeaningOnly
+                      ? 'Similar meaning'
+                      : hit.reasons.join(' · '),
+                  color: c.ochreInk,
+                ),
           onTap: () => openCardDetail(
             context,
             cardId: card.id,
             imagePath: card.displayPath,
           ),
         ),
+        if (why != null) ...<Widget>[
+          const SizedBox(height: Gap.sm),
+          _Evidence(evidence: why),
+        ],
         const SizedBox(height: Gap.sm),
         // The bar is honest: its width is the real rank, not a decoration.
         _ScoreBar(score: hit.score),
       ],
+    );
+  }
+}
+
+/// The words that matched, where they were found, under the result.
+///
+/// Every answer that matched on words gets one: the note, where they met, a
+/// field or the printed text. Whether a note fits on the tile's one line
+/// depends on the phone's width and text size — guessing it left one note
+/// cut off with no excerpt beside another that had one (seen on the phone,
+/// 7 Oct) — so the rule does not guess.
+class _Evidence extends StatelessWidget {
+  const _Evidence({required this.evidence});
+
+  final MatchEvidence evidence;
+
+  static bool adds(SearchHit hit) => hit.evidence?.excerpt != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final String text = evidence.excerpt!;
+    final TextStyle marked = TextStyle(
+      color: c.ink,
+      fontWeight: FontWeight.w600,
+      fontVariations: AppFonts.weight(600),
+    );
+
+    final List<InlineSpan> spans = <InlineSpan>[];
+    int at = 0;
+    for (final (int start, int end) in evidence.spans) {
+      if (start < at || end > text.length) continue;
+      if (start > at) spans.add(TextSpan(text: text.substring(at, start)));
+      spans.add(TextSpan(text: text.substring(start, end), style: marked));
+      at = end;
+    }
+    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Gap.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          MicroLabel(evidence.label),
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(children: spans),
+            style: AppText.body(c),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -879,11 +1062,16 @@ class _TodayRow extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: Gap.md),
       child: PressFade(
-        onTap: () => context.push(Routes.today),
+        onTap: () => _leaveHomeFor<void>(context, Routes.today),
         semanticLabel: '$text. Open Today',
         child: Container(
-          height: kMinTarget,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          // At least a thumb high, and two lines when the words need them
+          // (found on the phone: "BDT 78,500.00 in receipts this m…").
+          constraints: const BoxConstraints(minHeight: kMinTarget),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.md,
+            vertical: Gap.xs,
+          ),
           decoration: BoxDecoration(
             color: c.ochre.withValues(alpha: 0.12),
             borderRadius: AppRadius.pocketR,
@@ -896,12 +1084,69 @@ class _TodayRow extends ConsumerWidget {
               Expanded(
                 child: Text(
                   text,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.rowTitle(c).copyWith(fontSize: 15),
                 ),
               ),
               Icon(Icons.chevron_right, size: 20, color: c.ochreInk),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// This month's receipts, and the way into their totals (B4).
+///
+/// Only while the wallet holds a receipt: in a wallet of business cards a
+/// row about receipts is noise. Quiet chrome — the card's own fill, no
+/// marker colour — because it is a figure to glance at, not something to do.
+class _ReceiptsRow extends ConsumerWidget {
+  const _ReceiptsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final List<ReceiptFacts> all =
+        ref.watch(receiptFactsProvider).value ?? const <ReceiptFacts>[];
+    if (all.isEmpty) return const SizedBox.shrink();
+    final String text = homeReceiptsWords(
+      SpendingSummary.of(all, period: SpendingPeriod.monthOf(DateTime.now())),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Gap.md),
+      child: PressFade(
+        onTap: () => _leaveHomeFor<void>(context, Routes.receiptTotals),
+        semanticLabel: '$text. Open receipt totals',
+        child: Container(
+          // At least a thumb high, and two lines when the words need them
+          // (found on the phone: "BDT 78,500.00 in receipts this m…").
+          constraints: const BoxConstraints(minHeight: kMinTarget),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.md,
+            vertical: Gap.xs,
+          ),
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: AppRadius.pocketR,
+            border: Border.all(color: c.hairlineOnCard),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.receipt_long, size: 18, color: c.inkMuted),
+              const SizedBox(width: Gap.sm),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
             ],
           ),
         ),
@@ -929,10 +1174,15 @@ class _AttentionRow extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: Gap.md),
       child: PressFade(
-        onTap: () => context.push(Routes.needsAttention),
+        onTap: () => _leaveHomeFor<void>(context, Routes.needsAttention),
         child: Container(
-          height: kMinTarget,
-          padding: const EdgeInsets.symmetric(horizontal: Gap.md),
+          // At least a thumb high, and two lines when the words need them
+          // (found on the phone: "BDT 78,500.00 in receipts this m…").
+          constraints: const BoxConstraints(minHeight: kMinTarget),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Gap.md,
+            vertical: Gap.xs,
+          ),
           decoration: BoxDecoration(
             color: c.vermilion.withValues(alpha: 0.10),
             borderRadius: AppRadius.pocketR,
@@ -992,7 +1242,7 @@ class _EventButton extends ConsumerWidget {
     final bool running = ref.watch(activeEventProvider) != null;
 
     return PressFade(
-      onTap: () => context.push(Routes.event),
+      onTap: () => _leaveHomeFor<void>(context, Routes.event),
       scale: 0.92,
       semanticLabel: running ? 'Event Mode, running' : 'Event Mode',
       child: Container(
@@ -1034,33 +1284,42 @@ class _EventRow extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: Gap.md),
       child: PressFade(
-        onTap: () => context.push(Routes.event),
+        onTap: () => _leaveHomeFor<void>(context, Routes.event),
         semanticLabel: '$text. Open Event Mode',
         child: Container(
-          height: kMinTarget,
+          // At least a thumb high, and two lines when the words need them
+          // (found on the phone: "BDT 78,500.00 in receipts this m…").
+          constraints: const BoxConstraints(minHeight: kMinTarget),
           decoration: BoxDecoration(
             color: c.card,
             borderRadius: AppRadius.pocketR,
             border: Border.all(color: c.hairlineOnCard),
           ),
           clipBehavior: Clip.antiAlias,
-          child: Row(
-            children: <Widget>[
-              Container(width: 4, color: c.ochre),
-              const SizedBox(width: Gap.md - 4),
-              Icon(Icons.festival_outlined, size: 18, color: c.ochreInk),
-              const SizedBox(width: Gap.sm),
-              Expanded(
-                child: Text(
-                  text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.rowTitle(c).copyWith(fontSize: 15),
+          // The rail runs the row's full height, whatever the words need.
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Container(width: 4, color: c.ochre),
+                const SizedBox(width: Gap.md - 4),
+                Icon(Icons.festival_outlined, size: 18, color: c.ochreInk),
+                const SizedBox(width: Gap.sm),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.rowTitle(c).copyWith(fontSize: 15),
+                    ),
+                  ),
                 ),
-              ),
-              Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
-              const SizedBox(width: Gap.md - 4),
-            ],
+                Icon(Icons.chevron_right, size: 20, color: c.inkMuted),
+                const SizedBox(width: Gap.md - 4),
+              ],
+            ),
           ),
         ),
       ),

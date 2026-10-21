@@ -24,67 +24,72 @@ void main() {
     String? issue,
     bool verified = false,
     CardSide side = CardSide.front,
-  }) =>
-      CardField(
-        id: id,
-        cardId: 1,
-        fieldKey: key,
-        value: value,
-        source: FactSource.printed,
-        verifiedByUser: verified,
-        validationIssue: issue,
-        valueKind: FieldValueKind.text,
-        regionRect: '10,10,310,50',
-        side: side,
-        createdAt: now,
-        updatedAt: now,
-      );
+  }) => CardField(
+    id: id,
+    cardId: 1,
+    fieldKey: key,
+    value: value,
+    source: FactSource.printed,
+    verifiedByUser: verified,
+    origin: FactOrigin.printed,
+    review: verified ? FactReview.confirmed : FactReview.unreviewed,
+    validity: FactValidity.current,
+    validationIssue: issue,
+    valueKind: FieldValueKind.text,
+    regionRect: '10,10,310,50',
+    side: side,
+    createdAt: now,
+    updatedAt: now,
+  );
 
   OcrBlockRow blockRow(
     int id,
     String text, {
     int? fieldId,
     CardSide side = CardSide.front,
-  }) =>
-      OcrBlockRow(
-        id: id,
-        cardId: 1,
-        blockText: text,
-        rect: '10,${id * 40},310,${id * 40 + 30}',
-        confidence: 0.9,
-        script: 'latin',
-        fieldId: fieldId,
-        orderIndex: id,
-        side: side,
-      );
+  }) => OcrBlockRow(
+    id: id,
+    cardId: 1,
+    blockText: text,
+    rect: '10,${id * 40},310,${id * 40 + 30}',
+    confidence: 0.9,
+    script: 'latin',
+    fieldId: fieldId,
+    orderIndex: id,
+    side: side,
+  );
 
   /// The card from the device: a shop card with two numbers and a long email.
   CardDetail detail() => CardDetail(
-        card: CardRow(
-          id: 1,
-          type: CardType.unknown,
-          imagePath: '/tmp/cards/card_1.jpg',
-          extractionStatus: ExtractionStatus.complete,
-          capturedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        ),
-        fields: <CardField>[
-          field(1, FieldKeys.company, 'TARGET CENTER'),
-          field(2, FieldKeys.phone, '01747157741', issue: 'digit_restored'),
-          field(3, FieldKeys.phone, '01977826596'),
-          field(4, FieldKeys.email, 'targetbrand2015@gmail.com'),
-          field(5, FieldKeys.address,
-              'Shop No:300, Dhaka New Market, Dhaka-1205, Bangladesh'),
-        ],
-        notes: const <Note>[],
-        blocks: <OcrBlockRow>[
-          blockRow(1, 'TARGET CENTER', fieldId: 1),
-          blockRow(2, 'Shop No:300, Dhaka New Market, Dhaka-1205', fieldId: 5),
-          blockRow(3, 'Cell phone: +88 01747-157741, 01977826596', fieldId: 2),
-          blockRow(4, 'E-mail: targetbrand2015@gmail.com', fieldId: 4),
-        ],
-      );
+    card: CardRow(
+      id: 1,
+      type: CardType.unknown,
+      captureSource: CaptureSource.documentScanner,
+      imagePath: '/tmp/cards/card_1.jpg',
+      extractionStatus: ExtractionStatus.complete,
+      capturedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    ),
+    fields: <CardField>[
+      field(1, FieldKeys.company, 'TARGET CENTER'),
+      field(2, FieldKeys.phone, '01747157741', issue: 'digit_restored'),
+      field(3, FieldKeys.phone, '01977826596'),
+      field(4, FieldKeys.email, 'targetbrand2015@gmail.com'),
+      field(
+        5,
+        FieldKeys.address,
+        'Shop No:300, Dhaka New Market, Dhaka-1205, Bangladesh',
+      ),
+    ],
+    notes: const <Note>[],
+    blocks: <OcrBlockRow>[
+      blockRow(1, 'TARGET CENTER', fieldId: 1),
+      blockRow(2, 'Shop No:300, Dhaka New Market, Dhaka-1205', fieldId: 5),
+      blockRow(3, 'Cell phone: +88 01747-157741, 01977826596', fieldId: 2),
+      blockRow(4, 'E-mail: targetbrand2015@gmail.com', fieldId: 4),
+    ],
+  );
 
   Future<void> pump(WidgetTester tester) async {
     // A real phone's logical size, because the bug is about running out of it.
@@ -144,7 +149,8 @@ void main() {
     // Role chips, a text field, block chips and three buttons do not fit in a
     // couple of hundred pixels. If the editor is shorter than this it has been
     // squashed and its children are painting over each other.
-    final double height = tester.getSize(find.byType(TextField)).height +
+    final double height =
+        tester.getSize(find.byType(TextField)).height +
         tester.getRect(find.widgetWithText(FilledButton, 'Save')).bottom -
         tester.getRect(find.text('What is this?')).top;
     expect(height, greaterThan(400));
@@ -160,8 +166,9 @@ void main() {
     // The theme's `Size.fromHeight(52)` is an infinite minimum width, so a
     // filled button left to itself takes the entire line and pushes Cancel and
     // Remove onto their own rows.
-    final double save =
-        tester.getSize(find.widgetWithText(FilledButton, 'Save')).width;
+    final double save = tester
+        .getSize(find.widgetWithText(FilledButton, 'Save'))
+        .width;
     expect(save, lessThan(200));
 
     // Cancel and Save belong on the same line.

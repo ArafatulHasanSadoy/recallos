@@ -85,3 +85,16 @@ String reminderWords(DateTime at, DateTime now) {
   };
   return '${clock(at)} $when';
 }
+
+/// "3D", "1W", "2MO" — how long ago, the way a wallet tile says it. A date
+/// on every row is precision nobody asked for; how long ago is what places
+/// a card in memory.
+String compactAge(DateTime at, {DateTime? now}) {
+  final Duration since = (now ?? DateTime.now()).difference(at);
+  if (since.inDays >= 365) return '${since.inDays ~/ 365}Y';
+  if (since.inDays >= 30) return '${since.inDays ~/ 30}MO';
+  if (since.inDays >= 7) return '${since.inDays ~/ 7}W';
+  if (since.inDays >= 1) return '${since.inDays}D';
+  if (since.inHours >= 1) return '${since.inHours}H';
+  return 'JUST NOW';
+}

@@ -23,6 +23,7 @@ Future<String?> showNoteSheet(
   required String? secondaryResult,
   String initial = '',
   bool emphasised = false,
+  String hint = 'cheap t-shirt printing, did our fest shirts',
 }) {
   return showModalBottomSheet<String>(
     context: context,
@@ -37,6 +38,7 @@ Future<String?> showNoteSheet(
       secondaryResult: secondaryResult,
       initial: initial,
       emphasised: emphasised,
+      hint: hint,
     ),
   );
 }
@@ -51,6 +53,7 @@ class NoteSheet extends StatefulWidget {
     required this.secondaryResult,
     this.initial = '',
     this.emphasised = false,
+    this.hint = 'cheap t-shirt printing, did our fest shirts',
     super.key,
   });
 
@@ -69,6 +72,9 @@ class NoteSheet extends StatefulWidget {
   /// The vermilion "Nothing was readable" pill and the harder wording, shown
   /// only when extraction found little or nothing.
   final bool emphasised;
+
+  /// The example shown in the empty field, for the kind of paper.
+  final String hint;
 
   @override
   State<NoteSheet> createState() => _NoteSheetState();
@@ -148,7 +154,7 @@ class _NoteSheetState extends State<NoteSheet> {
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
-                hintText: 'cheap t-shirt printing, did our fest shirts',
+                hintText: widget.hint,
                 hintStyle: AppText.body(c).copyWith(fontSize: 15),
               ),
               onSubmitted: (String v) => Navigator.of(context).pop(v),

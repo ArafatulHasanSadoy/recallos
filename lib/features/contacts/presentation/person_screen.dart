@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/db/database.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/ui/day_words.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
+import '../../../router.dart';
+import '../../capture/data/card_repository.dart' show cardDetailProvider;
+import '../../followup/data/follow_up_repository.dart'
+    show NextStep, openStepsProvider;
 import '../data/contact_export.dart';
 import '../data/identity_repository.dart';
 import 'widgets/contact_widgets.dart';
@@ -32,7 +38,7 @@ class PersonScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             ScreenHeader(
-              title: 'Contact',
+              title: 'Person',
               onBack: () => context.pop(),
               actions: <Widget>[
                 RoundIconButton(
@@ -63,13 +69,13 @@ class PersonScreen extends ConsumerWidget {
                 ),
                 error: (Object e, _) => EmptyState(
                   label: 'Not available',
-                  title: 'Could not open this contact',
+                  title: 'Could not open this person',
                   body: '$e',
                 ),
                 data: (PersonDetail? d) => d == null
                     ? const EmptyState(
                         label: 'Gone',
-                        title: 'This contact is no longer here',
+                        title: 'This person is no longer here',
                         body: 'The cards behind it may have been deleted.',
                       )
                     : _Body(detail: d),
@@ -109,6 +115,14 @@ class _Body extends StatelessWidget {
         ),
         const SizedBox(height: Gap.lg),
 
+        // Why they matter, before how to reach them (M7½): the note and the
+        // next step are what RecallOS keeps that a phone's contacts do not,
+        // and the person screen used to show neither.
+        if (detail.cardIds.isNotEmpty) ...<Widget>[
+          _WhyAndNext(cardIds: detail.cardIds),
+          const SizedBox(height: Gap.lg),
+        ],
+
         // One block per job, never one flat contact list. The grouping is the
         // feature: the motivating case is a man whose watch shop and bank
         // office have different numbers, and "which number do I use for this"
@@ -144,6 +158,143 @@ class _Body extends StatelessWidget {
 
         if (detail.mergedFrom.isNotEmpty) _Combined(detail: detail),
       ],
+    );
+  }
+}
+
+/// Why the user kept this person, and what they said they would do next —
+/// read off the person's own cards, each line opening the card it is on,
+/// where it is edited. A person with nothing written yet gets the way to
+/// write it, not an empty block.
+class _WhyAndNext extends ConsumerWidget {
+  const _WhyAndNext({required this.cardIds});
+
+  final List<int> cardIds;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppColors c = AppColors.of(context);
+    final List<({int cardId, String note})> notes =
+        <({int cardId, String note})>[
+          for (final int id in cardIds)
+            for (final Note n
+                in ref.watch(cardDetailProvider(id)).value?.notes ??
+                    const <Note>[])
+              if ((n.body ?? '').trim().isNotEmpty)
+                (cardId: id, note: n.body!.trim()),
+        ];
+    final List<({int cardId, NextStep step})> steps =
+        <({int cardId, NextStep step})>[
+          for (final int id in cardIds)
+            for (final NextStep s
+                in ref.watch(openStepsProvider(id)).value ?? const <NextStep>[])
+              (cardId: id, step: s),
+        ]..sort((a, b) => a.step.date.dueOn.compareTo(b.step.date.dueOn));
+    void open(int cardId) => context.push<void>(Routes.card(cardId));
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(Gap.md, Gap.md, Gap.md, Gap.sm),
+      decoration: AppDecoration.card(
+        c,
+        isDark: isDarkTheme(context),
+        lifted: false,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          MicroLabel('Why you saved them', color: c.ochreInk),
+          const SizedBox(height: Gap.xs),
+          if (notes.isEmpty)
+            _Line(
+              semantic: 'Add why you saved them, on their card',
+              onTap: () => open(cardIds.first),
+              child: Text(
+                'Nothing written yet. Add a line on their card — it is how '
+                'you will find them when the name has gone.',
+                style: AppText.body(c).copyWith(color: c.inkMuted),
+              ),
+            )
+          else
+            for (final ({int cardId, String note}) n in notes)
+              _Line(
+                semantic: 'Why you saved them: ${n.note}. Open the card',
+                onTap: () => open(n.cardId),
+                child: Text(
+                  n.note,
+                  style: AppText.rowTitle(c).copyWith(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w400,
+                    fontVariations: AppFonts.weight(400),
+                    height: 1.45,
+                  ),
+                ),
+              ),
+          if (steps.isNotEmpty) ...<Widget>[
+            const SizedBox(height: Gap.sm),
+            MicroLabel('Next step', color: c.ochreInk),
+            for (final ({int cardId, NextStep step}) s in steps)
+              _Line(
+                semantic: 'Next step: ${s.step.date.title}. Open the card',
+                onTap: () => open(s.cardId),
+                child: Builder(
+                  builder: (BuildContext context) {
+                    final ({String text, bool overdue}) due = dueWords(
+                      s.step.date.dueOn,
+                      DateTime.now(),
+                    );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(s.step.date.title, style: AppText.rowTitle(c)),
+                        Text(
+                          due.text,
+                          style: AppText.small(c).copyWith(
+                            color: due.overdue ? c.vermilion : c.inkMuted,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One tappable line in [_WhyAndNext], at least a thumb high.
+class _Line extends StatelessWidget {
+  const _Line({
+    required this.child,
+    required this.onTap,
+    required this.semantic,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final String semantic;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    return PressFade(
+      onTap: onTap,
+      semanticLabel: semantic,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: kMinTarget),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Gap.xs),
+          child: Row(
+            children: <Widget>[
+              Expanded(child: child),
+              Icon(Icons.chevron_right, size: 20, color: c.inkFaint),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

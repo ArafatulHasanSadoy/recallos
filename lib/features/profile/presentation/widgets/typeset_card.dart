@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/extraction/phone.dart';
 import '../../../../core/imaging/sealed_file_image.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/ui/card_face.dart';
@@ -207,7 +208,9 @@ class _Line extends StatelessWidget {
           const SizedBox(width: Gap.sm),
           Expanded(
             child: Text(
-              line.value,
+              // Grouped the way every other list shows a Bangladeshi mobile;
+              // any other line comes back exactly as written.
+              PhoneExtractor.display(line.value),
               style: AppText.small(c).copyWith(color: c.ink),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

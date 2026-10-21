@@ -1,14 +1,24 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../../core/db/database.dart';
+import '../../../core/eval/question_set.dart';
+import '../../../core/storage/hand_offs.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../search/data/search_repository.dart';
+import '../../warranty/data/purchase_links.dart';
+import '../data/card_repository.dart' show databaseProvider;
+import '../domain/eval_runner.dart';
 import '../domain/spike_runner.dart';
 
 /// The Phase 0 gate, as a screen.
@@ -36,6 +46,9 @@ class _SpikeScreenState extends State<SpikeScreen> {
   String? _exportPath;
   Map<String, bool>? _availability;
 
+  /// The last question set's table (PLAN §6: retrieval, Ask, links).
+  String? _evalSummary;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +71,69 @@ class _SpikeScreenState extends State<SpikeScreen> {
     if (mounted) setState(() => _availability = found);
   }
 
+  /// Plays a labelled question set (`lib/core/eval/question_set.dart`)
+  /// against this phone's wallet, shows the table and shares the report.
+  /// Reads only; the wallet is not changed.
+  Future<void> _runQuestionSet() async {
+    // Resolved before any await: the screen may be gone by the end.
+    final ProviderContainer providers = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
+    final AppDatabase db = providers.read(databaseProvider);
+    final SearchRepository search = providers.read(searchRepositoryProvider);
+
+    final fs.XFile? file = await fs.openFile(
+      acceptedTypeGroups: <fs.XTypeGroup>[
+        const fs.XTypeGroup(
+          label: 'Question set',
+          extensions: <String>['json'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) return;
+    setState(() {
+      _running = true;
+      _evalSummary = null;
+      _status = 'Running the question set…';
+    });
+    try {
+      final EvalReport report = await EvalRunner(
+        db: db,
+        search: search,
+        links: PurchaseLinks(db),
+      ).run(EvalSet.parse(await file.readAsString()));
+      final File out = File(
+        p.join((await outboxDirectory()).path, 'recallos_eval_report.json'),
+      );
+      await out.writeAsString(report.toJson());
+      if (mounted) {
+        setState(() {
+          _evalSummary = report.format();
+          _status = 'Question set done.';
+        });
+      }
+      try {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: <XFile>[XFile(out.path, mimeType: 'application/json')],
+            subject: 'RecallOS evaluation',
+          ),
+        );
+      } finally {
+        await discardHandOff(out);
+      }
+    } on FormatException catch (e) {
+      if (mounted) {
+        setState(
+          () => _status = 'The question set could not be read: ${e.message}',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
   Future<void> _pickAndRun() async {
     final List<XFile> picked = await _picker.pickMultiImage();
     if (picked.isEmpty) return;
@@ -67,7 +143,8 @@ class _SpikeScreenState extends State<SpikeScreen> {
       _cards = <SpikeCard>[];
       _progress = 0;
       _exportPath = null;
-      _status = 'Running ${picked.length} cards through '
+      _status =
+          'Running ${picked.length} cards through '
           '${_runner.engines.length} engines…';
     });
 
@@ -133,6 +210,19 @@ class _SpikeScreenState extends State<SpikeScreen> {
               icon: const Icon(Icons.photo_library_outlined),
               label: const Text('Pick cards and run'),
             ),
+            const SizedBox(height: Gap.sm),
+            OutlinedButton.icon(
+              onPressed: _running ? null : _runQuestionSet,
+              icon: const Icon(Icons.quiz_outlined),
+              label: const Text('Run a question set'),
+            ),
+            if (_evalSummary case final String summary) ...<Widget>[
+              const SizedBox(height: Gap.sm),
+              SelectableText(
+                summary,
+                style: AppText.small(AppColors.of(context)),
+              ),
+            ],
             if (_cards.isNotEmpty && !_running) ...<Widget>[
               const SizedBox(height: Gap.sm),
               OutlinedButton.icon(

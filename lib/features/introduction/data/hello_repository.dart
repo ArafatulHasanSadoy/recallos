@@ -1,6 +1,5 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
@@ -14,13 +13,6 @@ final helloRepositoryProvider = Provider<HelloRepository>(
 /// The last hello opened for a card, or null when there has been none.
 final lastHelloProvider = StreamProvider.family<HelloRecord?, int>(
   (Ref ref, int cardId) => ref.watch(helloRepositoryProvider).watchLast(cardId),
-);
-
-/// Hands a link to the app that handles it. A provider so a test can see
-/// what would have opened without leaving the test.
-final helloOpenerProvider = Provider<Future<bool> Function(Uri)>(
-  (Ref ref) =>
-      (Uri uri) => launchUrl(uri, mode: LaunchMode.externalApplication),
 );
 
 /// One hello, as the card shows it.

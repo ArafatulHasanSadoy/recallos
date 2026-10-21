@@ -27,7 +27,10 @@ void main() {
 
     test('repairConfusables only rewrites known lookalikes', () {
       expect(Digits.repairConfusables('O1711223344'), '01711223344');
-      expect(Digits.repairConfusables('0l7ll223344'), '017112233 44'.replaceAll(' ', ''));
+      expect(
+        Digits.repairConfusables('0l7ll223344'),
+        '017112233 44'.replaceAll(' ', ''),
+      );
     });
   });
 
@@ -86,13 +89,16 @@ void main() {
   });
 
   group('PhoneExtractor — rejects wrong data', () {
-    test('flags retired and unallocated prefixes instead of accepting them', () {
-      // 011 was Citycell, shut down in 2016. Right length, wrong number.
-      final PhoneMatch? m = PhoneExtractor.parse('01111223344');
-      expect(m, isNotNull);
-      expect(m!.isValid, isFalse);
-      expect(m.issue, PhoneIssue.unknownOperator);
-    });
+    test(
+      'flags retired and unallocated prefixes instead of accepting them',
+      () {
+        // 011 was Citycell, shut down in 2016. Right length, wrong number.
+        final PhoneMatch? m = PhoneExtractor.parse('01111223344');
+        expect(m, isNotNull);
+        expect(m!.isValid, isFalse);
+        expect(m.issue, PhoneIssue.unknownOperator);
+      },
+    );
 
     test('rejects a number one digit short', () {
       final PhoneMatch? m = PhoneExtractor.parse('0171122334');
@@ -102,7 +108,12 @@ void main() {
     test('does not turn words into numbers', () {
       // The confusable map could mangle these into digits; the digit-ratio
       // gate is what stops it.
-      for (final String word in <String>['Dhanmondi', 'GOOD', 'Books', 'Sales']) {
+      for (final String word in <String>[
+        'Dhanmondi',
+        'GOOD',
+        'Books',
+        'Sales',
+      ]) {
         expect(
           PhoneExtractor.parse(word),
           isNull,
@@ -205,6 +216,31 @@ void main() {
       expect(restores('1711223344'), isTrue);
       expect(restores('1711-223344'), isTrue);
       expect(restores('9123456'), isTrue);
+    });
+  });
+
+  group('display (M7½)', () {
+    test('a Bangladeshi mobile reads the way the cards print it', () {
+      expect(PhoneExtractor.display('01711223344'), '01711-223344');
+      expect(PhoneExtractor.display('01711 223344'), '01711-223344');
+      expect(PhoneExtractor.display('01711-223344'), '01711-223344');
+      expect(PhoneExtractor.display('০১৭১১২২৩৩৪৪'), '01711-223344');
+      expect(PhoneExtractor.display('+8801711223344'), '+880 1711-223344');
+      expect(PhoneExtractor.display('+880 1711 223344'), '+880 1711-223344');
+    });
+
+    test('anything else is left exactly as it was', () {
+      expect(PhoneExtractor.display('0255012345'), '0255012345');
+      expect(PhoneExtractor.display('+880 2 5501 2345'), '+880 2 5501 2345');
+      expect(
+        PhoneExtractor.display('01011223344'),
+        '01011223344',
+        reason: '010 is no operator',
+      );
+      expect(PhoneExtractor.display('01718-02221'), '01718-02221');
+      expect(PhoneExtractor.display('+1 415 555 0100'), '+1 415 555 0100');
+      expect(PhoneExtractor.display('Cell: 01711223344'), 'Cell: 01711223344');
+      expect(PhoneExtractor.display('hello@example.com'), 'hello@example.com');
     });
   });
 }

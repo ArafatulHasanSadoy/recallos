@@ -66,16 +66,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   _Panel(
                     title: 'You remember\nthe need,\nnot the name.',
                     body:
-                        'So scan the card, then say in your own words why it '
+                        'So scan the card — or the receipt, or the '
+                        'warranty — then say in your own words why it '
                         'mattered. That sentence is how you will find it '
                         'again.',
                   ),
                   _Panel(
-                    title: 'The camera,\nand nothing\nelse.',
+                    // Only what is true (M7½): this said "nothing else" after
+                    // A2 began asking to show reminders.
+                    title: 'The camera,\nand little\nelse.',
                     body:
-                        'RecallOS needs the camera to read a card. It asks '
-                        'for nothing else — the release build ships without '
-                        'permission to reach the internet at all.',
+                        'RecallOS needs the camera to read a card. It asks to '
+                        'show notifications only when you set a reminder, '
+                        'and the release build ships without permission to '
+                        'reach the internet at all.',
                   ),
                   _Panel(
                     title: 'Start with\na real card.',

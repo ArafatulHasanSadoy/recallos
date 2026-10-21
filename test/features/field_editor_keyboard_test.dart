@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/extraction/phone.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/core/ui/primitives.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
@@ -72,7 +73,8 @@ void main() {
   /// Opens a field for editing. The editor is a modal sheet, so this has to
   /// let the sheet finish arriving before anything inside it can be found.
   Future<void> openField(WidgetTester tester, String value) async {
-    await tester.tap(find.text(value));
+    // The row shows the number as people write it (M7½: "01711-363991").
+    await tester.tap(find.text(PhoneExtractor.display(value)));
     await tester.pumpAndSettle();
   }
 

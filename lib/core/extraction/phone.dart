@@ -95,6 +95,38 @@ abstract final class PhoneExtractor {
 
   static const String _countryCode = '880';
 
+  /// A number as people write it — for showing, never for storing or
+  /// dialling (M7½).
+  ///
+  /// A Bangladeshi mobile, however it was read ("01711223344",
+  /// "+8801711223344", "01711 223344"), is shown "01711-223344": the five
+  /// and six split the cards themselves print. One kept in international
+  /// form keeps it: "+880 1711-223344". Every other number — a landline, a
+  /// short code, a foreign number, a value with words in it — comes back
+  /// exactly as given: their groupings vary, and a wrong grouping misleads
+  /// more than none.
+  static String display(String value) {
+    final String digits = Digits.digitsOnly(Digits.toLatin(value));
+    final String? national = switch (digits.length) {
+      11 when digits.startsWith('01') => digits,
+      13 when digits.startsWith('${_countryCode}1') =>
+        '0${digits.substring(3)}',
+      _ => null,
+    };
+    if (national == null ||
+        !mobileOperators.containsKey(national.substring(0, 3))) {
+      return value;
+    }
+    // Nothing but the number and the usual separators: "Cell: 017…" or a
+    // value with an extension is left for the user to read as written.
+    if (RegExp(r'[^\d\s+\-().০-৯]').hasMatch(value)) return value;
+    final String grouped =
+        '${national.substring(0, 5)}-${national.substring(5)}';
+    return digits.length == 13
+        ? '+$_countryCode ${grouped.substring(1)}'
+        : grouped;
+  }
+
   /// Runs of characters that could plausibly be a number. Deliberately loose —
   /// candidates are validated afterwards, and missing a number costs more than
   /// testing a few extra strings.
