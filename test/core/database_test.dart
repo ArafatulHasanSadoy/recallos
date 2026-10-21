@@ -14,6 +14,53 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() async => db.close());
 
+  // FTS5 cannot add a column to a table that exists, and the index lives
+  // outside Drift's migrations — so a database from an older build, or a
+  // backup that carries the old table's definition, opens with the old
+  // shape unless it is rebuilt.
+  group('search index shape', () {
+    test('an index without met_text is rebuilt on open', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'recallos_fts_shape',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = File(p.join(dir.path, 'recallos.sqlite'));
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      addTearDown(
+        () => driftRuntimeOptions.dontWarnAboutMultipleDatabases = false,
+      );
+
+      final AppDatabase before = AppDatabase(NativeDatabase(file));
+      await before.customStatement('DROP TABLE search_index');
+      await before.customStatement(
+        'CREATE VIRTUAL TABLE search_index USING fts5(subject_type UNINDEXED, '
+        'subject_id UNINDEXED, card_text, note_text, canonical_en, tags, '
+        'tokenize = "unicode61 remove_diacritics 2")',
+      );
+      await before.customStatement(
+        'INSERT INTO search_index(subject_type, subject_id, card_text) '
+        "VALUES ('card', 1, 'old row')",
+      );
+      await before.close();
+
+      final AppDatabase after = AppDatabase(NativeDatabase(file));
+      addTearDown(after.close);
+      final String sql =
+          (await after
+                  .customSelect(
+                    "SELECT sql FROM sqlite_master WHERE name = 'search_index'",
+                  )
+                  .getSingle())
+              .read<String>('sql');
+      expect(sql, contains('met_text'));
+      // Derived rows only: the search backfill writes them back.
+      expect(
+        await after.customSelect('SELECT * FROM search_index').get(),
+        isEmpty,
+      );
+    });
+  });
+
   group('migration', () {
     test('a v1 database gains every later column without losing rows',
         () async {

@@ -2550,6 +2550,36 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
       'REFERENCES roles (id)',
     ),
   );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<CaptureSource, String>
+  captureSource = GeneratedColumn<String>(
+    'capture_source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: Constant(CaptureSource.unknown.name),
+  ).withConverter<CaptureSource>($CardsTable.$convertercaptureSource);
+  static const VerificationMeta _classificationConfidenceMeta =
+      const VerificationMeta('classificationConfidence');
+  @override
+  late final GeneratedColumn<double> classificationConfidence =
+      GeneratedColumn<double>(
+        'classification_confidence',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     createdAt,
@@ -2569,6 +2599,9 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
     personId,
     orgId,
     roleId,
+    title,
+    captureSource,
+    classificationConfidence,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2685,6 +2718,21 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         roleId.isAcceptableOrUnknown(data['role_id']!, _roleIdMeta),
       );
     }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('classification_confidence')) {
+      context.handle(
+        _classificationConfidenceMeta,
+        classificationConfidence.isAcceptableOrUnknown(
+          data['classification_confidence']!,
+          _classificationConfidenceMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2766,6 +2814,20 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
         DriftSqlType.int,
         data['${effectivePrefix}role_id'],
       ),
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      captureSource: $CardsTable.$convertercaptureSource.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}capture_source'],
+        )!,
+      ),
+      classificationConfidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}classification_confidence'],
+      ),
     );
   }
 
@@ -2779,6 +2841,10 @@ class $CardsTable extends Cards with TableInfo<$CardsTable, CardRow> {
   static JsonTypeConverter2<ExtractionStatus, String, String>
   $converterextractionStatus = const EnumNameConverter<ExtractionStatus>(
     ExtractionStatus.values,
+  );
+  static JsonTypeConverter2<CaptureSource, String, String>
+  $convertercaptureSource = const EnumNameConverter<CaptureSource>(
+    CaptureSource.values,
   );
 }
 
@@ -2815,6 +2881,17 @@ class CardRow extends DataClass implements Insertable<CardRow> {
   final int? personId;
   final int? orgId;
   final int? roleId;
+
+  /// A name for a thing that is not somebody's card — "Laptop, Star Tech".
+  /// Null for business cards, which are titled from their fields. (v11)
+  final String? title;
+
+  /// How the photograph came in. (v11)
+  final CaptureSource captureSource;
+
+  /// How sure an automatic reading of [type] was, 0..1. Null when the user
+  /// chose the type, or nothing classified it. (v11)
+  final double? classificationConfidence;
   const CardRow({
     required this.createdAt,
     required this.updatedAt,
@@ -2833,6 +2910,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     this.personId,
     this.orgId,
     this.roleId,
+    this.title,
+    required this.captureSource,
+    this.classificationConfidence,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2880,6 +2960,19 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     if (!nullToAbsent || roleId != null) {
       map['role_id'] = Variable<int>(roleId);
     }
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    {
+      map['capture_source'] = Variable<String>(
+        $CardsTable.$convertercaptureSource.toSql(captureSource),
+      );
+    }
+    if (!nullToAbsent || classificationConfidence != null) {
+      map['classification_confidence'] = Variable<double>(
+        classificationConfidence,
+      );
+    }
     return map;
   }
 
@@ -2922,6 +3015,13 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       roleId: roleId == null && nullToAbsent
           ? const Value.absent()
           : Value(roleId),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      captureSource: Value(captureSource),
+      classificationConfidence: classificationConfidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(classificationConfidence),
     );
   }
 
@@ -2952,6 +3052,13 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       personId: serializer.fromJson<int?>(json['personId']),
       orgId: serializer.fromJson<int?>(json['orgId']),
       roleId: serializer.fromJson<int?>(json['roleId']),
+      title: serializer.fromJson<String?>(json['title']),
+      captureSource: $CardsTable.$convertercaptureSource.fromJson(
+        serializer.fromJson<String>(json['captureSource']),
+      ),
+      classificationConfidence: serializer.fromJson<double?>(
+        json['classificationConfidence'],
+      ),
     );
   }
   @override
@@ -2979,6 +3086,13 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       'personId': serializer.toJson<int?>(personId),
       'orgId': serializer.toJson<int?>(orgId),
       'roleId': serializer.toJson<int?>(roleId),
+      'title': serializer.toJson<String?>(title),
+      'captureSource': serializer.toJson<String>(
+        $CardsTable.$convertercaptureSource.toJson(captureSource),
+      ),
+      'classificationConfidence': serializer.toJson<double?>(
+        classificationConfidence,
+      ),
     };
   }
 
@@ -3000,6 +3114,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     Value<int?> personId = const Value.absent(),
     Value<int?> orgId = const Value.absent(),
     Value<int?> roleId = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    CaptureSource? captureSource,
+    Value<double?> classificationConfidence = const Value.absent(),
   }) => CardRow(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -3022,6 +3139,11 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     personId: personId.present ? personId.value : this.personId,
     orgId: orgId.present ? orgId.value : this.orgId,
     roleId: roleId.present ? roleId.value : this.roleId,
+    title: title.present ? title.value : this.title,
+    captureSource: captureSource ?? this.captureSource,
+    classificationConfidence: classificationConfidence.present
+        ? classificationConfidence.value
+        : this.classificationConfidence,
   );
   CardRow copyWithCompanion(CardsCompanion data) {
     return CardRow(
@@ -3054,6 +3176,13 @@ class CardRow extends DataClass implements Insertable<CardRow> {
       personId: data.personId.present ? data.personId.value : this.personId,
       orgId: data.orgId.present ? data.orgId.value : this.orgId,
       roleId: data.roleId.present ? data.roleId.value : this.roleId,
+      title: data.title.present ? data.title.value : this.title,
+      captureSource: data.captureSource.present
+          ? data.captureSource.value
+          : this.captureSource,
+      classificationConfidence: data.classificationConfidence.present
+          ? data.classificationConfidence.value
+          : this.classificationConfidence,
     );
   }
 
@@ -3076,7 +3205,10 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           ..write('capturedAt: $capturedAt, ')
           ..write('personId: $personId, ')
           ..write('orgId: $orgId, ')
-          ..write('roleId: $roleId')
+          ..write('roleId: $roleId, ')
+          ..write('title: $title, ')
+          ..write('captureSource: $captureSource, ')
+          ..write('classificationConfidence: $classificationConfidence')
           ..write(')'))
         .toString();
   }
@@ -3100,6 +3232,9 @@ class CardRow extends DataClass implements Insertable<CardRow> {
     personId,
     orgId,
     roleId,
+    title,
+    captureSource,
+    classificationConfidence,
   );
   @override
   bool operator ==(Object other) =>
@@ -3121,7 +3256,10 @@ class CardRow extends DataClass implements Insertable<CardRow> {
           other.capturedAt == this.capturedAt &&
           other.personId == this.personId &&
           other.orgId == this.orgId &&
-          other.roleId == this.roleId);
+          other.roleId == this.roleId &&
+          other.title == this.title &&
+          other.captureSource == this.captureSource &&
+          other.classificationConfidence == this.classificationConfidence);
 }
 
 class CardsCompanion extends UpdateCompanion<CardRow> {
@@ -3142,6 +3280,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
   final Value<int?> personId;
   final Value<int?> orgId;
   final Value<int?> roleId;
+  final Value<String?> title;
+  final Value<CaptureSource> captureSource;
+  final Value<double?> classificationConfidence;
   const CardsCompanion({
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -3160,6 +3301,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.personId = const Value.absent(),
     this.orgId = const Value.absent(),
     this.roleId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.captureSource = const Value.absent(),
+    this.classificationConfidence = const Value.absent(),
   });
   CardsCompanion.insert({
     this.createdAt = const Value.absent(),
@@ -3179,6 +3323,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     this.personId = const Value.absent(),
     this.orgId = const Value.absent(),
     this.roleId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.captureSource = const Value.absent(),
+    this.classificationConfidence = const Value.absent(),
   }) : imagePath = Value(imagePath),
        capturedAt = Value(capturedAt);
   static Insertable<CardRow> custom({
@@ -3199,6 +3346,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Expression<int>? personId,
     Expression<int>? orgId,
     Expression<int>? roleId,
+    Expression<String>? title,
+    Expression<String>? captureSource,
+    Expression<double>? classificationConfidence,
   }) {
     return RawValuesInsertable({
       if (createdAt != null) 'created_at': createdAt,
@@ -3218,6 +3368,10 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       if (personId != null) 'person_id': personId,
       if (orgId != null) 'org_id': orgId,
       if (roleId != null) 'role_id': roleId,
+      if (title != null) 'title': title,
+      if (captureSource != null) 'capture_source': captureSource,
+      if (classificationConfidence != null)
+        'classification_confidence': classificationConfidence,
     });
   }
 
@@ -3239,6 +3393,9 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     Value<int?>? personId,
     Value<int?>? orgId,
     Value<int?>? roleId,
+    Value<String?>? title,
+    Value<CaptureSource>? captureSource,
+    Value<double?>? classificationConfidence,
   }) {
     return CardsCompanion(
       createdAt: createdAt ?? this.createdAt,
@@ -3258,6 +3415,10 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
       personId: personId ?? this.personId,
       orgId: orgId ?? this.orgId,
       roleId: roleId ?? this.roleId,
+      title: title ?? this.title,
+      captureSource: captureSource ?? this.captureSource,
+      classificationConfidence:
+          classificationConfidence ?? this.classificationConfidence,
     );
   }
 
@@ -3319,6 +3480,19 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
     if (roleId.present) {
       map['role_id'] = Variable<int>(roleId.value);
     }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (captureSource.present) {
+      map['capture_source'] = Variable<String>(
+        $CardsTable.$convertercaptureSource.toSql(captureSource.value),
+      );
+    }
+    if (classificationConfidence.present) {
+      map['classification_confidence'] = Variable<double>(
+        classificationConfidence.value,
+      );
+    }
     return map;
   }
 
@@ -3341,7 +3515,10 @@ class CardsCompanion extends UpdateCompanion<CardRow> {
           ..write('capturedAt: $capturedAt, ')
           ..write('personId: $personId, ')
           ..write('orgId: $orgId, ')
-          ..write('roleId: $roleId')
+          ..write('roleId: $roleId, ')
+          ..write('title: $title, ')
+          ..write('captureSource: $captureSource, ')
+          ..write('classificationConfidence: $classificationConfidence')
           ..write(')'))
         .toString();
   }
@@ -3522,6 +3699,67 @@ class $CardFieldsTable extends CardFields
         defaultValue: Constant(CardSide.front.name),
       ).withConverter<CardSide>($CardFieldsTable.$converterside);
   @override
+  late final GeneratedColumnWithTypeConverter<FactOrigin, String> origin =
+      GeneratedColumn<String>(
+        'origin',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(FactOrigin.printed.name),
+      ).withConverter<FactOrigin>($CardFieldsTable.$converterorigin);
+  @override
+  late final GeneratedColumnWithTypeConverter<FactReview, String> review =
+      GeneratedColumn<String>(
+        'review',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(FactReview.unreviewed.name),
+      ).withConverter<FactReview>($CardFieldsTable.$converterreview);
+  @override
+  late final GeneratedColumnWithTypeConverter<FactValidity, String> validity =
+      GeneratedColumn<String>(
+        'validity',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(FactValidity.current.name),
+      ).withConverter<FactValidity>($CardFieldsTable.$convertervalidity);
+  static const VerificationMeta _amountMinorMeta = const VerificationMeta(
+    'amountMinor',
+  );
+  @override
+  late final GeneratedColumn<int> amountMinor = GeneratedColumn<int>(
+    'amount_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _currencyMeta = const VerificationMeta(
+    'currency',
+  );
+  @override
+  late final GeneratedColumn<String> currency = GeneratedColumn<String>(
+    'currency',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<LocalDate?, String> dateValue =
+      GeneratedColumn<String>(
+        'date_value',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<LocalDate?>($CardFieldsTable.$converterdateValuen);
+  @override
   List<GeneratedColumn> get $columns => [
     createdAt,
     updatedAt,
@@ -3538,6 +3776,12 @@ class $CardFieldsTable extends CardFields
     valueKind,
     regionRect,
     side,
+    origin,
+    review,
+    validity,
+    amountMinor,
+    currency,
+    dateValue,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3635,6 +3879,21 @@ class $CardFieldsTable extends CardFields
         regionRect.isAcceptableOrUnknown(data['region_rect']!, _regionRectMeta),
       );
     }
+    if (data.containsKey('amount_minor')) {
+      context.handle(
+        _amountMinorMeta,
+        amountMinor.isAcceptableOrUnknown(
+          data['amount_minor']!,
+          _amountMinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('currency')) {
+      context.handle(
+        _currencyMeta,
+        currency.isAcceptableOrUnknown(data['currency']!, _currencyMeta),
+      );
+    }
     return context;
   }
 
@@ -3710,6 +3969,38 @@ class $CardFieldsTable extends CardFields
           data['${effectivePrefix}side'],
         )!,
       ),
+      origin: $CardFieldsTable.$converterorigin.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}origin'],
+        )!,
+      ),
+      review: $CardFieldsTable.$converterreview.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}review'],
+        )!,
+      ),
+      validity: $CardFieldsTable.$convertervalidity.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}validity'],
+        )!,
+      ),
+      amountMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}amount_minor'],
+      ),
+      currency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}currency'],
+      ),
+      dateValue: $CardFieldsTable.$converterdateValuen.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}date_value'],
+        ),
+      ),
     );
   }
 
@@ -3726,6 +4017,16 @@ class $CardFieldsTable extends CardFields
   );
   static JsonTypeConverter2<CardSide, String, String> $converterside =
       const EnumNameConverter<CardSide>(CardSide.values);
+  static JsonTypeConverter2<FactOrigin, String, String> $converterorigin =
+      const EnumNameConverter<FactOrigin>(FactOrigin.values);
+  static JsonTypeConverter2<FactReview, String, String> $converterreview =
+      const EnumNameConverter<FactReview>(FactReview.values);
+  static JsonTypeConverter2<FactValidity, String, String> $convertervalidity =
+      const EnumNameConverter<FactValidity>(FactValidity.values);
+  static TypeConverter<LocalDate, String> $converterdateValue =
+      const LocalDateConverter();
+  static TypeConverter<LocalDate?, String?> $converterdateValuen =
+      NullAwareTypeConverter.wrap($converterdateValue);
 }
 
 class CardField extends DataClass implements Insertable<CardField> {
@@ -3763,6 +4064,20 @@ class CardField extends DataClass implements Insertable<CardField> {
   /// Defaults to front, which is correct for every row written before the back
   /// was read: until then the front was the only side anything came off.
   final CardSide side;
+  final FactOrigin origin;
+  final FactReview review;
+  final FactValidity validity;
+
+  /// A money value in whole minor units — paisa, cents — never a double.
+  /// Set with [currency] or not at all. (v11)
+  final int? amountMinor;
+
+  /// ISO 4217, upper case. (v11)
+  final String? currency;
+
+  /// A calendar day, `YYYY-MM-DD` — a purchase date, an expiry. Not a
+  /// timestamp: a day must not move when the phone's time zone does. (v11)
+  final LocalDate? dateValue;
   const CardField({
     required this.createdAt,
     required this.updatedAt,
@@ -3779,6 +4094,12 @@ class CardField extends DataClass implements Insertable<CardField> {
     required this.valueKind,
     this.regionRect,
     required this.side,
+    required this.origin,
+    required this.review,
+    required this.validity,
+    this.amountMinor,
+    this.currency,
+    this.dateValue,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3820,6 +4141,32 @@ class CardField extends DataClass implements Insertable<CardField> {
         $CardFieldsTable.$converterside.toSql(side),
       );
     }
+    {
+      map['origin'] = Variable<String>(
+        $CardFieldsTable.$converterorigin.toSql(origin),
+      );
+    }
+    {
+      map['review'] = Variable<String>(
+        $CardFieldsTable.$converterreview.toSql(review),
+      );
+    }
+    {
+      map['validity'] = Variable<String>(
+        $CardFieldsTable.$convertervalidity.toSql(validity),
+      );
+    }
+    if (!nullToAbsent || amountMinor != null) {
+      map['amount_minor'] = Variable<int>(amountMinor);
+    }
+    if (!nullToAbsent || currency != null) {
+      map['currency'] = Variable<String>(currency);
+    }
+    if (!nullToAbsent || dateValue != null) {
+      map['date_value'] = Variable<String>(
+        $CardFieldsTable.$converterdateValuen.toSql(dateValue),
+      );
+    }
     return map;
   }
 
@@ -3850,6 +4197,18 @@ class CardField extends DataClass implements Insertable<CardField> {
           ? const Value.absent()
           : Value(regionRect),
       side: Value(side),
+      origin: Value(origin),
+      review: Value(review),
+      validity: Value(validity),
+      amountMinor: amountMinor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(amountMinor),
+      currency: currency == null && nullToAbsent
+          ? const Value.absent()
+          : Value(currency),
+      dateValue: dateValue == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dateValue),
     );
   }
 
@@ -3880,6 +4239,18 @@ class CardField extends DataClass implements Insertable<CardField> {
       side: $CardFieldsTable.$converterside.fromJson(
         serializer.fromJson<String>(json['side']),
       ),
+      origin: $CardFieldsTable.$converterorigin.fromJson(
+        serializer.fromJson<String>(json['origin']),
+      ),
+      review: $CardFieldsTable.$converterreview.fromJson(
+        serializer.fromJson<String>(json['review']),
+      ),
+      validity: $CardFieldsTable.$convertervalidity.fromJson(
+        serializer.fromJson<String>(json['validity']),
+      ),
+      amountMinor: serializer.fromJson<int?>(json['amountMinor']),
+      currency: serializer.fromJson<String?>(json['currency']),
+      dateValue: serializer.fromJson<LocalDate?>(json['dateValue']),
     );
   }
   @override
@@ -3907,6 +4278,18 @@ class CardField extends DataClass implements Insertable<CardField> {
       'side': serializer.toJson<String>(
         $CardFieldsTable.$converterside.toJson(side),
       ),
+      'origin': serializer.toJson<String>(
+        $CardFieldsTable.$converterorigin.toJson(origin),
+      ),
+      'review': serializer.toJson<String>(
+        $CardFieldsTable.$converterreview.toJson(review),
+      ),
+      'validity': serializer.toJson<String>(
+        $CardFieldsTable.$convertervalidity.toJson(validity),
+      ),
+      'amountMinor': serializer.toJson<int?>(amountMinor),
+      'currency': serializer.toJson<String?>(currency),
+      'dateValue': serializer.toJson<LocalDate?>(dateValue),
     };
   }
 
@@ -3926,6 +4309,12 @@ class CardField extends DataClass implements Insertable<CardField> {
     FieldValueKind? valueKind,
     Value<String?> regionRect = const Value.absent(),
     CardSide? side,
+    FactOrigin? origin,
+    FactReview? review,
+    FactValidity? validity,
+    Value<int?> amountMinor = const Value.absent(),
+    Value<String?> currency = const Value.absent(),
+    Value<LocalDate?> dateValue = const Value.absent(),
   }) => CardField(
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -3946,6 +4335,12 @@ class CardField extends DataClass implements Insertable<CardField> {
     valueKind: valueKind ?? this.valueKind,
     regionRect: regionRect.present ? regionRect.value : this.regionRect,
     side: side ?? this.side,
+    origin: origin ?? this.origin,
+    review: review ?? this.review,
+    validity: validity ?? this.validity,
+    amountMinor: amountMinor.present ? amountMinor.value : this.amountMinor,
+    currency: currency.present ? currency.value : this.currency,
+    dateValue: dateValue.present ? dateValue.value : this.dateValue,
   );
   CardField copyWithCompanion(CardFieldsCompanion data) {
     return CardField(
@@ -3974,6 +4369,14 @@ class CardField extends DataClass implements Insertable<CardField> {
           ? data.regionRect.value
           : this.regionRect,
       side: data.side.present ? data.side.value : this.side,
+      origin: data.origin.present ? data.origin.value : this.origin,
+      review: data.review.present ? data.review.value : this.review,
+      validity: data.validity.present ? data.validity.value : this.validity,
+      amountMinor: data.amountMinor.present
+          ? data.amountMinor.value
+          : this.amountMinor,
+      currency: data.currency.present ? data.currency.value : this.currency,
+      dateValue: data.dateValue.present ? data.dateValue.value : this.dateValue,
     );
   }
 
@@ -3994,13 +4397,19 @@ class CardField extends DataClass implements Insertable<CardField> {
           ..write('validationIssue: $validationIssue, ')
           ..write('valueKind: $valueKind, ')
           ..write('regionRect: $regionRect, ')
-          ..write('side: $side')
+          ..write('side: $side, ')
+          ..write('origin: $origin, ')
+          ..write('review: $review, ')
+          ..write('validity: $validity, ')
+          ..write('amountMinor: $amountMinor, ')
+          ..write('currency: $currency, ')
+          ..write('dateValue: $dateValue')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     createdAt,
     updatedAt,
     deletedAt,
@@ -4016,7 +4425,13 @@ class CardField extends DataClass implements Insertable<CardField> {
     valueKind,
     regionRect,
     side,
-  );
+    origin,
+    review,
+    validity,
+    amountMinor,
+    currency,
+    dateValue,
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4035,7 +4450,13 @@ class CardField extends DataClass implements Insertable<CardField> {
           other.validationIssue == this.validationIssue &&
           other.valueKind == this.valueKind &&
           other.regionRect == this.regionRect &&
-          other.side == this.side);
+          other.side == this.side &&
+          other.origin == this.origin &&
+          other.review == this.review &&
+          other.validity == this.validity &&
+          other.amountMinor == this.amountMinor &&
+          other.currency == this.currency &&
+          other.dateValue == this.dateValue);
 }
 
 class CardFieldsCompanion extends UpdateCompanion<CardField> {
@@ -4054,6 +4475,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
   final Value<FieldValueKind> valueKind;
   final Value<String?> regionRect;
   final Value<CardSide> side;
+  final Value<FactOrigin> origin;
+  final Value<FactReview> review;
+  final Value<FactValidity> validity;
+  final Value<int?> amountMinor;
+  final Value<String?> currency;
+  final Value<LocalDate?> dateValue;
   const CardFieldsCompanion({
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -4070,6 +4497,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     this.valueKind = const Value.absent(),
     this.regionRect = const Value.absent(),
     this.side = const Value.absent(),
+    this.origin = const Value.absent(),
+    this.review = const Value.absent(),
+    this.validity = const Value.absent(),
+    this.amountMinor = const Value.absent(),
+    this.currency = const Value.absent(),
+    this.dateValue = const Value.absent(),
   });
   CardFieldsCompanion.insert({
     this.createdAt = const Value.absent(),
@@ -4087,6 +4520,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     this.valueKind = const Value.absent(),
     this.regionRect = const Value.absent(),
     this.side = const Value.absent(),
+    this.origin = const Value.absent(),
+    this.review = const Value.absent(),
+    this.validity = const Value.absent(),
+    this.amountMinor = const Value.absent(),
+    this.currency = const Value.absent(),
+    this.dateValue = const Value.absent(),
   }) : cardId = Value(cardId),
        fieldKey = Value(fieldKey),
        value = Value(value),
@@ -4107,6 +4546,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     Expression<String>? valueKind,
     Expression<String>? regionRect,
     Expression<String>? side,
+    Expression<String>? origin,
+    Expression<String>? review,
+    Expression<String>? validity,
+    Expression<int>? amountMinor,
+    Expression<String>? currency,
+    Expression<String>? dateValue,
   }) {
     return RawValuesInsertable({
       if (createdAt != null) 'created_at': createdAt,
@@ -4124,6 +4569,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
       if (valueKind != null) 'value_kind': valueKind,
       if (regionRect != null) 'region_rect': regionRect,
       if (side != null) 'side': side,
+      if (origin != null) 'origin': origin,
+      if (review != null) 'review': review,
+      if (validity != null) 'validity': validity,
+      if (amountMinor != null) 'amount_minor': amountMinor,
+      if (currency != null) 'currency': currency,
+      if (dateValue != null) 'date_value': dateValue,
     });
   }
 
@@ -4143,6 +4594,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
     Value<FieldValueKind>? valueKind,
     Value<String?>? regionRect,
     Value<CardSide>? side,
+    Value<FactOrigin>? origin,
+    Value<FactReview>? review,
+    Value<FactValidity>? validity,
+    Value<int?>? amountMinor,
+    Value<String?>? currency,
+    Value<LocalDate?>? dateValue,
   }) {
     return CardFieldsCompanion(
       createdAt: createdAt ?? this.createdAt,
@@ -4160,6 +4617,12 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
       valueKind: valueKind ?? this.valueKind,
       regionRect: regionRect ?? this.regionRect,
       side: side ?? this.side,
+      origin: origin ?? this.origin,
+      review: review ?? this.review,
+      validity: validity ?? this.validity,
+      amountMinor: amountMinor ?? this.amountMinor,
+      currency: currency ?? this.currency,
+      dateValue: dateValue ?? this.dateValue,
     );
   }
 
@@ -4217,6 +4680,32 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
         $CardFieldsTable.$converterside.toSql(side.value),
       );
     }
+    if (origin.present) {
+      map['origin'] = Variable<String>(
+        $CardFieldsTable.$converterorigin.toSql(origin.value),
+      );
+    }
+    if (review.present) {
+      map['review'] = Variable<String>(
+        $CardFieldsTable.$converterreview.toSql(review.value),
+      );
+    }
+    if (validity.present) {
+      map['validity'] = Variable<String>(
+        $CardFieldsTable.$convertervalidity.toSql(validity.value),
+      );
+    }
+    if (amountMinor.present) {
+      map['amount_minor'] = Variable<int>(amountMinor.value);
+    }
+    if (currency.present) {
+      map['currency'] = Variable<String>(currency.value);
+    }
+    if (dateValue.present) {
+      map['date_value'] = Variable<String>(
+        $CardFieldsTable.$converterdateValuen.toSql(dateValue.value),
+      );
+    }
     return map;
   }
 
@@ -4237,7 +4726,13 @@ class CardFieldsCompanion extends UpdateCompanion<CardField> {
           ..write('validationIssue: $validationIssue, ')
           ..write('valueKind: $valueKind, ')
           ..write('regionRect: $regionRect, ')
-          ..write('side: $side')
+          ..write('side: $side, ')
+          ..write('origin: $origin, ')
+          ..write('review: $review, ')
+          ..write('validity: $validity, ')
+          ..write('amountMinor: $amountMinor, ')
+          ..write('currency: $currency, ')
+          ..write('dateValue: $dateValue')
           ..write(')'))
         .toString();
   }
@@ -14280,6 +14775,629 @@ class RemindersCompanion extends UpdateCompanion<Reminder> {
   }
 }
 
+class $ItemLinksTable extends ItemLinks
+    with TableInfo<$ItemLinksTable, ItemLink> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItemLinksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _fromCardIdMeta = const VerificationMeta(
+    'fromCardId',
+  );
+  @override
+  late final GeneratedColumn<int> fromCardId = GeneratedColumn<int>(
+    'from_card_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES cards (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _toCardIdMeta = const VerificationMeta(
+    'toCardId',
+  );
+  @override
+  late final GeneratedColumn<int> toCardId = GeneratedColumn<int>(
+    'to_card_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES cards (id) ON DELETE CASCADE',
+    ),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<LinkKind, String> kind =
+      GeneratedColumn<String>(
+        'kind',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<LinkKind>($ItemLinksTable.$converterkind);
+  @override
+  late final GeneratedColumnWithTypeConverter<LinkStatus, String> status =
+      GeneratedColumn<String>(
+        'status',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: Constant(LinkStatus.suggested.name),
+      ).withConverter<LinkStatus>($ItemLinksTable.$converterstatus);
+  static const VerificationMeta _reasonsMeta = const VerificationMeta(
+    'reasons',
+  );
+  @override
+  late final GeneratedColumn<String> reasons = GeneratedColumn<String>(
+    'reasons',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    createdAt,
+    updatedAt,
+    deletedAt,
+    id,
+    fromCardId,
+    toCardId,
+    kind,
+    status,
+    reasons,
+    confidence,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'item_links';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItemLink> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('from_card_id')) {
+      context.handle(
+        _fromCardIdMeta,
+        fromCardId.isAcceptableOrUnknown(
+          data['from_card_id']!,
+          _fromCardIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fromCardIdMeta);
+    }
+    if (data.containsKey('to_card_id')) {
+      context.handle(
+        _toCardIdMeta,
+        toCardId.isAcceptableOrUnknown(data['to_card_id']!, _toCardIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_toCardIdMeta);
+    }
+    if (data.containsKey('reasons')) {
+      context.handle(
+        _reasonsMeta,
+        reasons.isAcceptableOrUnknown(data['reasons']!, _reasonsMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {fromCardId, toCardId, kind},
+  ];
+  @override
+  ItemLink map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItemLink(
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      fromCardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}from_card_id'],
+      )!,
+      toCardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}to_card_id'],
+      )!,
+      kind: $ItemLinksTable.$converterkind.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}kind'],
+        )!,
+      ),
+      status: $ItemLinksTable.$converterstatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}status'],
+        )!,
+      ),
+      reasons: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasons'],
+      )!,
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+    );
+  }
+
+  @override
+  $ItemLinksTable createAlias(String alias) {
+    return $ItemLinksTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<LinkKind, String, String> $converterkind =
+      const EnumNameConverter<LinkKind>(LinkKind.values);
+  static JsonTypeConverter2<LinkStatus, String, String> $converterstatus =
+      const EnumNameConverter<LinkStatus>(LinkStatus.values);
+}
+
+class ItemLink extends DataClass implements Insertable<ItemLink> {
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int id;
+  final int fromCardId;
+  final int toCardId;
+  final LinkKind kind;
+  final LinkStatus status;
+
+  /// Why it was suggested, as a JSON list — the matching serial number, the
+  /// shared invoice number — so the suggestion can show its evidence.
+  final String reasons;
+  final double? confidence;
+  const ItemLink({
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.id,
+    required this.fromCardId,
+    required this.toCardId,
+    required this.kind,
+    required this.status,
+    required this.reasons,
+    this.confidence,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['id'] = Variable<int>(id);
+    map['from_card_id'] = Variable<int>(fromCardId);
+    map['to_card_id'] = Variable<int>(toCardId);
+    {
+      map['kind'] = Variable<String>(
+        $ItemLinksTable.$converterkind.toSql(kind),
+      );
+    }
+    {
+      map['status'] = Variable<String>(
+        $ItemLinksTable.$converterstatus.toSql(status),
+      );
+    }
+    map['reasons'] = Variable<String>(reasons);
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    return map;
+  }
+
+  ItemLinksCompanion toCompanion(bool nullToAbsent) {
+    return ItemLinksCompanion(
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      id: Value(id),
+      fromCardId: Value(fromCardId),
+      toCardId: Value(toCardId),
+      kind: Value(kind),
+      status: Value(status),
+      reasons: Value(reasons),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+    );
+  }
+
+  factory ItemLink.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItemLink(
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      id: serializer.fromJson<int>(json['id']),
+      fromCardId: serializer.fromJson<int>(json['fromCardId']),
+      toCardId: serializer.fromJson<int>(json['toCardId']),
+      kind: $ItemLinksTable.$converterkind.fromJson(
+        serializer.fromJson<String>(json['kind']),
+      ),
+      status: $ItemLinksTable.$converterstatus.fromJson(
+        serializer.fromJson<String>(json['status']),
+      ),
+      reasons: serializer.fromJson<String>(json['reasons']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'id': serializer.toJson<int>(id),
+      'fromCardId': serializer.toJson<int>(fromCardId),
+      'toCardId': serializer.toJson<int>(toCardId),
+      'kind': serializer.toJson<String>(
+        $ItemLinksTable.$converterkind.toJson(kind),
+      ),
+      'status': serializer.toJson<String>(
+        $ItemLinksTable.$converterstatus.toJson(status),
+      ),
+      'reasons': serializer.toJson<String>(reasons),
+      'confidence': serializer.toJson<double?>(confidence),
+    };
+  }
+
+  ItemLink copyWith({
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? id,
+    int? fromCardId,
+    int? toCardId,
+    LinkKind? kind,
+    LinkStatus? status,
+    String? reasons,
+    Value<double?> confidence = const Value.absent(),
+  }) => ItemLink(
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    id: id ?? this.id,
+    fromCardId: fromCardId ?? this.fromCardId,
+    toCardId: toCardId ?? this.toCardId,
+    kind: kind ?? this.kind,
+    status: status ?? this.status,
+    reasons: reasons ?? this.reasons,
+    confidence: confidence.present ? confidence.value : this.confidence,
+  );
+  ItemLink copyWithCompanion(ItemLinksCompanion data) {
+    return ItemLink(
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      id: data.id.present ? data.id.value : this.id,
+      fromCardId: data.fromCardId.present
+          ? data.fromCardId.value
+          : this.fromCardId,
+      toCardId: data.toCardId.present ? data.toCardId.value : this.toCardId,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      status: data.status.present ? data.status.value : this.status,
+      reasons: data.reasons.present ? data.reasons.value : this.reasons,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemLink(')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('id: $id, ')
+          ..write('fromCardId: $fromCardId, ')
+          ..write('toCardId: $toCardId, ')
+          ..write('kind: $kind, ')
+          ..write('status: $status, ')
+          ..write('reasons: $reasons, ')
+          ..write('confidence: $confidence')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    createdAt,
+    updatedAt,
+    deletedAt,
+    id,
+    fromCardId,
+    toCardId,
+    kind,
+    status,
+    reasons,
+    confidence,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItemLink &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.id == this.id &&
+          other.fromCardId == this.fromCardId &&
+          other.toCardId == this.toCardId &&
+          other.kind == this.kind &&
+          other.status == this.status &&
+          other.reasons == this.reasons &&
+          other.confidence == this.confidence);
+}
+
+class ItemLinksCompanion extends UpdateCompanion<ItemLink> {
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> id;
+  final Value<int> fromCardId;
+  final Value<int> toCardId;
+  final Value<LinkKind> kind;
+  final Value<LinkStatus> status;
+  final Value<String> reasons;
+  final Value<double?> confidence;
+  const ItemLinksCompanion({
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.id = const Value.absent(),
+    this.fromCardId = const Value.absent(),
+    this.toCardId = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.status = const Value.absent(),
+    this.reasons = const Value.absent(),
+    this.confidence = const Value.absent(),
+  });
+  ItemLinksCompanion.insert({
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.id = const Value.absent(),
+    required int fromCardId,
+    required int toCardId,
+    required LinkKind kind,
+    this.status = const Value.absent(),
+    this.reasons = const Value.absent(),
+    this.confidence = const Value.absent(),
+  }) : fromCardId = Value(fromCardId),
+       toCardId = Value(toCardId),
+       kind = Value(kind);
+  static Insertable<ItemLink> custom({
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? id,
+    Expression<int>? fromCardId,
+    Expression<int>? toCardId,
+    Expression<String>? kind,
+    Expression<String>? status,
+    Expression<String>? reasons,
+    Expression<double>? confidence,
+  }) {
+    return RawValuesInsertable({
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (id != null) 'id': id,
+      if (fromCardId != null) 'from_card_id': fromCardId,
+      if (toCardId != null) 'to_card_id': toCardId,
+      if (kind != null) 'kind': kind,
+      if (status != null) 'status': status,
+      if (reasons != null) 'reasons': reasons,
+      if (confidence != null) 'confidence': confidence,
+    });
+  }
+
+  ItemLinksCompanion copyWith({
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? id,
+    Value<int>? fromCardId,
+    Value<int>? toCardId,
+    Value<LinkKind>? kind,
+    Value<LinkStatus>? status,
+    Value<String>? reasons,
+    Value<double?>? confidence,
+  }) {
+    return ItemLinksCompanion(
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      id: id ?? this.id,
+      fromCardId: fromCardId ?? this.fromCardId,
+      toCardId: toCardId ?? this.toCardId,
+      kind: kind ?? this.kind,
+      status: status ?? this.status,
+      reasons: reasons ?? this.reasons,
+      confidence: confidence ?? this.confidence,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (fromCardId.present) {
+      map['from_card_id'] = Variable<int>(fromCardId.value);
+    }
+    if (toCardId.present) {
+      map['to_card_id'] = Variable<int>(toCardId.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(
+        $ItemLinksTable.$converterkind.toSql(kind.value),
+      );
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(
+        $ItemLinksTable.$converterstatus.toSql(status.value),
+      );
+    }
+    if (reasons.present) {
+      map['reasons'] = Variable<String>(reasons.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemLinksCompanion(')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('id: $id, ')
+          ..write('fromCardId: $fromCardId, ')
+          ..write('toCardId: $toCardId, ')
+          ..write('kind: $kind, ')
+          ..write('status: $status, ')
+          ..write('reasons: $reasons, ')
+          ..write('confidence: $confidence')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -14312,6 +15430,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $EncountersTable encounters = $EncountersTable(this);
   late final $ImportantDatesTable importantDates = $ImportantDatesTable(this);
   late final $RemindersTable reminders = $RemindersTable(this);
+  late final $ItemLinksTable itemLinks = $ItemLinksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -14343,6 +15462,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     encounters,
     importantDates,
     reminders,
+    itemLinks,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -14422,6 +15542,20 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('reminders', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'cards',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('item_links', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'cards',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('item_links', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -14821,8 +15955,10 @@ class $$PeopleTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$PeopleTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$PeopleTable, Person>(table),
+                  $$PeopleTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback: ({rolesRefs = false, cardsRefs = false}) {
@@ -15349,7 +16485,7 @@ class $$OrganizationsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$OrganizationsTable, Organization>(table),
                   $$OrganizationsTableReferences(db, table, e),
                 ),
               )
@@ -15801,7 +16937,7 @@ class $$OrgBranchesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$OrgBranchesTable, OrgBranch>(table),
                   $$OrgBranchesTableReferences(db, table, e),
                 ),
               )
@@ -16420,8 +17556,10 @@ class $$RolesTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$RolesTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$RolesTable, Role>(table),
+                  $$RolesTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback:
@@ -16564,6 +17702,9 @@ typedef $$CardsTableCreateCompanionBuilder =
       Value<int?> personId,
       Value<int?> orgId,
       Value<int?> roleId,
+      Value<String?> title,
+      Value<CaptureSource> captureSource,
+      Value<double?> classificationConfidence,
     });
 typedef $$CardsTableUpdateCompanionBuilder =
     CardsCompanion Function({
@@ -16584,6 +17725,9 @@ typedef $$CardsTableUpdateCompanionBuilder =
       Value<int?> personId,
       Value<int?> orgId,
       Value<int?> roleId,
+      Value<String?> title,
+      Value<CaptureSource> captureSource,
+      Value<double?> classificationConfidence,
     });
 
 final class $$CardsTableReferences
@@ -16830,6 +17974,22 @@ class $$CardsTableFilterComposer extends Composer<_$AppDatabase, $CardsTable> {
 
   ColumnFilters<DateTime> get capturedAt => $composableBuilder(
     column: $table.capturedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<CaptureSource, CaptureSource, String>
+  get captureSource => $composableBuilder(
+    column: $table.captureSource,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<double> get classificationConfidence => $composableBuilder(
+    column: $table.classificationConfidence,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -17132,6 +18292,21 @@ class $$CardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get captureSource => $composableBuilder(
+    column: $table.captureSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get classificationConfidence => $composableBuilder(
+    column: $table.classificationConfidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$PeopleTableOrderingComposer get personId {
     final $$PeopleTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -17263,6 +18438,20 @@ class $$CardsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get capturedAt => $composableBuilder(
     column: $table.capturedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<CaptureSource, String> get captureSource =>
+      $composableBuilder(
+        column: $table.captureSource,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<double> get classificationConfidence => $composableBuilder(
+    column: $table.classificationConfidence,
     builder: (column) => column,
   );
 
@@ -17542,6 +18731,9 @@ class $$CardsTableTableManager
                 Value<int?> personId = const Value.absent(),
                 Value<int?> orgId = const Value.absent(),
                 Value<int?> roleId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<CaptureSource> captureSource = const Value.absent(),
+                Value<double?> classificationConfidence = const Value.absent(),
               }) => CardsCompanion(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -17560,6 +18752,9 @@ class $$CardsTableTableManager
                 personId: personId,
                 orgId: orgId,
                 roleId: roleId,
+                title: title,
+                captureSource: captureSource,
+                classificationConfidence: classificationConfidence,
               ),
           createCompanionCallback:
               ({
@@ -17580,6 +18775,9 @@ class $$CardsTableTableManager
                 Value<int?> personId = const Value.absent(),
                 Value<int?> orgId = const Value.absent(),
                 Value<int?> roleId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<CaptureSource> captureSource = const Value.absent(),
+                Value<double?> classificationConfidence = const Value.absent(),
               }) => CardsCompanion.insert(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -17598,11 +18796,16 @@ class $$CardsTableTableManager
                 personId: personId,
                 orgId: orgId,
                 roleId: roleId,
+                title: title,
+                captureSource: captureSource,
+                classificationConfidence: classificationConfidence,
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$CardsTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$CardsTable, CardRow>(table),
+                  $$CardsTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback:
@@ -17862,6 +19065,12 @@ typedef $$CardFieldsTableCreateCompanionBuilder =
       Value<FieldValueKind> valueKind,
       Value<String?> regionRect,
       Value<CardSide> side,
+      Value<FactOrigin> origin,
+      Value<FactReview> review,
+      Value<FactValidity> validity,
+      Value<int?> amountMinor,
+      Value<String?> currency,
+      Value<LocalDate?> dateValue,
     });
 typedef $$CardFieldsTableUpdateCompanionBuilder =
     CardFieldsCompanion Function({
@@ -17880,6 +19089,12 @@ typedef $$CardFieldsTableUpdateCompanionBuilder =
       Value<FieldValueKind> valueKind,
       Value<String?> regionRect,
       Value<CardSide> side,
+      Value<FactOrigin> origin,
+      Value<FactReview> review,
+      Value<FactValidity> validity,
+      Value<int?> amountMinor,
+      Value<String?> currency,
+      Value<LocalDate?> dateValue,
     });
 
 final class $$CardFieldsTableReferences
@@ -18001,6 +19216,40 @@ class $$CardFieldsTableFilterComposer
   ColumnWithTypeConverterFilters<CardSide, CardSide, String> get side =>
       $composableBuilder(
         column: $table.side,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<FactOrigin, FactOrigin, String> get origin =>
+      $composableBuilder(
+        column: $table.origin,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<FactReview, FactReview, String> get review =>
+      $composableBuilder(
+        column: $table.review,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<FactValidity, FactValidity, String>
+  get validity => $composableBuilder(
+    column: $table.validity,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get currency => $composableBuilder(
+    column: $table.currency,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<LocalDate?, LocalDate, String> get dateValue =>
+      $composableBuilder(
+        column: $table.dateValue,
         builder: (column) => ColumnWithTypeConverterFilters(column),
       );
 
@@ -18132,6 +19381,36 @@ class $$CardFieldsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get origin => $composableBuilder(
+    column: $table.origin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get review => $composableBuilder(
+    column: $table.review,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get validity => $composableBuilder(
+    column: $table.validity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get currency => $composableBuilder(
+    column: $table.currency,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dateValue => $composableBuilder(
+    column: $table.dateValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CardsTableOrderingComposer get cardId {
     final $$CardsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -18216,6 +19495,26 @@ class $$CardFieldsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<CardSide, String> get side =>
       $composableBuilder(column: $table.side, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<FactOrigin, String> get origin =>
+      $composableBuilder(column: $table.origin, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<FactReview, String> get review =>
+      $composableBuilder(column: $table.review, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<FactValidity, String> get validity =>
+      $composableBuilder(column: $table.validity, builder: (column) => column);
+
+  GeneratedColumn<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get currency =>
+      $composableBuilder(column: $table.currency, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<LocalDate?, String> get dateValue =>
+      $composableBuilder(column: $table.dateValue, builder: (column) => column);
 
   $$CardsTableAnnotationComposer get cardId {
     final $$CardsTableAnnotationComposer composer = $composerBuilder(
@@ -18309,6 +19608,12 @@ class $$CardFieldsTableTableManager
                 Value<FieldValueKind> valueKind = const Value.absent(),
                 Value<String?> regionRect = const Value.absent(),
                 Value<CardSide> side = const Value.absent(),
+                Value<FactOrigin> origin = const Value.absent(),
+                Value<FactReview> review = const Value.absent(),
+                Value<FactValidity> validity = const Value.absent(),
+                Value<int?> amountMinor = const Value.absent(),
+                Value<String?> currency = const Value.absent(),
+                Value<LocalDate?> dateValue = const Value.absent(),
               }) => CardFieldsCompanion(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -18325,6 +19630,12 @@ class $$CardFieldsTableTableManager
                 valueKind: valueKind,
                 regionRect: regionRect,
                 side: side,
+                origin: origin,
+                review: review,
+                validity: validity,
+                amountMinor: amountMinor,
+                currency: currency,
+                dateValue: dateValue,
               ),
           createCompanionCallback:
               ({
@@ -18343,6 +19654,12 @@ class $$CardFieldsTableTableManager
                 Value<FieldValueKind> valueKind = const Value.absent(),
                 Value<String?> regionRect = const Value.absent(),
                 Value<CardSide> side = const Value.absent(),
+                Value<FactOrigin> origin = const Value.absent(),
+                Value<FactReview> review = const Value.absent(),
+                Value<FactValidity> validity = const Value.absent(),
+                Value<int?> amountMinor = const Value.absent(),
+                Value<String?> currency = const Value.absent(),
+                Value<LocalDate?> dateValue = const Value.absent(),
               }) => CardFieldsCompanion.insert(
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -18359,11 +19676,17 @@ class $$CardFieldsTableTableManager
                 valueKind: valueKind,
                 regionRect: regionRect,
                 side: side,
+                origin: origin,
+                review: review,
+                validity: validity,
+                amountMinor: amountMinor,
+                currency: currency,
+                dateValue: dateValue,
               ),
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$CardFieldsTable, CardField>(table),
                   $$CardFieldsTableReferences(db, table, e),
                 ),
               )
@@ -18946,7 +20269,7 @@ class $$ContactPointsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ContactPointsTable, ContactPoint>(table),
                   $$ContactPointsTableReferences(db, table, e),
                 ),
               )
@@ -19464,7 +20787,7 @@ class $$OcrBlocksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$OcrBlocksTable, OcrBlockRow>(table),
                   $$OcrBlocksTableReferences(db, table, e),
                 ),
               )
@@ -19885,7 +21208,9 @@ class $$ExtractionAttemptsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ExtractionAttemptsTable, ExtractionAttempt>(
+                    table,
+                  ),
                   $$ExtractionAttemptsTableReferences(db, table, e),
                 ),
               )
@@ -20216,7 +21541,16 @@ class $$NotesTableTableManager
                 language: language,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$NotesTable, Note>(table),
+                  BaseReferences<_$AppDatabase, $NotesTable, Note>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -20507,7 +21841,16 @@ class $$AttributesTableTableManager
                 confidence: confidence,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AttributesTable, Attribute>(table),
+                  BaseReferences<_$AppDatabase, $AttributesTable, Attribute>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -20810,7 +22153,18 @@ class $$CapabilityProfilesTableTableManager
                 model: model,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$CapabilityProfilesTable, CapabilityProfile>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $CapabilityProfilesTable,
+                    CapabilityProfile
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -21086,7 +22440,16 @@ class $$EmbeddingsTableTableManager
                 model: model,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$EmbeddingsTable, Embedding>(table),
+                  BaseReferences<_$AppDatabase, $EmbeddingsTable, Embedding>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -21301,7 +22664,16 @@ class $$InteractionsTableTableManager
                 occurredAt: occurredAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$InteractionsTable, Interaction>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $InteractionsTable,
+                    Interaction
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -21564,8 +22936,10 @@ class $$TagsTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$TagsTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$TagsTable, Tag>(table),
+                  $$TagsTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback: ({subjectTagsRefs = false}) {
@@ -21825,7 +23199,7 @@ class $$SubjectTagsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$SubjectTagsTable, SubjectTag>(table),
                   $$SubjectTagsTableReferences(db, table, e),
                 ),
               )
@@ -22137,7 +23511,7 @@ class $$SearchQueriesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$SearchQueriesTable, SearchQuery>(table),
                   $$SearchQueriesTableReferences(db, table, e),
                 ),
               )
@@ -22471,7 +23845,7 @@ class $$SearchFeedbackTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$SearchFeedbackTable, SearchFeedbackData>(table),
                   $$SearchFeedbackTableReferences(db, table, e),
                 ),
               )
@@ -22654,7 +24028,16 @@ class $$RankingWeightsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$RankingWeightsTable, RankingWeight>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $RankingWeightsTable,
+                    RankingWeight
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -22959,7 +24342,18 @@ class $$DuplicateCandidatesTableTableManager
                 status: status,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$DuplicateCandidatesTable, DuplicateCandidate>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $DuplicateCandidatesTable,
+                    DuplicateCandidate
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -23099,7 +24493,16 @@ class $$SettingsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$SettingsTable, Setting>(table),
+                  BaseReferences<_$AppDatabase, $SettingsTable, Setting>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -23419,7 +24822,7 @@ class $$ProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ProfilesTable, Profile>(table),
                   $$ProfilesTableReferences(db, table, e),
                 ),
               )
@@ -23823,7 +25226,7 @@ class $$ProfileFieldsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ProfileFieldsTable, ProfileField>(table),
                   $$ProfileFieldsTableReferences(db, table, e),
                 ),
               )
@@ -24192,7 +25595,7 @@ class $$EncountersTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$EncountersTable, Encounter>(table),
                   $$EncountersTableReferences(db, table, e),
                 ),
               )
@@ -24676,7 +26079,7 @@ class $$ImportantDatesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ImportantDatesTable, ImportantDate>(table),
                   $$ImportantDatesTableReferences(db, table, e),
                 ),
               )
@@ -25071,7 +26474,7 @@ class $$RemindersTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$RemindersTable, Reminder>(table),
                   $$RemindersTableReferences(db, table, e),
                 ),
               )
@@ -25135,6 +26538,502 @@ typedef $$RemindersTableProcessedTableManager =
       Reminder,
       PrefetchHooks Function({bool importantDateId})
     >;
+typedef $$ItemLinksTableCreateCompanionBuilder =
+    ItemLinksCompanion Function({
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> id,
+      required int fromCardId,
+      required int toCardId,
+      required LinkKind kind,
+      Value<LinkStatus> status,
+      Value<String> reasons,
+      Value<double?> confidence,
+    });
+typedef $$ItemLinksTableUpdateCompanionBuilder =
+    ItemLinksCompanion Function({
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> id,
+      Value<int> fromCardId,
+      Value<int> toCardId,
+      Value<LinkKind> kind,
+      Value<LinkStatus> status,
+      Value<String> reasons,
+      Value<double?> confidence,
+    });
+
+final class $$ItemLinksTableReferences
+    extends BaseReferences<_$AppDatabase, $ItemLinksTable, ItemLink> {
+  $$ItemLinksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $CardsTable _fromCardIdTable(_$AppDatabase db) =>
+      db.cards.createAlias('item_links__from_card_id__cards__id');
+
+  $$CardsTableProcessedTableManager get fromCardId {
+    final $_column = $_itemColumn<int>('from_card_id')!;
+
+    final manager = $$CardsTableTableManager(
+      $_db,
+      $_db.cards,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_fromCardIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $CardsTable _toCardIdTable(_$AppDatabase db) =>
+      db.cards.createAlias('item_links__to_card_id__cards__id');
+
+  $$CardsTableProcessedTableManager get toCardId {
+    final $_column = $_itemColumn<int>('to_card_id')!;
+
+    final manager = $$CardsTableTableManager(
+      $_db,
+      $_db.cards,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_toCardIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ItemLinksTableFilterComposer
+    extends Composer<_$AppDatabase, $ItemLinksTable> {
+  $$ItemLinksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<LinkKind, LinkKind, String> get kind =>
+      $composableBuilder(
+        column: $table.kind,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<LinkStatus, LinkStatus, String> get status =>
+      $composableBuilder(
+        column: $table.status,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<String> get reasons => $composableBuilder(
+    column: $table.reasons,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CardsTableFilterComposer get fromCardId {
+    final $$CardsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fromCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableFilterComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$CardsTableFilterComposer get toCardId {
+    final $$CardsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.toCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableFilterComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItemLinksTableOrderingComposer
+    extends Composer<_$AppDatabase, $ItemLinksTable> {
+  $$ItemLinksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reasons => $composableBuilder(
+    column: $table.reasons,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CardsTableOrderingComposer get fromCardId {
+    final $$CardsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fromCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableOrderingComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$CardsTableOrderingComposer get toCardId {
+    final $$CardsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.toCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableOrderingComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItemLinksTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ItemLinksTable> {
+  $$ItemLinksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<LinkKind, String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<LinkStatus, String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get reasons =>
+      $composableBuilder(column: $table.reasons, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  $$CardsTableAnnotationComposer get fromCardId {
+    final $$CardsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.fromCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$CardsTableAnnotationComposer get toCardId {
+    final $$CardsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.toCardId,
+      referencedTable: $db.cards,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CardsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.cards,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItemLinksTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ItemLinksTable,
+          ItemLink,
+          $$ItemLinksTableFilterComposer,
+          $$ItemLinksTableOrderingComposer,
+          $$ItemLinksTableAnnotationComposer,
+          $$ItemLinksTableCreateCompanionBuilder,
+          $$ItemLinksTableUpdateCompanionBuilder,
+          (ItemLink, $$ItemLinksTableReferences),
+          ItemLink,
+          PrefetchHooks Function({bool fromCardId, bool toCardId})
+        > {
+  $$ItemLinksTableTableManager(_$AppDatabase db, $ItemLinksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItemLinksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItemLinksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItemLinksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> id = const Value.absent(),
+                Value<int> fromCardId = const Value.absent(),
+                Value<int> toCardId = const Value.absent(),
+                Value<LinkKind> kind = const Value.absent(),
+                Value<LinkStatus> status = const Value.absent(),
+                Value<String> reasons = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+              }) => ItemLinksCompanion(
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                id: id,
+                fromCardId: fromCardId,
+                toCardId: toCardId,
+                kind: kind,
+                status: status,
+                reasons: reasons,
+                confidence: confidence,
+              ),
+          createCompanionCallback:
+              ({
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> id = const Value.absent(),
+                required int fromCardId,
+                required int toCardId,
+                required LinkKind kind,
+                Value<LinkStatus> status = const Value.absent(),
+                Value<String> reasons = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+              }) => ItemLinksCompanion.insert(
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                id: id,
+                fromCardId: fromCardId,
+                toCardId: toCardId,
+                kind: kind,
+                status: status,
+                reasons: reasons,
+                confidence: confidence,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ItemLinksTable, ItemLink>(table),
+                  $$ItemLinksTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({fromCardId = false, toCardId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (fromCardId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.fromCardId,
+                                referencedTable: $$ItemLinksTableReferences
+                                    ._fromCardIdTable(db),
+                                referencedColumn: $$ItemLinksTableReferences
+                                    ._fromCardIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (toCardId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.toCardId,
+                                referencedTable: $$ItemLinksTableReferences
+                                    ._toCardIdTable(db),
+                                referencedColumn: $$ItemLinksTableReferences
+                                    ._toCardIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ItemLinksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ItemLinksTable,
+      ItemLink,
+      $$ItemLinksTableFilterComposer,
+      $$ItemLinksTableOrderingComposer,
+      $$ItemLinksTableAnnotationComposer,
+      $$ItemLinksTableCreateCompanionBuilder,
+      $$ItemLinksTableUpdateCompanionBuilder,
+      (ItemLink, $$ItemLinksTableReferences),
+      ItemLink,
+      PrefetchHooks Function({bool fromCardId, bool toCardId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -25190,4 +27089,6 @@ class $AppDatabaseManager {
       $$ImportantDatesTableTableManager(_db, _db.importantDates);
   $$RemindersTableTableManager get reminders =>
       $$RemindersTableTableManager(_db, _db.reminders);
+  $$ItemLinksTableTableManager get itemLinks =>
+      $$ItemLinksTableTableManager(_db, _db.itemLinks);
 }

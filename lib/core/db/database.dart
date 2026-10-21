@@ -1,5 +1,7 @@
 import 'package:drift/drift.dart';
 
+// Used by the generated part file for `card_fields.date_value`.
+import '../domain/local_date.dart';
 import 'encrypted_database.dart';
 
 // Used by the generated part file for the textEnum<...>() columns.
@@ -21,9 +23,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
   note_text,
   canonical_en,
   tags,
+  met_text,
   tokenize = "unicode61 remove_diacritics 2"
 );
 ''';
+
+/// A column only the current [_createSearchIndex] has. FTS5 cannot add a
+/// column to an existing table, so a table without it is dropped and made
+/// again — it holds nothing but derived rows, which the search backfill
+/// writes back on the next launch.
+const String _searchIndexNewestColumn = 'met_text';
 
 @DriftDatabase(
   tables: <Type>[
@@ -53,6 +62,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
     Encounters,
     ImportantDates,
     Reminders,
+    ItemLinks,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -66,7 +76,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? openEncryptedDatabase());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -76,6 +86,7 @@ class AppDatabase extends _$AppDatabase {
       await _createIdentityIndexes();
       await _createProfileIndexes();
       await _createFollowUpIndexes();
+      await _createItemLinkIndexes();
       await _seedRankingWeights();
     },
     onUpgrade: (Migrator m, int from, int to) async {
@@ -157,14 +168,102 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(reminders);
         await _createFollowUpIndexes();
       }
+      // v11 — Release B: things as well as people. Extends the tables in
+      // place (PLAN §5) rather than starting parallel ones: a card row is
+      // already the general saved item, and a card field already a fact with
+      // its provenance.
+      //
+      // The first step that rewrites existing rows, not only adds to them,
+      // so it is built to survive being run twice: in one transaction, and
+      // every column and table added only if it is not already there. Drift
+      // records the new version only after the migration finishes, so a
+      // crash between the work and that write runs it again on the next
+      // launch — which must then find nothing left to do rather than fail on
+      // a column that already exists.
+      if (from < 11) {
+        await transaction(() async {
+          await _addColumnIfMissing(m, cards, cards.title);
+          await _addColumnIfMissing(m, cards, cards.captureSource);
+          await _addColumnIfMissing(m, cards, cards.classificationConfidence);
+          await _addColumnIfMissing(m, cardFields, cardFields.origin);
+          await _addColumnIfMissing(m, cardFields, cardFields.review);
+          await _addColumnIfMissing(m, cardFields, cardFields.validity);
+          await _addColumnIfMissing(m, cardFields, cardFields.amountMinor);
+          await _addColumnIfMissing(m, cardFields, cardFields.currency);
+          await _addColumnIfMissing(m, cardFields, cardFields.dateValue);
+          if (!await _tableExists('item_links')) {
+            await m.createTable(itemLinks);
+          }
+          await _createItemLinkIndexes();
+
+          // The one old value split three ways. `aiInferred` was the only
+          // guess; `outdated` was about validity, not origin; `verified`
+          // (the business confirming) was never written by anything. The
+          // user's confirmation lived in its own flag and becomes `review`.
+          // Plain SQL over every row, so running it again gives the same
+          // answer.
+          await customStatement(
+            'UPDATE card_fields SET '
+            'origin = CASE source '
+            "  WHEN 'user' THEN 'user' "
+            "  WHEN 'aiInferred' THEN 'inferred' "
+            "  ELSE 'printed' END, "
+            'review = CASE WHEN verified_by_user = 1 '
+            "  THEN 'confirmed' ELSE 'unreviewed' END, "
+            'validity = CASE source '
+            "  WHEN 'outdated' THEN 'outdated' ELSE 'current' END",
+          );
+        });
+      }
     },
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');
       // FTS5 lives outside Drift's schema tracking, so make sure it exists
-      // even for databases created before it was added.
+      // even for databases created before it was added — and has today's
+      // columns, which a database (or a restored backup) from an older build
+      // would not.
+      await _ensureSearchIndexShape();
       await customStatement(_createSearchIndex);
     },
   );
+
+  Future<void> _addColumnIfMissing(
+    Migrator m,
+    TableInfo<Table, Object?> table,
+    GeneratedColumn<Object> column,
+  ) async {
+    final List<QueryRow> columns = await customSelect(
+      'PRAGMA table_info("${table.actualTableName}")',
+    ).get();
+    final bool present = columns.any(
+      (QueryRow c) => c.read<String>('name') == column.name,
+    );
+    if (!present) await m.addColumn(table, column);
+  }
+
+  Future<bool> _tableExists(String name) async => (await customSelect(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    variables: <Variable<Object>>[Variable<String>(name)],
+  ).get()).isNotEmpty;
+
+  /// Links are looked up from either end: "what is this warranty for" and
+  /// "is there a warranty for this receipt". The unique key covers the first.
+  Future<void> _createItemLinkIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_item_links_to ON item_links(to_card_id)',
+    );
+  }
+
+  Future<void> _ensureSearchIndexShape() async {
+    final QueryRow? row = await customSelect(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' "
+      "AND name = 'search_index'",
+    ).getSingleOrNull();
+    final String? sql = row?.read<String?>('sql');
+    if (sql != null && !sql.contains(_searchIndexNewestColumn)) {
+      await customStatement('DROP TABLE search_index');
+    }
+  }
 
   /// Blocking keys for identity resolution.
   ///

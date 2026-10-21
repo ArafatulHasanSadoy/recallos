@@ -21,6 +21,78 @@ enum FactSource {
   verified,
 }
 
+/// Where a fact came from — the first of three separate properties a stored
+/// fact has (schema v11, PLAN §5).
+///
+/// [FactSource] mixed three questions in one value: `verified` and
+/// `outdated` sat beside `printed`, so a printed number the user confirmed
+/// and a printed number that has since changed could not both be said. Now
+/// a fact has an origin, whether the user has looked at it ([FactReview]),
+/// and whether it still holds ([FactValidity]).
+enum FactOrigin {
+  /// Read off the photograph.
+  printed,
+
+  /// Typed, spoken or corrected by the user.
+  user,
+
+  /// Worked out from other facts by a rule — a warranty's expiry from the
+  /// purchase date and the cover. Always shown as calculated.
+  derived,
+
+  /// Suggested by a model or a heuristic. Always shown as a guess.
+  inferred,
+}
+
+/// Whether the user has looked at a fact.
+enum FactReview { unreviewed, confirmed, rejected }
+
+/// Whether a fact still holds.
+enum FactValidity {
+  current,
+
+  /// Replaced by a newer fact of the same kind — a new number on a newer
+  /// card. Kept, so the history is there.
+  superseded,
+
+  /// Known to be out of date, with nothing newer yet.
+  outdated,
+}
+
+/// How a card's photograph came into the app (schema v11).
+enum CaptureSource {
+  /// The document scanner — the camera, or a picture picked inside it.
+  documentScanner,
+
+  /// Chosen from the phone's gallery outside the scanner.
+  gallery,
+
+  /// Captured before this was recorded.
+  unknown,
+}
+
+/// How two saved things belong together (schema v11, used from B3).
+enum LinkKind {
+  /// The `from` card is the warranty for what the `to` card — a receipt or
+  /// an invoice — bought.
+  warrantyOf,
+
+  /// Related in some other way the user said.
+  related,
+
+  /// Two receipts that look like the same purchase — the same amount on the
+  /// same day (B4). Only the user's answer is stored, never the question:
+  /// *dismissed* means they said these are two purchases, so both are
+  /// counted and the pair is not asked about again. The question itself is
+  /// worked out afresh each time the totals are, from the receipts as they
+  /// stand.
+  duplicateOf,
+}
+
+/// Where a suggested link stands. A suggestion is never treated as true
+/// until confirmed; a dismissed one is kept so it is not suggested again.
+enum LinkStatus { suggested, confirmed, dismissed }
+
 /// How far extraction got on a card.
 ///
 /// `pending` exists because the card row and its image are written *before*
@@ -83,6 +155,16 @@ enum InteractionKind {
   /// went is out of sight, so the record claims only what RecallOS did.
   /// `detail` names the channel.
   helloOpened,
+
+  /// The number was handed to the dialler. Not "called": whether the call
+  /// was placed or answered is out of sight.
+  callOpened,
+
+  /// A chat was opened in WhatsApp. `detail` names the app.
+  messageOpened,
+
+  /// The address was handed to the mail app. Not "emailed".
+  emailOpened,
 }
 
 /// Result of one run of one engine over one image.
@@ -106,10 +188,18 @@ enum EncounterOrigin { user, event }
 
 /// What an important date is about.
 ///
-/// One kind today. Warranty expiry, ticket dates and ID expiry arrive as more
-/// values here, not as more tables: each is a date something has to happen
-/// by, with the same open/done life and the same reminders.
-enum DateKind { followUp }
+/// Ticket dates and ID expiry arrive as more values here, not as more
+/// tables: each is a date something has to happen by, with the same
+/// open/done life and the same reminders.
+enum DateKind {
+  /// A next step the user set on a card.
+  followUp,
+
+  /// The day a warranty runs out (B3) — printed on it, or calculated from
+  /// the purchase date and the cover, and said so. Not a next step: never
+  /// listed as one, and never one of the free reminders.
+  warrantyExpiry,
+}
 
 /// Where an obligation stands. `dismissed` is for "not doing this after all",
 /// kept apart from `done` so a summary never counts a dropped task as work

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../domain/local_date.dart';
 import 'enums.dart';
 
 /// Timestamps every mutable row carries. `deletedAt` gives us tombstones now so
@@ -126,6 +127,19 @@ class Cards extends Table with _Timestamps {
   IntColumn get personId => integer().nullable().references(People, #id)();
   IntColumn get orgId => integer().nullable().references(Organizations, #id)();
   IntColumn get roleId => integer().nullable().references(Roles, #id)();
+
+  /// A name for a thing that is not somebody's card — "Laptop, Star Tech".
+  /// Null for business cards, which are titled from their fields. (v11)
+  TextColumn get title => text().nullable()();
+
+  /// How the photograph came in. (v11)
+  TextColumn get captureSource => textEnum<CaptureSource>().withDefault(
+    Constant(CaptureSource.unknown.name),
+  )();
+
+  /// How sure an automatic reading of [type] was, 0..1. Null when the user
+  /// chose the type, or nothing classified it. (v11)
+  RealColumn get classificationConfidence => real().nullable()();
 }
 
 /// One extracted field, with provenance and a link back to the pixels it came
@@ -174,6 +188,58 @@ class CardFields extends Table with _Timestamps {
   /// was read: until then the front was the only side anything came off.
   TextColumn get side =>
       textEnum<CardSide>().withDefault(Constant(CardSide.front.name))();
+
+  // The fact's provenance, as three separate properties (v11). Written
+  // alongside [source] and [verifiedByUser], which stay readable until
+  // every reader has moved over.
+
+  TextColumn get origin =>
+      textEnum<FactOrigin>().withDefault(Constant(FactOrigin.printed.name))();
+  TextColumn get review => textEnum<FactReview>().withDefault(
+    Constant(FactReview.unreviewed.name),
+  )();
+  TextColumn get validity => textEnum<FactValidity>().withDefault(
+    Constant(FactValidity.current.name),
+  )();
+
+  /// A money value in whole minor units — paisa, cents — never a double.
+  /// Set with [currency] or not at all. (v11)
+  IntColumn get amountMinor => integer().nullable()();
+
+  /// ISO 4217, upper case. (v11)
+  TextColumn get currency => text().nullable()();
+
+  /// A calendar day, `YYYY-MM-DD` — a purchase date, an expiry. Not a
+  /// timestamp: a day must not move when the phone's time zone does. (v11)
+  TextColumn get dateValue =>
+      text().map(const LocalDateConverter()).nullable()();
+}
+
+/// Two saved things that belong together — a warranty and the receipt for
+/// what it covers (B3). (v11)
+///
+/// Suggested with the reasons that suggested it, and treated as true only
+/// once the user confirms. Undoing a link is deleting its row; dismissing a
+/// suggestion keeps the row as `dismissed`, so it is not suggested again.
+class ItemLinks extends Table with _Timestamps {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get fromCardId =>
+      integer().references(Cards, #id, onDelete: KeyAction.cascade)();
+  IntColumn get toCardId =>
+      integer().references(Cards, #id, onDelete: KeyAction.cascade)();
+  TextColumn get kind => textEnum<LinkKind>()();
+  TextColumn get status =>
+      textEnum<LinkStatus>().withDefault(Constant(LinkStatus.suggested.name))();
+
+  /// Why it was suggested, as a JSON list — the matching serial number, the
+  /// shared invoice number — so the suggestion can show its evidence.
+  TextColumn get reasons => text().withDefault(const Constant('[]'))();
+  RealColumn get confidence => real().nullable()();
+
+  @override
+  List<Set<Column<Object>>> get uniqueKeys => <Set<Column<Object>>>[
+    <Column<Object>>{fromCardId, toCardId, kind},
+  ];
 }
 
 class ContactPoints extends Table with _Timestamps {
@@ -392,6 +458,10 @@ class Settings extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
+/// Reserved for Release C's tags (PLAN B8, decided 15 Oct 2026): nothing
+/// reads or writes this or [SubjectTags] yet, and the FTS `tags` column is
+/// written empty. Kept rather than dropped, because dropping costs a
+/// migration and an empty table holds nothing.
 class Tags extends Table with _Timestamps {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text().unique()();
@@ -411,6 +481,12 @@ class SubjectTags extends Table {
 // Retrieval
 // ---------------------------------------------------------------------------
 
+/// Reserved, and deliberately empty (PLAN B8, decided 15 Oct 2026). Nothing
+/// writes this or [SearchFeedback]. Keeping what people type would put
+/// sensitive text into every backup and export, and PLAN §6 no longer needs
+/// it: retrieval is measured with a hand-labelled question set
+/// (`lib/core/eval/question_set.dart`), run on the phone. Kept rather than
+/// dropped, because dropping costs a migration.
 class SearchQueries extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get raw => text()();

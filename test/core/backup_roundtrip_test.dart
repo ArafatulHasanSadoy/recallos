@@ -297,6 +297,66 @@ void main() {
       await db.close();
     });
 
+    // Every backup made before Release B is a v10 backup. One restored onto
+    // a phone running v11 must come back as a v11 wallet: the backup's own
+    // tables first, then the normal upgrade when the app opens it.
+    test(
+      'a backup from a v10 phone restores and upgrades to this build',
+      () async {
+        final File front = photo(
+          docsA,
+          'cards/card_v10.jpg',
+          utf8.encode('v10 front'),
+        );
+        final s3.Database v10 = s3.sqlite3.open(
+          p.join(docsA.path, kDatabaseFileName),
+        );
+        try {
+          v10.execute('PRAGMA key = "x\'$keyA\'";');
+          v10.execute(File('test/fixtures/schema_v10.sql').readAsStringSync());
+          v10.execute(
+            'INSERT INTO cards (id, image_path, captured_at, extraction_status) '
+            "VALUES (1, '${front.path}', 1759276800, 'complete')",
+          );
+          v10.execute(
+            'INSERT INTO card_fields (card_id, field_key, value, source, verified_by_user) '
+            "VALUES (1, 'company', 'Star Tech', 'printed', 0), "
+            "(1, 'phone', '01711-223344', 'user', 1)",
+          );
+          v10.execute('PRAGMA user_version = 10');
+        } finally {
+          v10.close();
+        }
+
+        final RestoreOutcome? outcome = await restoreOnB(backupOfA());
+        expect(outcome?.ok, isTrue);
+        expect(outcome?.cards, 1);
+
+        final AppDatabase db = openApp(docsB, keyB);
+        final int version =
+            (await db.customSelect('PRAGMA user_version').getSingle())
+                .read<int>('user_version');
+        expect(version, appSchema, reason: 'opened by this build, it upgrades');
+        final Map<String, CardField> fields = <String, CardField>{
+          for (final CardField f in await db.select(db.cardFields).get())
+            f.fieldKey: f,
+        };
+        expect(fields['company']!.origin, FactOrigin.printed);
+        expect(fields['company']!.review, FactReview.unreviewed);
+        expect(fields['phone']!.origin, FactOrigin.user);
+        expect(fields['phone']!.review, FactReview.confirmed);
+        final CardRow card = await db.select(db.cards).getSingle();
+        expect(card.captureSource, CaptureSource.unknown);
+        expect(
+          File(card.imagePath).readAsBytesSync(),
+          utf8.encode('v10 front'),
+          reason: 'the photograph comes back at the new phone\'s own path',
+        );
+        expect(p.isWithin(docsB.path, card.imagePath), isTrue);
+        await db.close();
+      },
+    );
+
     test('the backup holds no plaintext and no search index', () async {
       await buildWalletA();
       final Uint8List raw = backupOfA().readAsBytesSync();
