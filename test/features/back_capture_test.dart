@@ -120,6 +120,20 @@ void main() {
         duration: const Duration(milliseconds: 12),
       );
 
+  // v11: a card never exists untyped. What capture makes today is a
+  // business card from the document scanner; the type is what keeps a
+  // receipt out of the contacts once receipts can be captured (B2).
+  test(
+    'a captured card is saved as a business card, from the scanner',
+    () async {
+      final ({ProviderContainer container, int cardId}) fixture =
+          await setUpCard();
+      final CardRow card = await loadCard(fixture.cardId);
+      expect(card.type, CardType.visitingCard);
+      expect(card.captureSource, CaptureSource.documentScanner);
+    },
+  );
+
   test('stores the scanned back and points the card at it', () async {
     final ({ProviderContainer container, int cardId}) fixture =
         await setUpCard();

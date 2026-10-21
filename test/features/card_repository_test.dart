@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:recallos/core/db/database.dart';
 import 'package:recallos/core/db/enums.dart';
+import 'package:recallos/core/db/field_provenance.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
 import 'package:recallos/core/extraction/field_validator.dart';
 import 'package:recallos/core/extraction/phone.dart';
@@ -28,16 +29,18 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() async => db.close());
 
-  Future<int> createPending() => db.into(db.cards).insert(
+  Future<int> createPending() => db
+      .into(db.cards)
+      .insert(
         CardsCompanion.insert(
           imagePath: '/tmp/cards/card_1.jpg',
           capturedAt: DateTime(2026, 8, 8),
         ),
       );
 
-  Future<CardRow> load(int id) => (db.select(db.cards)
-        ..where(($CardsTable c) => c.id.equals(id)))
-      .getSingle();
+  Future<CardRow> load(int id) => (db.select(
+    db.cards,
+  )..where(($CardsTable c) => c.id.equals(id))).getSingle();
 
   group('save-first ordering', () {
     test('a card exists and is pending before any recognition runs', () async {
@@ -49,47 +52,56 @@ void main() {
       expect(card.rawOcrText, isNull);
     });
 
-    test('a card whose OCR found nothing is still saved and still findable',
-        () async {
-      final int id = await createPending();
+    test(
+      'a card whose OCR found nothing is still saved and still findable',
+      () async {
+        final int id = await createPending();
 
-      // OCR returns nothing at all.
-      await (db.update(db.cards)..where(($CardsTable c) => c.id.equals(id)))
-          .write(const CardsCompanion(
-        extractionStatus: Value<ExtractionStatus>(ExtractionStatus.failed),
-      ));
-      await db.into(db.notes).insert(
-            NotesCompanion.insert(
-              subjectType: 'card',
-              subjectId: id,
-              body: const Value<String?>('cheap t-shirt printer from CSE fest'),
-            ),
-          );
+        // OCR returns nothing at all.
+        await (db.update(
+          db.cards,
+        )..where(($CardsTable c) => c.id.equals(id))).write(
+          const CardsCompanion(
+            extractionStatus: Value<ExtractionStatus>(ExtractionStatus.failed),
+          ),
+        );
+        await db
+            .into(db.notes)
+            .insert(
+              NotesCompanion.insert(
+                subjectType: 'card',
+                subjectId: id,
+                body: const Value<String?>(
+                  'cheap t-shirt printer from CSE fest',
+                ),
+              ),
+            );
 
-      final CardRow card = await load(id);
-      expect(card.extractionStatus, ExtractionStatus.failed);
-      expect(card.imagePath, isNotEmpty);
+        final CardRow card = await load(id);
+        expect(card.extractionStatus, ExtractionStatus.failed);
+        expect(card.imagePath, isNotEmpty);
 
-      // The note alone is what makes it retrievable, which is the point.
-      final List<Note> notes = await (db.select(db.notes)
-            ..where(($NotesTable n) => n.subjectId.equals(id)))
-          .get();
-      expect(notes.single.body, contains('t-shirt printer'));
-    });
+        // The note alone is what makes it retrievable, which is the point.
+        final List<Note> notes = await (db.select(
+          db.notes,
+        )..where(($NotesTable n) => n.subjectId.equals(id))).get();
+        expect(notes.single.body, contains('t-shirt printer'));
+      },
+    );
   });
 
   group('attaching an extraction', () {
     // The real card from the device, including the phone number ML Kit
     // truncated and the fields it misassigned before the fix.
     List<OcrBlock> shopCardBlocks() => <OcrBlock>[
-          _rotated('G AHMED', across: 62, along: 300, offset: 40),
-          _rotated('President', across: 60, along: 290, offset: 170),
-          _rotated('01673465717', across: 34, along: 250, offset: 250),
-          _rotated('1714066410', across: 34, along: 235, offset: 300),
-          _rotated('Shop No:278', across: 24, along: 150, offset: 380),
-          _rotated('New Market', across: 24, along: 150, offset: 420),
-          _rotated('bKash', across: 14, along: 50, offset: 600),
-        ];
+      _rotated('G AHMED', across: 62, along: 300, offset: 40),
+      _rotated('President', across: 60, along: 290, offset: 170),
+      _rotated('01673465717', across: 34, along: 250, offset: 250),
+      _rotated('1714066410', across: 34, along: 235, offset: 300),
+      _rotated('Shop No:278', across: 24, along: 150, offset: 380),
+      _rotated('New Market', across: 24, along: 150, offset: 420),
+      _rotated('bKash', across: 14, along: 50, offset: 600),
+    ];
 
     test('stores every block, assigned or not', () async {
       final int id = await createPending();
@@ -110,8 +122,9 @@ void main() {
               rect: '0,0,1,1',
               confidence: blocks[i].confidence,
               script: blocks[i].script.name,
-              assignedFieldKey:
-                  Value<String?>(assigned.contains(i) ? 'x' : null),
+              assignedFieldKey: Value<String?>(
+                assigned.contains(i) ? 'x' : null,
+              ),
               orderIndex: Value<int>(i),
             ),
         ]);
@@ -125,16 +138,14 @@ void main() {
       final List<OcrBlockRow> unassigned = stored
           .where((OcrBlockRow b) => b.assignedFieldKey == null)
           .toList();
-      expect(
-        unassigned.map((OcrBlockRow b) => b.blockText),
-        contains('bKash'),
-      );
+      expect(unassigned.map((OcrBlockRow b) => b.blockText), contains('bKash'));
     });
 
     test('persists the corrected phone number, not the OCR mistake', () async {
       final int id = await createPending();
-      final CardExtraction extraction =
-          CardFieldExtractor.extract(shopCardBlocks());
+      final CardExtraction extraction = CardFieldExtractor.extract(
+        shopCardBlocks(),
+      );
 
       await db.batch((Batch batch) {
         batch.insertAll(db.cardFields, <CardFieldsCompanion>[
@@ -150,9 +161,11 @@ void main() {
         ]);
       });
 
-      final List<CardField> phones = await (db.select(db.cardFields)
-            ..where(($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone)))
-          .get();
+      final List<CardField> phones =
+          await (db.select(db.cardFields)..where(
+                ($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone),
+              ))
+              .get();
 
       expect(
         phones.map((CardField f) => f.value),
@@ -164,8 +177,9 @@ void main() {
       );
 
       // The restored digit is recorded as an inference, not as printed fact.
-      final CardField restored = phones
-          .firstWhere((CardField f) => f.value == '01714066410');
+      final CardField restored = phones.firstWhere(
+        (CardField f) => f.value == '01714066410',
+      );
       expect(restored.validationIssue, 'digit_restored');
     });
 
@@ -173,10 +187,12 @@ void main() {
       final int id = await createPending();
 
       Future<void> attach() async {
-        await (db.delete(db.cardFields)
-              ..where(($CardFieldsTable f) => f.cardId.equals(id)))
-            .go();
-        await db.into(db.cardFields).insert(
+        await (db.delete(
+          db.cardFields,
+        )..where(($CardFieldsTable f) => f.cardId.equals(id))).go();
+        await db
+            .into(db.cardFields)
+            .insert(
               CardFieldsCompanion.insert(
                 cardId: id,
                 fieldKey: FieldKeys.phone,
@@ -206,9 +222,9 @@ void main() {
       cardId = await createPending();
     });
 
-    Future<CardField> field(int id) => (db.select(db.cardFields)
-          ..where(($CardFieldsTable f) => f.id.equals(id)))
-        .getSingle();
+    Future<CardField> field(int id) => (db.select(
+      db.cardFields,
+    )..where(($CardFieldsTable f) => f.id.equals(id))).getSingle();
 
     /// A phone row and the block it was read from, as the old rule left them.
     Future<int> stored(
@@ -219,7 +235,9 @@ void main() {
       bool verified = false,
       bool linked = true,
     }) async {
-      final int id = await db.into(db.cardFields).insert(
+      final int id = await db
+          .into(db.cardFields)
+          .insert(
             CardFieldsCompanion.insert(
               cardId: cardId,
               fieldKey: FieldKeys.phone,
@@ -227,75 +245,95 @@ void main() {
               normalizedValue: Value<String?>(e164),
               source: source,
               verifiedByUser: Value<bool>(verified),
+              // Both forms of provenance, as every writer stores them since
+              // v11 (FieldProvenance) and as the migration filled them in.
+              origin: Value<FactOrigin>(
+                source == FactSource.user
+                    ? FactOrigin.user
+                    : FactOrigin.printed,
+              ),
+              review: Value<FactReview>(
+                verified ? FactReview.confirmed : FactReview.unreviewed,
+              ),
               validationIssue: Value<String?>(issue),
             ),
           );
-      await db.into(db.ocrBlocks).insert(
+      await db
+          .into(db.ocrBlocks)
+          .insert(
             OcrBlocksCompanion.insert(
               cardId: cardId,
               blockText: printed,
               rect: '0,0,1,1',
               confidence: 0.9,
               script: 'latin',
-              assignedFieldKey:
-                  Value<String?>(linked ? FieldKeys.phone : null),
+              assignedFieldKey: Value<String?>(linked ? FieldKeys.phone : null),
               fieldId: Value<int?>(linked ? id : null),
             ),
           );
       return id;
     }
 
-    test('a printed number shown in its dialable form is on the card again',
-        () async {
-      // The shape of "Test Card Printing Ltd" in the device's wallet, stored
-      // through the real save path so the blocks point at their fields the way
-      // they do on the phone.
-      final List<OcrBlock> blocks = <OcrBlock>[
-        _line('Test Card Printing Ltd', top: 10, height: 40),
-        _line('+880 1711-223344', top: 200, height: 16),
-        _line('1714066410', top: 240, height: 16),
-      ];
-      await repo.attachExtraction(
-        cardId: cardId,
-        result: OcrResult(
-          blocks: blocks,
-          engine: 'test',
-          duration: const Duration(milliseconds: 20),
-        ),
-        extraction: CardFieldExtractor.extract(blocks),
-      );
-      // What the old rule stored on both.
-      await (db.update(db.cardFields)
-            ..where(($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone)))
-          .write(const CardFieldsCompanion(
-        validationIssue: Value<String?>('digit_restored'),
-      ));
+    test(
+      'a printed number shown in its dialable form is on the card again',
+      () async {
+        // The shape of "Test Card Printing Ltd" in the device's wallet, stored
+        // through the real save path so the blocks point at their fields the way
+        // they do on the phone.
+        final List<OcrBlock> blocks = <OcrBlock>[
+          _line('Test Card Printing Ltd', top: 10, height: 40),
+          _line('+880 1711-223344', top: 200, height: 16),
+          _line('1714066410', top: 240, height: 16),
+        ];
+        await repo.attachExtraction(
+          cardId: cardId,
+          result: OcrResult(
+            blocks: blocks,
+            engine: 'test',
+            duration: const Duration(milliseconds: 20),
+          ),
+          extraction: CardFieldExtractor.extract(blocks),
+        );
+        // What the old rule stored on both.
+        await (db.update(db.cardFields)..where(
+              ($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone),
+            ))
+            .write(
+              const CardFieldsCompanion(
+                validationIssue: Value<String?>('digit_restored'),
+              ),
+            );
 
-      expect(await repo.repairDigitRestoredLabels(), 1);
+        expect(await repo.repairDigitRestoredLabels(), 1);
 
-      final List<CardField> phones = await (db.select(db.cardFields)
-            ..where(($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone)))
-          .get();
-      final CardField printed = phones.firstWhere(
-        (CardField f) => f.normalizedValue == '+8801711223344',
-      );
-      expect(printed.validationIssue, isNull);
-      expect(printed.source, FactSource.printed);
-      // Only the label moves; what the user sees and dials does not.
-      expect(printed.value, '01711223344');
+        final List<CardField> phones =
+            await (db.select(db.cardFields)..where(
+                  ($CardFieldsTable f) => f.fieldKey.equals(FieldKeys.phone),
+                ))
+                .get();
+        final CardField printed = phones.firstWhere(
+          (CardField f) => f.normalizedValue == '+8801711223344',
+        );
+        expect(printed.validationIssue, isNull);
+        expect(printed.source, FactSource.printed);
+        // Only the label moves; what the user sees and dials does not.
+        expect(printed.value, '01711223344');
 
-      // The zero this one never printed is still an inference.
-      final CardField lost = phones.firstWhere(
-        (CardField f) => f.normalizedValue == '+8801714066410',
-      );
-      expect(lost.validationIssue, 'digit_restored');
-      expect(lost.value, '01714066410');
-    });
+        // The zero this one never printed is still an inference.
+        final CardField lost = phones.firstWhere(
+          (CardField f) => f.normalizedValue == '+8801714066410',
+        );
+        expect(lost.validationIssue, 'digit_restored');
+        expect(lost.value, '01714066410');
+      },
+    );
 
     test('separators and a written-out country code are formatting', () async {
       final int dashed = await stored('01711-223344', e164: '+8801711223344');
-      final int intl =
-          await stored('00880 1911 556677', e164: '+8801911556677');
+      final int intl = await stored(
+        '00880 1911 556677',
+        e164: '+8801911556677',
+      );
 
       expect(await repo.repairDigitRestoredLabels(), 2);
       expect((await field(dashed)).validationIssue, isNull);
@@ -383,7 +421,9 @@ void main() {
       identity = IdentityRepository(db);
     });
 
-    Future<int> card() => db.into(db.cards).insert(
+    Future<int> card() => db
+        .into(db.cards)
+        .insert(
           CardsCompanion.insert(
             imagePath: '/tmp/cards/card_${++seq}.jpg',
             capturedAt: DateTime(2026, 9, 1, 0, seq),
@@ -409,8 +449,9 @@ void main() {
           fields: <ExtractedField>[
             for (final MapEntry<String, List<int>> f in filed.entries)
               () {
-                final String value =
-                    f.value.map((int i) => blocks[i].text.trim()).join(', ');
+                final String value = f.value
+                    .map((int i) => blocks[i].text.trim())
+                    .join(', ');
                 return ExtractedField(
                   fieldKey: f.key,
                   value: value,
@@ -449,13 +490,12 @@ void main() {
     List<OcrBlock> shopCard(
       String tagline, {
       String phone = '+880 1617-223311',
-    }) =>
-        <OcrBlock>[
-          _line('TechFix Repair Centre', top: 10, height: 60),
-          _line(tagline, top: 80, height: 26),
-          _line(phone, top: 116, height: 28),
-          _line('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
-        ];
+    }) => <OcrBlock>[
+      _line('TechFix Repair Centre', top: 10, height: 60),
+      _line(tagline, top: 80, height: 26),
+      _line(phone, top: 116, height: 28),
+      _line('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+    ];
 
     /// What the old extractor made of [shopCard].
     const Map<String, List<int>> taglineAsPerson = <String, List<int>>{
@@ -466,23 +506,23 @@ void main() {
     };
 
     Future<List<String>> contacts() async => <String>[
-          for (final Person p in await (db.select(db.people)
-                ..where(($PeopleTable t) => t.mergedIntoId.isNull()))
-              .get())
-            p.displayName,
-        ];
+      for (final Person p in await (db.select(
+        db.people,
+      )..where(($PeopleTable t) => t.mergedIntoId.isNull())).get())
+        p.displayName,
+    ];
 
-    Future<List<CardField>> names(int cardId) => (db.select(db.cardFields)
-          ..where(
-            ($CardFieldsTable f) =>
-                f.cardId.equals(cardId) &
-                f.fieldKey.equals(FieldKeys.personName),
-          ))
-        .get();
+    Future<List<CardField>> names(int cardId) =>
+        (db.select(db.cardFields)..where(
+              ($CardFieldsTable f) =>
+                  f.cardId.equals(cardId) &
+                  f.fieldKey.equals(FieldKeys.personName),
+            ))
+            .get();
 
-    Future<CardRow> row(int cardId) => (db.select(db.cards)
-          ..where(($CardsTable c) => c.id.equals(cardId)))
-        .getSingle();
+    Future<CardRow> row(int cardId) => (db.select(
+      db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingle();
 
     Future<String?> valueOf(int cardId, String key) async =>
         (await repo.watchCard(cardId).first)!.valueOf(key);
@@ -512,12 +552,12 @@ void main() {
       expect(repaired.extractionStatus, ExtractionStatus.complete);
 
       // The number was the shop's all along, and now hangs off the shop.
-      final ContactPoint phone = await (db.select(db.contactPoints)
-            ..where(
-              ($ContactPointsTable c) =>
-                  c.normalizedValue.equals('+8801617223311'),
-            ))
-          .getSingle();
+      final ContactPoint phone =
+          await (db.select(db.contactPoints)..where(
+                ($ContactPointsTable c) =>
+                    c.normalizedValue.equals('+8801617223311'),
+              ))
+              .getSingle();
       expect(phone.ownerType, 'organization');
       expect(phone.ownerId, repaired.orgId);
 
@@ -565,18 +605,17 @@ void main() {
 
       await repo.repairInventedPeople(identity);
 
-      final OcrBlockRow line = await (db.select(db.ocrBlocks)
-            ..where(
-              ($OcrBlocksTable b) =>
-                  b.blockText.equals('Laptop and Mobile Servicing'),
-            ))
-          .getSingle();
+      final OcrBlockRow line =
+          await (db.select(db.ocrBlocks)..where(
+                ($OcrBlocksTable b) =>
+                    b.blockText.equals('Laptop and Mobile Servicing'),
+              ))
+              .getSingle();
       expect(line.fieldId, isNull);
       expect(line.assignedFieldKey, isNull);
-      expect(
-        (await repo.watchCard(shop).first)!.unassignedText,
-        <String>['Laptop and Mobile Servicing'],
-      );
+      expect((await repo.watchCard(shop).first)!.unassignedText, <String>[
+        'Laptop and Mobile Servicing',
+      ]);
     });
 
     test('keeps a name the extractor still reads as one', () async {
@@ -593,46 +632,52 @@ void main() {
       expect(await contacts(), <String>['Rahim Uddin']);
     });
 
-    test('keeps a name somebody confirmed, whatever the extractor says',
-        () async {
-      final int shop = await card();
-      await readBefore(
-        shop,
-        shopCard('Laptop and Mobile Servicing'),
-        taglineAsPerson,
-      );
-      // Saved from the field editor, as it stands.
-      await repo.updateField(
-        fieldId: (await names(shop)).single.id,
-        value: 'Laptop and Mobile Servicing',
-      );
-      // And the flag alone, on a row still marked as printed: it is the
-      // confirmation that counts, not how the row came by it.
-      final int ticked = await card();
-      await readBefore(
-        ticked,
-        shopCard('All brands repaired', phone: '+880 1911-556677'),
-        taglineAsPerson,
-      );
-      await (db.update(db.cardFields)
-            ..where(
+    test(
+      'keeps a name somebody confirmed, whatever the extractor says',
+      () async {
+        final int shop = await card();
+        await readBefore(
+          shop,
+          shopCard('Laptop and Mobile Servicing'),
+          taglineAsPerson,
+        );
+        // Saved from the field editor, as it stands.
+        await repo.updateField(
+          fieldId: (await names(shop)).single.id,
+          value: 'Laptop and Mobile Servicing',
+        );
+        // And the flag alone, on a row still marked as printed: it is the
+        // confirmation that counts, not how the row came by it.
+        final int ticked = await card();
+        await readBefore(
+          ticked,
+          shopCard('All brands repaired', phone: '+880 1911-556677'),
+          taglineAsPerson,
+        );
+        await (db.update(db.cardFields)..where(
               ($CardFieldsTable f) =>
                   f.cardId.equals(ticked) &
                   f.fieldKey.equals(FieldKeys.personName),
             ))
-          .write(const CardFieldsCompanion(verifiedByUser: Value<bool>(true)));
+            // Ticked the way the app ticks it: both forms of provenance.
+            .write(
+              FieldProvenance.userConfirmed.applyTo(
+                const CardFieldsCompanion(),
+              ),
+            );
 
-      expect(await repo.repairInventedPeople(identity), 0);
-      expect(await names(shop), hasLength(1));
-      expect(await names(ticked), hasLength(1));
-      expect(
-        await contacts(),
-        unorderedEquals(<String>[
-          'Laptop and Mobile Servicing',
-          'All brands repaired',
-        ]),
-      );
-    });
+        expect(await repo.repairInventedPeople(identity), 0);
+        expect(await names(shop), hasLength(1));
+        expect(await names(ticked), hasLength(1));
+        expect(
+          await contacts(),
+          unorderedEquals(<String>[
+            'Laptop and Mobile Servicing',
+            'All brands repaired',
+          ]),
+        );
+      },
+    );
 
     test('does not write a different name in its place', () async {
       // The owner's name is on the card too, under the tagline. Today's
@@ -645,9 +690,9 @@ void main() {
         _line('01617-223311', top: 136, height: 14),
       ];
       expect(
-        CardFieldExtractor.extract(blocks)
-            .firstOfKey(FieldKeys.personName)
-            ?.value,
+        CardFieldExtractor.extract(
+          blocks,
+        ).firstOfKey(FieldKeys.personName)?.value,
         'Kamal Hossain',
       );
       final int shop = await card();
@@ -664,93 +709,89 @@ void main() {
       // one tap away instead.
       expect(await names(shop), isEmpty);
       expect(await contacts(), isEmpty);
-      expect(
-        (await repo.watchCard(shop).first)!.unassignedText,
-        <String>['Laptop and Mobile Servicing', 'Kamal Hossain'],
-      );
-    });
-
-    test('leaves the company and address of a brand named after a place',
-        () async {
-      // The old extractor joined "Dhaka Tech Repair" onto the address and
-      // filed the tagline as the company; today's reads the brand as the
-      // company. Only the person is repaired, and here the two agree on it.
-      final List<OcrBlock> blocks = <OcrBlock>[
-        _line('Dhaka Tech Repair', top: 10, height: 40),
-        _line('Laptop and Mobile Servicing', top: 56, height: 24),
-        _line('Kamal Hossain', top: 90, height: 20),
-        _line('Proprietor', top: 116, height: 14),
-        _line('01617-223311', top: 136, height: 14),
-        _line('Shop 14, Elephant Road, Dhaka', top: 156, height: 14),
-      ];
-      final int shop = await card();
-      await readBefore(shop, blocks, <String, List<int>>{
-        FieldKeys.address: <int>[0, 5],
-        FieldKeys.company: <int>[1],
-        FieldKeys.personName: <int>[2],
-        FieldKeys.designation: <int>[3],
-        FieldKeys.phone: <int>[4],
-      });
-
-      expect(await repo.repairInventedPeople(identity), 0);
-      expect(
-        await valueOf(shop, FieldKeys.company),
+      expect((await repo.watchCard(shop).first)!.unassignedText, <String>[
         'Laptop and Mobile Servicing',
-      );
-      expect(
-        await valueOf(shop, FieldKeys.address),
-        'Dhaka Tech Repair, Shop 14, Elephant Road, Dhaka',
-      );
-      expect(await valueOf(shop, FieldKeys.personName), 'Kamal Hossain');
-    });
-
-    test("gives a contact the owner's own card joined back its real name",
-        () async {
-      final int shop = await card();
-      await readBefore(
-        shop,
-        shopCard('Laptop and Mobile Servicing'),
-        taglineAsPerson,
-      );
-      // The owner's own card, with the shop's number on it, scanned later. It
-      // joins the invented contact through the number, and the contact keeps
-      // the invented name because one of its cards still carries it.
-      final int owner = await card();
-      await readNow(owner, <OcrBlock>[
-        _line('TechFix Repair Centre', top: 10, height: 34),
-        _line('Kamal Hossain', top: 56, height: 26),
-        _line('Proprietor', top: 90, height: 16),
-        _line('01617-223311', top: 112, height: 16),
+        'Kamal Hossain',
       ]);
-      expect(await contacts(), <String>['Laptop and Mobile Servicing']);
-
-      expect(await repo.repairInventedPeople(identity), 1);
-
-      expect(await contacts(), <String>['Kamal Hossain']);
-      expect((await row(owner)).personId, isNotNull);
-      expect((await row(shop)).personId, isNull);
     });
+
+    test(
+      'leaves the company and address of a brand named after a place',
+      () async {
+        // The old extractor joined "Dhaka Tech Repair" onto the address and
+        // filed the tagline as the company; today's reads the brand as the
+        // company. Only the person is repaired, and here the two agree on it.
+        final List<OcrBlock> blocks = <OcrBlock>[
+          _line('Dhaka Tech Repair', top: 10, height: 40),
+          _line('Laptop and Mobile Servicing', top: 56, height: 24),
+          _line('Kamal Hossain', top: 90, height: 20),
+          _line('Proprietor', top: 116, height: 14),
+          _line('01617-223311', top: 136, height: 14),
+          _line('Shop 14, Elephant Road, Dhaka', top: 156, height: 14),
+        ];
+        final int shop = await card();
+        await readBefore(shop, blocks, <String, List<int>>{
+          FieldKeys.address: <int>[0, 5],
+          FieldKeys.company: <int>[1],
+          FieldKeys.personName: <int>[2],
+          FieldKeys.designation: <int>[3],
+          FieldKeys.phone: <int>[4],
+        });
+
+        expect(await repo.repairInventedPeople(identity), 0);
+        expect(
+          await valueOf(shop, FieldKeys.company),
+          'Laptop and Mobile Servicing',
+        );
+        expect(
+          await valueOf(shop, FieldKeys.address),
+          'Dhaka Tech Repair, Shop 14, Elephant Road, Dhaka',
+        );
+        expect(await valueOf(shop, FieldKeys.personName), 'Kamal Hossain');
+      },
+    );
+
+    test(
+      "gives a contact the owner's own card joined back its real name",
+      () async {
+        final int shop = await card();
+        await readBefore(
+          shop,
+          shopCard('Laptop and Mobile Servicing'),
+          taglineAsPerson,
+        );
+        // The owner's own card, with the shop's number on it, scanned later. It
+        // joins the invented contact through the number, and the contact keeps
+        // the invented name because one of its cards still carries it.
+        final int owner = await card();
+        await readNow(owner, <OcrBlock>[
+          _line('TechFix Repair Centre', top: 10, height: 34),
+          _line('Kamal Hossain', top: 56, height: 26),
+          _line('Proprietor', top: 90, height: 16),
+          _line('01617-223311', top: 112, height: 16),
+        ]);
+        expect(await contacts(), <String>['Laptop and Mobile Servicing']);
+
+        expect(await repo.repairInventedPeople(identity), 1);
+
+        expect(await contacts(), <String>['Kamal Hossain']);
+        expect((await row(owner)).personId, isNotNull);
+        expect((await row(shop)).personId, isNull);
+      },
+    );
 
     test('judges each side on its own blocks', () async {
       // Shaped like a name, so only its size says it is not one — and the
       // size rule is off wherever a job title is in sight. The back has one.
       final int shop = await card();
-      await readBefore(
-        shop,
-        shopCard('Genuine Spare Parts'),
-        taglineAsPerson,
-      );
+      await readBefore(shop, shopCard('Genuine Spare Parts'), taglineAsPerson);
       // The back names the owner, and today's extractor agrees.
-      await readNow(
-        shop,
-        <OcrBlock>[
-          _line('TechFix Repair Centre', top: 10, height: 30),
-          _line('Kamal Hossain', top: 50, height: 24),
-          _line('Proprietor', top: 80, height: 14),
-          _line('01711-223344', top: 100, height: 14),
-        ],
-        side: CardSide.back,
-      );
+      await readNow(shop, <OcrBlock>[
+        _line('TechFix Repair Centre', top: 10, height: 30),
+        _line('Kamal Hossain', top: 50, height: 24),
+        _line('Proprietor', top: 80, height: 14),
+        _line('01711-223344', top: 100, height: 14),
+      ], side: CardSide.back);
 
       expect(await repo.repairInventedPeople(identity), 1);
 
@@ -780,8 +821,9 @@ void main() {
             (Person p) => p.displayName == 'Laptop and Mobile Servicing',
           )
           .id;
-      final int kamal =
-          people.firstWhere((Person p) => p.displayName == 'Kamal Hossain').id;
+      final int kamal = people
+          .firstWhere((Person p) => p.displayName == 'Kamal Hossain')
+          .id;
       // The user said the shop's card is Kamal's.
       await identity.merge(survivor: kamal, loser: invented);
 
@@ -804,7 +846,9 @@ void main() {
 
       // A name with no blocks behind it on its side at all.
       final int blank = await card();
-      await db.into(db.cardFields).insert(
+      await db
+          .into(db.cardFields)
+          .insert(
             CardFieldsCompanion.insert(
               cardId: blank,
               fieldKey: FieldKeys.personName,
@@ -872,11 +916,7 @@ void main() {
       // Anything filed after the repair was filed by today's extractor, so a
       // second launch has no business second-guessing it.
       final int later = await card();
-      await readBefore(
-        later,
-        shopCard('All brands repaired'),
-        taglineAsPerson,
-      );
+      await readBefore(later, shopCard('All brands repaired'), taglineAsPerson);
       expect(await repo.repairInventedPeople(identity), 0);
       expect(await names(first), isEmpty);
       expect(await names(later), hasLength(1));
@@ -908,19 +948,20 @@ void main() {
       );
     }
 
-    Future<List<CardField>> fields() => (db.select(db.cardFields)
-          ..where(($CardFieldsTable f) => f.cardId.equals(cardId)))
-        .get();
+    Future<List<CardField>> fields() => (db.select(
+      db.cardFields,
+    )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
 
     Future<CardField> fieldOf(String key) async =>
         (await fields()).firstWhere((CardField f) => f.fieldKey == key);
 
-    Future<List<OcrBlockRow>> blocks() => (db.select(db.ocrBlocks)
-          ..where(($OcrBlocksTable b) => b.cardId.equals(cardId))
-          ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
-            ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
-          ]))
-        .get();
+    Future<List<OcrBlockRow>> blocks() =>
+        (db.select(db.ocrBlocks)
+              ..where(($OcrBlocksTable b) => b.cardId.equals(cardId))
+              ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+                ($OcrBlocksTable b) => OrderingTerm(expression: b.orderIndex),
+              ]))
+            .get();
 
     setUp(() async {
       repo = CardRepository(db);
@@ -930,10 +971,7 @@ void main() {
 
     test('records a typed correction as the user\'s own', () async {
       final CardField company = await fieldOf(FieldKeys.company);
-      await repo.updateField(
-        fieldId: company.id,
-        value: 'AQUARIUS Pet Shop',
-      );
+      await repo.updateField(fieldId: company.id, value: 'AQUARIUS Pet Shop');
 
       final CardField fixed = await fieldOf(FieldKeys.company);
       expect(fixed.value, 'AQUARIUS Pet Shop');
@@ -978,13 +1016,16 @@ void main() {
       );
 
       final List<CardField> all = await fields();
-      expect(all.where((CardField f) => f.fieldKey == FieldKeys.company),
-          isEmpty);
+      expect(
+        all.where((CardField f) => f.fieldKey == FieldKeys.company),
+        isEmpty,
+      );
       expect((await fieldOf(FieldKeys.designation)).value, 'Pet Shop');
 
       // The block's label follows the field, so the picker stays honest.
-      final OcrBlockRow moved = (await blocks())
-          .firstWhere((OcrBlockRow b) => b.fieldId == company.id);
+      final OcrBlockRow moved = (await blocks()).firstWhere(
+        (OcrBlockRow b) => b.fieldId == company.id,
+      );
       expect(moved.assignedFieldKey, FieldKeys.designation);
     });
 
@@ -1017,11 +1058,15 @@ void main() {
       await repo.deleteField(company.id);
 
       expect(
-        (await fields()).where((CardField f) => f.fieldKey == FieldKeys.company),
+        (await fields()).where(
+          (CardField f) => f.fieldKey == FieldKeys.company,
+        ),
         isEmpty,
       );
-      expect((await blocks()).every((OcrBlockRow b) => b.fieldId != company.id),
-          isTrue);
+      expect(
+        (await blocks()).every((OcrBlockRow b) => b.fieldId != company.id),
+        isTrue,
+      );
     });
 
     test('records the correction as an interaction', () async {
@@ -1030,11 +1075,13 @@ void main() {
 
       // This is where the manual-correction-rate metric comes from, with no
       // extra instrumentation.
-      final List<Interaction> log = await (db.select(db.interactions)
-            ..where(($InteractionsTable i) =>
-                i.subjectId.equals(cardId) &
-                i.kind.equalsValue(InteractionKind.edited)))
-          .get();
+      final List<Interaction> log =
+          await (db.select(db.interactions)..where(
+                ($InteractionsTable i) =>
+                    i.subjectId.equals(cardId) &
+                    i.kind.equalsValue(InteractionKind.edited),
+              ))
+              .get();
       expect(log, isNotEmpty);
     });
 
@@ -1052,10 +1099,7 @@ void main() {
           .first
           .timeout(const Duration(seconds: 5));
 
-      await repo.updateField(
-        fieldId: company.id,
-        value: 'AQUARIUS Pet Shop',
-      );
+      await repo.updateField(fieldId: company.id, value: 'AQUARIUS Pet Shop');
 
       final CardDetail? seen = await next;
       expect(
@@ -1073,10 +1117,7 @@ void main() {
           .first
           .timeout(const Duration(seconds: 5));
 
-      await repo.updateField(
-        fieldId: company.id,
-        value: 'AQUARIUS Pet Shop',
-      );
+      await repo.updateField(fieldId: company.id, value: 'AQUARIUS Pet Shop');
 
       expect((await next).single.title, 'AQUARIUS Pet Shop');
     });
@@ -1103,8 +1144,10 @@ void main() {
       await scan();
 
       // The phone was never corrected, so a fresh read is free to supply it.
-      expect((await fieldOf(FieldKeys.phone)).normalizedValue,
-          '+8801711223344');
+      expect(
+        (await fieldOf(FieldKeys.phone)).normalizedValue,
+        '+8801711223344',
+      );
     });
   });
 
@@ -1126,7 +1169,9 @@ void main() {
 
     test('swaps in the resized card and drops the oversized copy', () async {
       final File original = write('original.jpg');
-      final int id = await db.into(db.cards).insert(
+      final int id = await db
+          .into(db.cards)
+          .insert(
             CardsCompanion.insert(
               imagePath: original.path,
               capturedAt: DateTime(2026, 8, 15),
@@ -1152,7 +1197,9 @@ void main() {
     test('surfaces the thumbnail to the library list', () async {
       final File resized = write('card.jpg');
       final File thumb = write('card_thumb.jpg');
-      final int id = await db.into(db.cards).insert(
+      final int id = await db
+          .into(db.cards)
+          .insert(
             CardsCompanion.insert(
               imagePath: resized.path,
               capturedAt: DateTime(2026, 8, 15),
@@ -1161,36 +1208,44 @@ void main() {
           );
 
       final List<CardSummary> cards = await repo.watchCards().first;
-      final CardSummary summary =
-          cards.firstWhere((CardSummary c) => c.id == id);
+      final CardSummary summary = cards.firstWhere(
+        (CardSummary c) => c.id == id,
+      );
 
       expect(summary.thumbPath, thumb.path);
       // A list row decodes the thumbnail, not the card.
       expect(summary.displayPath, thumb.path);
     });
 
-    test('falls back to the full image for cards saved before thumbnails',
-        () async {
-      final File resized = write('legacy.jpg');
-      final int id = await db.into(db.cards).insert(
-            CardsCompanion.insert(
-              imagePath: resized.path,
-              capturedAt: DateTime(2026, 8, 15),
-            ),
-          );
+    test(
+      'falls back to the full image for cards saved before thumbnails',
+      () async {
+        final File resized = write('legacy.jpg');
+        final int id = await db
+            .into(db.cards)
+            .insert(
+              CardsCompanion.insert(
+                imagePath: resized.path,
+                capturedAt: DateTime(2026, 8, 15),
+              ),
+            );
 
-      final List<CardSummary> cards = await repo.watchCards().first;
-      final CardSummary summary =
-          cards.firstWhere((CardSummary c) => c.id == id);
+        final List<CardSummary> cards = await repo.watchCards().first;
+        final CardSummary summary = cards.firstWhere(
+          (CardSummary c) => c.id == id,
+        );
 
-      expect(summary.thumbPath, isNull);
-      expect(summary.displayPath, resized.path);
-    });
+        expect(summary.thumbPath, isNull);
+        expect(summary.displayPath, resized.path);
+      },
+    );
 
     test('purging takes the thumbnail with it', () async {
       final File resized = write('card.jpg');
       final File thumb = write('card_thumb.jpg');
-      final int id = await db.into(db.cards).insert(
+      final int id = await db
+          .into(db.cards)
+          .insert(
             CardsCompanion.insert(
               imagePath: resized.path,
               capturedAt: DateTime(2026, 8, 15),
@@ -1225,7 +1280,9 @@ void main() {
 
     Future<int> cardWithFront() async {
       final File front = write('front.jpg');
-      return db.into(db.cards).insert(
+      return db
+          .into(db.cards)
+          .insert(
             CardsCompanion.insert(
               imagePath: front.path,
               capturedAt: DateTime(2026, 8, 23),
@@ -1293,7 +1350,9 @@ void main() {
   group('discarding an abandoned scan', () {
     test('removes the card and everything hanging off it', () async {
       final int id = await createPending();
-      await db.into(db.cardFields).insert(
+      await db
+          .into(db.cardFields)
+          .insert(
             CardFieldsCompanion.insert(
               cardId: id,
               fieldKey: FieldKeys.phone,
@@ -1301,7 +1360,9 @@ void main() {
               source: FactSource.printed,
             ),
           );
-      await db.into(db.ocrBlocks).insert(
+      await db
+          .into(db.ocrBlocks)
+          .insert(
             OcrBlocksCompanion.insert(
               cardId: id,
               blockText: 'x',
@@ -1311,8 +1372,9 @@ void main() {
             ),
           );
 
-      await (db.delete(db.cards)..where(($CardsTable c) => c.id.equals(id)))
-          .go();
+      await (db.delete(
+        db.cards,
+      )..where(($CardsTable c) => c.id.equals(id))).go();
 
       expect(await db.select(db.cards).get(), isEmpty);
       expect(await db.select(db.cardFields).get(), isEmpty);
@@ -1328,10 +1390,12 @@ void main() {
     late CardRepository repo;
     setUp(() => repo = CardRepository(db));
 
-    Future<List<Note>> notesOf(int cardId) => (db.select(db.notes)
-          ..where(($NotesTable n) =>
-              n.subjectType.equals('card') & n.subjectId.equals(cardId)))
-        .get();
+    Future<List<Note>> notesOf(int cardId) =>
+        (db.select(db.notes)..where(
+              ($NotesTable n) =>
+                  n.subjectType.equals('card') & n.subjectId.equals(cardId),
+            ))
+            .get();
 
     test('a card saved without a note can be given one', () async {
       final int id = await createPending();
@@ -1384,11 +1448,13 @@ void main() {
 
       await repo.setNote(cardId: id, body: 'printing');
 
-      final List<Interaction> edits = await (db.select(db.interactions)
-            ..where(($InteractionsTable i) =>
-                i.subjectId.equals(id) &
-                i.kind.equalsValue(InteractionKind.edited)))
-          .get();
+      final List<Interaction> edits =
+          await (db.select(db.interactions)..where(
+                ($InteractionsTable i) =>
+                    i.subjectId.equals(id) &
+                    i.kind.equalsValue(InteractionKind.edited),
+              ))
+              .get();
       expect(edits, hasLength(1));
     });
   });
@@ -1408,10 +1474,9 @@ OcrBlock _rotated(
   required double across,
   required double along,
   required double offset,
-}) =>
-    OcrBlock(
-      text: text,
-      rect: Rect.fromLTWH(offset, 100, across, along),
-      confidence: 0.9,
-      script: Script.latin,
-    );
+}) => OcrBlock(
+  text: text,
+  rect: Rect.fromLTWH(offset, 100, across, along),
+  confidence: 0.9,
+  script: Script.latin,
+);

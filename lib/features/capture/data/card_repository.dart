@@ -10,13 +10,18 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
+import '../../../core/db/field_provenance.dart';
+import '../../../core/domain/local_date.dart';
 import '../../../core/extraction/card_extractor.dart';
+import '../../../core/extraction/document_reader.dart';
 import '../../../core/extraction/field_validator.dart';
 import '../../../core/extraction/phone.dart';
 import '../../../core/imaging/photo_keyring.dart';
 import '../../../core/imaging/photo_vault.dart';
 import '../../../core/intelligence/ocr_engine.dart' as ocr;
+import '../../../core/search/index_subjects.dart';
 import '../../contacts/data/identity_repository.dart';
+import '../../warranty/data/purchase_links.dart';
 
 final databaseProvider = Provider<AppDatabase>((Ref ref) {
   final AppDatabase db = AppDatabase();
@@ -51,10 +56,14 @@ class CardSummary {
     this.title,
     this.subtitle,
     this.note,
+    this.type = CardType.unknown,
   });
 
   final int id;
   final String imagePath;
+
+  /// A business card, a receipt, a warranty (B2).
+  final CardType type;
 
   /// Smaller copy for list rows. Null for cards saved before thumbnails
   /// existed, which fall back to the full image.
@@ -75,6 +84,80 @@ class CardSummary {
   /// findable. The library surfaces these differently so they can be repaired.
   bool get needsAttention =>
       status == ExtractionStatus.failed || status == ExtractionStatus.partial;
+}
+
+/// What a card is called in a list, and the line under it.
+///
+/// One function for every list — the library, search, needs-attention,
+/// recently deleted — so a receipt is never titled "Unread card" on one of
+/// them because only the business-card fields were looked for.
+///
+/// - A business card: its company, or the person, or a number; under it the
+///   person or the number.
+/// - A receipt: the shop; under it what was paid and when.
+/// - A warranty: what it covers; under it until when, or for how long.
+({String? title, String? subtitle}) describeCard(
+  CardRow card,
+  List<CardField> fields,
+) {
+  String? valueOf(String key) {
+    for (final CardField f in fields) {
+      if (f.fieldKey == key) return f.value;
+    }
+    return null;
+  }
+
+  String? joined(List<String?> parts) {
+    final List<String> present = parts.whereType<String>().toList();
+    return present.isEmpty ? null : present.join(' · ');
+  }
+
+  switch (card.type) {
+    case CardType.receipt || CardType.invoice:
+      return (
+        title: card.title ?? valueOf(ReceiptKeys.merchant) ?? 'Receipt',
+        subtitle: joined(<String?>[
+          valueOf(ReceiptKeys.total),
+          valueOf(ReceiptKeys.purchaseDate),
+        ]),
+      );
+    case CardType.warrantyCard:
+      // A calculated end says so even in a list, where there is no room for
+      // its working (PLAN §5, honest wording).
+      final CardField? end = fields
+          .where((CardField f) => f.fieldKey == WarrantyKeys.expiryDate)
+          .firstOrNull;
+      final String? expiry = end == null
+          ? null
+          : end.origin == FactOrigin.derived
+          ? '${end.value} · calculated'
+          : end.value;
+      final String? cover = valueOf(WarrantyKeys.coverMonths);
+      return (
+        title:
+            card.title ??
+            valueOf(WarrantyKeys.product) ??
+            valueOf(WarrantyKeys.brand) ??
+            'Warranty',
+        subtitle: expiry != null
+            ? 'Covered until $expiry'
+            : cover != null
+            ? '$cover of cover'
+            : valueOf(WarrantyKeys.serial),
+      );
+    default:
+      final String? phone = valueOf(FieldKeys.phone);
+      final String? number = phone == null
+          ? null
+          : PhoneExtractor.display(phone);
+      return (
+        title:
+            valueOf(FieldKeys.company) ??
+            valueOf(FieldKeys.personName) ??
+            number,
+        subtitle: valueOf(FieldKeys.personName) ?? number,
+      );
+  }
 }
 
 /// Everything on one card, for the detail screen.
@@ -122,11 +205,9 @@ class CardDetail {
   List<CardField> allOf(String key) =>
       fields.where((CardField f) => f.fieldKey == key).toList();
 
-  String get title =>
-      valueOf(FieldKeys.company) ??
-      valueOf(FieldKeys.personName) ??
-      valueOf(FieldKeys.phone) ??
-      'Unread card';
+  /// What the screen calls it — by the same rule as every list, so a receipt
+  /// is titled by its shop here too, not "Unread card" for lacking a company.
+  String get title => describeCard(card, fields).title ?? 'Unread card';
 }
 
 /// Persistence for scanned cards.
@@ -137,9 +218,16 @@ class CardDetail {
 /// afterwards by [attachExtraction]; if that never happens the card is still
 /// there, still has its photo, and still gets found by its note.
 class CardRepository {
-  CardRepository(this._db);
+  CardRepository(this._db, {PurchaseLinks? purchases})
+    : _purchases = purchases ?? PurchaseLinks(_db);
 
   final AppDatabase _db;
+
+  /// What is worked out from a receipt or a warranty — the suggested links,
+  /// the calculated expiry, the expiry's date and reminder (B3). Refreshed
+  /// at the end of every write here that can change one of its inputs, so
+  /// the screens that edit a card never have to remember it.
+  final PurchaseLinks _purchases;
 
   /// Copies [source] into app storage and opens a pending card row.
   ///
@@ -152,9 +240,15 @@ class CardRepository {
   /// there, today, in the same transaction that creates it — so a card that
   /// survives a crash survives with where it was met. Marked as Event Mode's
   /// doing (`EncounterOrigin.event`), not the user's, until the user edits it.
+  ///
+  /// [type] is what the capture was for — a business card until the user can
+  /// say otherwise at capture (B2) — and [via] how the photograph came in.
+  /// Both are written with the row, so a card never exists untyped.
   Future<({int id, File image})> createPending(
     File source, {
     String? metAt,
+    CardType type = CardType.visitingCard,
+    CaptureSource via = CaptureSource.documentScanner,
   }) async {
     final Directory cards = await cardsDirectory();
 
@@ -174,18 +268,30 @@ class CardRepository {
     await Isolate.run(() => sealCopySync(from, target, key));
     final File stored = File(target);
 
-    final int id = await _insertPending(stored.path, metAt);
+    final int id = await _insertPending(stored.path, metAt, type, via);
     return (id: id, image: stored);
   }
 
   /// The card row, and Event Mode's encounter for it, in one transaction.
-  Future<int> _insertPending(String imagePath, String? metAt) {
+  Future<int> _insertPending(
+    String imagePath,
+    String? metAt,
+    CardType type,
+    CaptureSource via,
+  ) {
     final DateTime now = DateTime.now();
     final String? place = metAt?.trim();
     return _db.transaction(() async {
       final int id = await _db
           .into(_db.cards)
-          .insert(CardsCompanion.insert(imagePath: imagePath, capturedAt: now));
+          .insert(
+            CardsCompanion.insert(
+              imagePath: imagePath,
+              capturedAt: now,
+              type: Value<CardType>(type),
+              captureSource: Value<CaptureSource>(via),
+            ),
+          );
       if (place != null && place.isNotEmpty) {
         await _db
             .into(_db.encounters)
@@ -332,6 +438,9 @@ class CardRepository {
       );
     });
 
+    // A serial printed on the back went with it.
+    await _purchases.refresh(cardId);
+
     final String? previous = card.backImagePath;
     if (previous != null) await _deleteFile(previous);
   }
@@ -362,15 +471,13 @@ class CardRepository {
       // either side. The engine may change its mind freely; a human answer is
       // not something it gets to overwrite, or a retry would silently undo
       // every repair.
-      final List<CardField> verified = existing
-          .where((CardField f) => f.verifiedByUser)
-          .toList();
+      final List<CardField> verified = existing.where(isConfirmed).toList();
 
       // What the *other* side is currently claiming on its own account. Both
       // faces of a card usually print the same phone number, so without this
       // every two-sided card would show each endpoint twice.
       final List<CardField> otherSide = existing
-          .where((CardField f) => f.side != side && !f.verifiedByUser)
+          .where((CardField f) => f.side != side && !isConfirmed(f))
           .toList();
 
       await (_db.delete(_db.ocrBlocks)..where(
@@ -382,7 +489,7 @@ class CardRepository {
             ($CardFieldsTable f) =>
                 f.cardId.equals(cardId) &
                 f.side.equalsValue(side) &
-                f.verifiedByUser.equals(false),
+                f.review.equalsValue(FactReview.confirmed).not(),
           ))
           .go();
 
@@ -404,16 +511,26 @@ class CardRepository {
         final int fieldId = await _db
             .into(_db.cardFields)
             .insert(
-              CardFieldsCompanion.insert(
-                cardId: cardId,
-                fieldKey: f.fieldKey,
-                value: f.value,
-                normalizedValue: Value<String?>(f.normalizedValue),
-                source: FactSource.printed,
-                confidence: Value<double?>(f.confidence),
-                validationIssue: Value<String?>(f.issue),
-                regionRect: Value<String?>(f.regionRect),
-                side: Value<CardSide>(side),
+              provenanceOf(f).applyTo(
+                CardFieldsCompanion.insert(
+                  cardId: cardId,
+                  fieldKey: f.fieldKey,
+                  value: f.value,
+                  normalizedValue: Value<String?>(f.normalizedValue),
+                  source: provenanceOf(f).source,
+                  confidence: Value<double?>(f.confidence),
+                  // "guessed" is said by the provenance, not as an
+                  // objection: a guessed category is not a misread one.
+                  validationIssue: Value<String?>(
+                    f.issue == kGuessedIssue ? null : f.issue,
+                  ),
+                  regionRect: Value<String?>(f.regionRect),
+                  side: Value<CardSide>(side),
+                  // Typed values from receipts and warranties (v11).
+                  amountMinor: Value<int?>(f.amountMinor),
+                  currency: Value<String?>(f.currency),
+                  dateValue: Value<LocalDate?>(f.dateValue),
+                ),
               ),
             );
         claimed.add(_identity(f.fieldKey, f.normalizedValue, f.value));
@@ -503,6 +620,127 @@ class CardRepository {
             errorCode: Value<String?>(result.failure?.name),
           ),
         );
+
+    await _purchases.refresh(cardId);
+  }
+
+  /// Reads [cardId] again as [type], from the words already stored — no new
+  /// photograph and no new OCR — and records the type as the user's choice.
+  ///
+  /// What "Change" on *Saved as a receipt* does (B2): the classifier guessed
+  /// wrong, or was not sure, and the user said what the paper is. Each side
+  /// is re-read on its own, exactly as a re-scan would; anything the user
+  /// already confirmed survives, as it does there. The caller re-promotes
+  /// and re-indexes, because the type decides who the card can become.
+  Future<CardExtraction?> reReadAs(int cardId, CardType type) async {
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+    if (card == null) return null;
+
+    CardExtraction? front;
+    for (final CardSide side in CardSide.values) {
+      final List<OcrBlockRow> stored =
+          await (_db.select(_db.ocrBlocks)
+                ..where(
+                  ($OcrBlocksTable b) =>
+                      b.cardId.equals(cardId) & b.side.equalsValue(side),
+                )
+                ..orderBy(<OrderClauseGenerator<$OcrBlocksTable>>[
+                  ($OcrBlocksTable b) => OrderingTerm.asc(b.orderIndex),
+                  ($OcrBlocksTable b) => OrderingTerm.asc(b.id),
+                ]))
+              .get();
+      if (stored.isEmpty) continue;
+      final List<ocr.OcrBlock> blocks = stored.map(_blockOf).toList();
+      final CardExtraction extraction = extractAs(type, blocks);
+      await attachExtraction(
+        cardId: cardId,
+        result: ocr.OcrResult(
+          blocks: blocks,
+          engine: card.ocrEngine ?? 'stored',
+          duration: Duration.zero,
+        ),
+        extraction: extraction,
+        side: side,
+      );
+      if (side == CardSide.front) front = extraction;
+    }
+    await setKind(
+      cardId,
+      type,
+      title: front == null ? null : titleFor(type, front),
+    );
+    return front;
+  }
+
+  /// A stored block, back in the shape the readers take.
+  static ocr.OcrBlock _blockOf(OcrBlockRow row) {
+    final List<double> v = row.rect
+        .split(',')
+        .map((String s) => double.tryParse(s.trim()) ?? 0)
+        .toList();
+    return ocr.OcrBlock(
+      text: row.blockText,
+      rect: v.length == 4 ? Rect.fromLTRB(v[0], v[1], v[2], v[3]) : Rect.zero,
+      confidence: row.confidence,
+      script:
+          ocr.Script.values
+              .where((ocr.Script s) => s.name == row.script)
+              .firstOrNull ??
+          ocr.Script.latin,
+      engine: row.engine,
+    );
+  }
+
+  /// What [cardId] is, so a re-read uses the reader for its kind: a receipt
+  /// read again with the business-card reader would lose its total.
+  Future<CardType> typeOf(int cardId) async =>
+      (await (_db.select(
+            _db.cards,
+          )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull())
+          ?.type ??
+      CardType.unknown;
+
+  /// Records what a card is — a business card, a receipt, a warranty (B2) —
+  /// how sure an automatic reading was ([confidence]; null when the user
+  /// said), and what to call it when it is not somebody's card.
+  ///
+  /// The type decides who it can become: only business cards make contacts
+  /// (`IdentityRepository.peopleCardTypes`), so the caller re-promotes the
+  /// card after changing it.
+  Future<void> setKind(
+    int cardId,
+    CardType type, {
+    double? confidence,
+    String? title,
+  }) async {
+    await _db.transaction(() async {
+      await (_db.update(
+        _db.cards,
+      )..where(($CardsTable c) => c.id.equals(cardId))).write(
+        CardsCompanion(
+          type: Value<CardType>(type),
+          classificationConfidence: Value<double?>(confidence),
+          title: Value<String?>(title),
+          updatedAt: Value<DateTime>(DateTime.now()),
+        ),
+      );
+      // Event Mode marks every scan as met at the event, because it cannot
+      // know what was scanned until it is read. A receipt bought at a fair was
+      // not somebody met there: Event Mode's mark goes. One the user wrote
+      // themselves stays — that is theirs to change.
+      if (!IdentityRepository.peopleCardTypes.contains(type)) {
+        await (_db.delete(_db.encounters)..where(
+              ($EncountersTable e) =>
+                  e.cardId.equals(cardId) &
+                  e.origin.equalsValue(EncounterOrigin.event),
+            ))
+            .go();
+      }
+    });
+    // A receipt now, or a warranty: what it may belong to, and when it ends.
+    await _purchases.refresh(cardId);
   }
 
   /// Attaches the user's answer to "why are you saving this?".
@@ -624,11 +862,15 @@ class CardRepository {
         updatedAt: Value<DateTime>(DateTime.now()),
       ),
     );
+    // A receipt in the bin lends its date to no warranty, and is suggested
+    // for none.
+    await _purchases.refresh(cardId);
   }
 
   Future<void> restore(int cardId) async {
     await (_db.update(_db.cards)..where(($CardsTable c) => c.id.equals(cardId)))
         .write(const CardsCompanion(deletedAt: Value<DateTime?>(null)));
+    await _purchases.refresh(cardId);
   }
 
   /// Permanently removes a card, its image and its notes.
@@ -640,6 +882,9 @@ class CardRepository {
     final CardRow? card = await (_db.select(
       _db.cards,
     )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
+    // Asked before the links cascade away with the card, which is the last
+    // moment anything can say which warranties counted from it.
+    final List<int> leaning = await _purchases.warrantiesLeaningOn(cardId);
 
     if (card != null) {
       await _deleteFile(card.imagePath);
@@ -665,7 +910,8 @@ class CardRepository {
           .go();
       await (_db.delete(_db.embeddings)..where(
             ($EmbeddingsTable e) =>
-                e.subjectType.equals('card') & e.subjectId.equals(cardId),
+                e.subjectType.isIn(kCardVectorSubjects) &
+                e.subjectId.equals(cardId),
           ))
           .go();
       await _db.customStatement(
@@ -676,6 +922,10 @@ class CardRepository {
         _db.cards,
       )..where(($CardsTable c) => c.id.equals(cardId))).go();
     });
+
+    for (final int warranty in leaning) {
+      await _purchases.refresh(warranty);
+    }
   }
 
   /// Cards with a back photographed but never read.
@@ -740,8 +990,8 @@ class CardRepository {
             await (_db.select(_db.cardFields)..where(
                   ($CardFieldsTable f) =>
                       f.fieldKey.equals(FieldKeys.phone) &
-                      f.source.equalsValue(FactSource.printed) &
-                      f.verifiedByUser.equals(false) &
+                      f.origin.equalsValue(FactOrigin.printed) &
+                      f.review.equalsValue(FactReview.confirmed).not() &
                       f.validationIssue.equals('digit_restored'),
                 ))
                 .get();
@@ -864,8 +1114,8 @@ class CardRepository {
             await (_db.select(_db.cardFields)..where(
                   ($CardFieldsTable f) =>
                       f.fieldKey.equals(FieldKeys.personName) &
-                      f.source.equalsValue(FactSource.printed) &
-                      f.verifiedByUser.equals(false) &
+                      f.origin.equalsValue(FactOrigin.printed) &
+                      f.review.equalsValue(FactReview.confirmed).not() &
                       f.valueKind.equalsValue(FieldValueKind.text),
                 ))
                 .get();
@@ -1074,13 +1324,10 @@ class CardRepository {
                       ..limit(1))
                     .getSingleOrNull();
 
-            String? valueOf(String key) {
-              for (final CardField f in fields) {
-                if (f.fieldKey == key) return f.value;
-              }
-              return null;
-            }
-
+            final ({String? title, String? subtitle}) named = describeCard(
+              row,
+              fields,
+            );
             out.add(
               CardSummary(
                 id: row.id,
@@ -1088,13 +1335,10 @@ class CardRepository {
                 thumbPath: row.thumbPath,
                 capturedAt: row.capturedAt,
                 status: row.extractionStatus,
-                title:
-                    valueOf(FieldKeys.company) ??
-                    valueOf(FieldKeys.personName) ??
-                    valueOf(FieldKeys.phone),
-                subtitle:
-                    valueOf(FieldKeys.personName) ?? valueOf(FieldKeys.phone),
+                title: named.title,
+                subtitle: named.subtitle,
                 note: note?.body,
+                type: row.type,
               ),
             );
           }
@@ -1225,27 +1469,38 @@ class CardRepository {
     // An empty correction is a deletion the user did not ask for.
     if (text.isEmpty) return;
 
-    final FieldValidation check = validateField(key, text);
+    // A total keeps the currency it was read in: correcting "12.50" on a
+    // dollar receipt must not turn it into taka.
+    final FieldValidation check = validateField(
+      key,
+      text,
+      currency: existing.currency,
+    );
     final _Sourcing sourced = _Sourcing.of(blocks);
 
     await _db.transaction(() async {
       await (_db.update(
         _db.cardFields,
       )..where(($CardFieldsTable f) => f.id.equals(fieldId))).write(
-        CardFieldsCompanion(
-          fieldKey: Value<String>(key),
-          value: Value<String>(text),
-          normalizedValue: Value<String?>(check.normalized),
-          source: const Value<FactSource>(FactSource.user),
-          verifiedByUser: const Value<bool>(true),
-          validationIssue: Value<String?>(check.issue),
-          regionRect: blocks.isEmpty
-              ? const Value<String?>.absent()
-              : Value<String?>(sourced.rect),
-          side: blocks.isEmpty
-              ? const Value<CardSide>.absent()
-              : Value<CardSide>(sourced.side),
-          updatedAt: Value<DateTime>(DateTime.now()),
+        FieldProvenance.userConfirmed.applyTo(
+          CardFieldsCompanion(
+            fieldKey: Value<String>(key),
+            value: Value<String>(check.display ?? text),
+            normalizedValue: Value<String?>(check.normalized),
+            validationIssue: Value<String?>(check.issue),
+            // Typed values, re-read from what was typed, so the stored
+            // amount or day never disagrees with what the row shows.
+            amountMinor: Value<int?>(check.amountMinor),
+            currency: Value<String?>(check.currency),
+            dateValue: Value<LocalDate?>(check.dateValue),
+            regionRect: blocks.isEmpty
+                ? const Value<String?>.absent()
+                : Value<String?>(sourced.rect),
+            side: blocks.isEmpty
+                ? const Value<CardSide>.absent()
+                : Value<CardSide>(sourced.side),
+            updatedAt: Value<DateTime>(DateTime.now()),
+          ),
         ),
       );
 
@@ -1260,6 +1515,7 @@ class CardRepository {
 
       await _logEdit(existing.cardId);
     });
+    await _purchases.refresh(existing.cardId);
   }
 
   /// Adds a field extraction missed entirely.
@@ -1285,16 +1541,20 @@ class CardRepository {
       final int fieldId = await _db
           .into(_db.cardFields)
           .insert(
-            CardFieldsCompanion.insert(
-              cardId: cardId,
-              fieldKey: fieldKey,
-              value: text,
-              normalizedValue: Value<String?>(check.normalized),
-              source: FactSource.user,
-              verifiedByUser: const Value<bool>(true),
-              validationIssue: Value<String?>(check.issue),
-              regionRect: Value<String?>(sourced.rect),
-              side: Value<CardSide>(sourced.side),
+            FieldProvenance.userConfirmed.applyTo(
+              CardFieldsCompanion.insert(
+                cardId: cardId,
+                fieldKey: fieldKey,
+                value: check.display ?? text,
+                normalizedValue: Value<String?>(check.normalized),
+                source: FieldProvenance.userConfirmed.source,
+                validationIssue: Value<String?>(check.issue),
+                regionRect: Value<String?>(sourced.rect),
+                side: Value<CardSide>(sourced.side),
+                amountMinor: Value<int?>(check.amountMinor),
+                currency: Value<String?>(check.currency),
+                dateValue: Value<LocalDate?>(check.dateValue),
+              ),
             ),
           );
 
@@ -1303,6 +1563,7 @@ class CardRepository {
       }
       await _logEdit(cardId);
     });
+    await _purchases.refresh(cardId);
   }
 
   /// Removes a field that is not on the card at all.
@@ -1322,6 +1583,7 @@ class CardRepository {
       )..where(($CardFieldsTable f) => f.id.equals(fieldId))).go();
       await _logEdit(existing.cardId);
     });
+    await _purchases.refresh(existing.cardId);
   }
 
   Future<List<OcrBlockRow>> _blocksByIds(int cardId, List<int> ids) async {

@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/db/enums.dart';
-import '../../../core/extraction/card_extractor.dart';
+import '../../../core/extraction/document_reader.dart';
 import '../../../core/imaging/card_image_processor.dart';
 import '../../../core/imaging/photo_keyring.dart';
 import '../../../core/imaging/photo_vault.dart';
@@ -193,7 +193,7 @@ class BackCaptureService {
       await cards.attachExtraction(
         cardId: cardId,
         result: result,
-        extraction: CardFieldExtractor.extract(result.blocks),
+        extraction: extractAs(await cards.typeOf(cardId), result.blocks),
         side: CardSide.back,
       );
       await search.reindexCard(cardId);

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/enums.dart';
-import '../../../core/extraction/card_extractor.dart';
+import '../../../core/extraction/document_reader.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine_provider.dart';
 import '../../capture/data/card_repository.dart';
@@ -105,7 +105,7 @@ class RescanService {
     await cards.attachExtraction(
       cardId: cardId,
       result: result,
-      extraction: CardFieldExtractor.extract(result.blocks),
+      extraction: extractAs(await cards.typeOf(cardId), result.blocks),
       side: side,
     );
   }

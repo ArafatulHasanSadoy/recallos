@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
+import '../domain/local_date.dart';
 import '../intelligence/ocr_engine.dart';
 import 'phone.dart';
 import 'web.dart';
@@ -27,6 +28,81 @@ abstract final class FieldKeys {
   ];
 }
 
+/// The fields of a receipt or an invoice (B2). A closed vocabulary like
+/// [FieldKeys], for the same reason.
+abstract final class ReceiptKeys {
+  /// The shop or business that issued it.
+  static const String merchant = 'merchant';
+
+  /// The day of the purchase, stored as a calendar day in `date_value`.
+  static const String purchaseDate = 'purchase_date';
+
+  /// The amount paid, stored in `amount_minor` with its `currency`.
+  static const String total = 'total';
+
+  static const String invoiceNumber = 'invoice_number';
+
+  /// What kind of spending — electronics, groceries… Always a guess from
+  /// the shop's name until the user confirms it.
+  static const String category = 'category';
+
+  static const List<String> all = <String>[
+    merchant,
+    purchaseDate,
+    total,
+    invoiceNumber,
+    category,
+  ];
+
+  /// Read wrong, these are wrong totals and wrong reminders, so a person
+  /// looks at them before anything counts on them (PLAN §4, B2).
+  static const Set<String> critical = <String>{total, purchaseDate};
+}
+
+/// The fields of a warranty card or certificate (B2).
+abstract final class WarrantyKeys {
+  /// What is covered: "Laptop", "Refrigerator".
+  static const String product = 'product';
+  static const String brand = 'brand';
+  static const String model = 'model';
+
+  /// Serial number or IMEI — the strongest evidence for linking a warranty
+  /// to its receipt (B3).
+  static const String serial = 'serial';
+
+  /// How long the cover lasts, in months: "2 years" is stored as 24.
+  static const String coverMonths = 'cover_months';
+
+  /// What the cover counts from — purchase, delivery, installation — as
+  /// printed.
+  static const String startBasis = 'start_basis';
+
+  /// The end of the cover, when the paper prints it.
+  static const String expiryDate = 'expiry_date';
+
+  /// The purchase date printed on the warranty itself. The same key as on a
+  /// receipt, so the two can be compared when linking.
+  static const String purchaseDate = ReceiptKeys.purchaseDate;
+
+  static const List<String> all = <String>[
+    product,
+    brand,
+    model,
+    serial,
+    coverMonths,
+    startBasis,
+    expiryDate,
+    purchaseDate,
+  ];
+
+  static const Set<String> critical = <String>{coverMonths, expiryDate};
+}
+
+/// The `issue` a reader sets on a value it guessed rather than read — a
+/// receipt's category from the shop's name. Stored as the field's origin
+/// (*inferred*), not as an objection to what was printed.
+const String kGuessedIssue = 'guessed';
+
 /// One field pulled off a card, with everything the review screen needs to show
 /// it honestly: how sure we are, where on the image it came from, and whether a
 /// validator objected.
@@ -41,6 +117,9 @@ class ExtractedField {
     this.issue,
     this.needsReview = false,
     this.sourceBlockIndices = const <int>[],
+    this.amountMinor,
+    this.currency,
+    this.dateValue,
   });
 
   final String fieldKey;
@@ -75,6 +154,13 @@ class ExtractedField {
   /// Every one has to be recorded or the leftovers resurface under "other
   /// text" on the detail screen while already being part of a field.
   final List<int> sourceBlockIndices;
+
+  /// A money value in whole minor units, with [currency] (receipts, B2).
+  final int? amountMinor;
+  final String? currency;
+
+  /// A calendar day — a purchase date, an expiry.
+  final LocalDate? dateValue;
 
   /// The block this field is anchored to, for callers that only need one.
   int? get sourceBlockIndex =>
@@ -128,7 +214,18 @@ class CardExtraction {
     return keys.contains(FieldKeys.phone) ||
         keys.contains(FieldKeys.email) ||
         (keys.contains(FieldKeys.personName) &&
-            keys.contains(FieldKeys.company));
+            keys.contains(FieldKeys.company)) ||
+        // A receipt is read well enough with what was paid, or who was paid
+        // and when; a warranty with its serial, its expiry, or what it
+        // covers and for how long. The vocabularies do not overlap with a
+        // business card's, so one rule serves every kind.
+        keys.contains(ReceiptKeys.total) ||
+        (keys.contains(ReceiptKeys.merchant) &&
+            keys.contains(ReceiptKeys.purchaseDate)) ||
+        keys.contains(WarrantyKeys.serial) ||
+        keys.contains(WarrantyKeys.expiryDate) ||
+        (keys.contains(WarrantyKeys.product) &&
+            keys.contains(WarrantyKeys.coverMonths));
   }
 }
 

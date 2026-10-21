@@ -87,10 +87,9 @@ class RetentionSweep {
   /// Returns how many went.
   Future<int> purgeExpired() async {
     final DateTime cutoff = now().subtract(keepDeletedFor);
-    final List<CardRow> expired =
-        await (db.select(db.cards)
-              ..where(($CardsTable c) => c.deletedAt.isSmallerThanValue(cutoff)))
-            .get();
+    final List<CardRow> expired = await (db.select(
+      db.cards,
+    )..where(($CardsTable c) => c.deletedAt.isSmallerThanValue(cutoff))).get();
 
     for (final CardRow card in expired) {
       // Same order as the "Delete for good" button: unhook the person and

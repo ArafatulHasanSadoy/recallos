@@ -1,13 +1,41 @@
+import '../domain/local_date.dart';
+import '../domain/money.dart';
 import 'card_extractor.dart';
+import 'document_lines.dart';
 import 'phone.dart';
+import 'receipt_extractor.dart' show formatDay;
 import 'web.dart';
 
 /// What checking one field value produced.
 class FieldValidation {
-  const FieldValidation({this.normalized, this.issue});
+  const FieldValidation({
+    this.normalized,
+    this.issue,
+    this.display,
+    this.amountMinor,
+    this.currency,
+    this.dateValue,
+  });
 
   /// Clean, with nothing to canonicalise — a company name, a designation.
-  const FieldValidation.ok() : normalized = null, issue = null;
+  const FieldValidation.ok()
+    : normalized = null,
+      issue = null,
+      display = null,
+      amountMinor = null,
+      currency = null,
+      dateValue = null;
+
+  /// How the value should read once understood — "BDT 8,450.50" for
+  /// "8450.5", "12 Oct 2026" for "12/10/26". Null to keep what was typed.
+  final String? display;
+
+  /// A total's value in minor units, with its [currency] (receipts).
+  final int? amountMinor;
+  final String? currency;
+
+  /// A date field's calendar day.
+  final LocalDate? dateValue;
 
   /// Canonical form for matching: E.164 phones, lowercased emails, bare
   /// domains. Null when the value has no canonical form, or could not be
@@ -36,7 +64,14 @@ class FieldValidation {
 /// Delegates to the same extractors the scan path uses rather than restating
 /// their rules, so a number the scanner would reject cannot be accepted just
 /// because it arrived by a different route.
-FieldValidation validateField(String fieldKey, String value) {
+///
+/// [currency] is the currency a total already had, so correcting "12.50" on
+/// a dollar receipt does not turn it into taka.
+FieldValidation validateField(
+  String fieldKey,
+  String value, {
+  String? currency,
+}) {
   final String text = value.trim();
   if (text.isEmpty) return const FieldValidation(issue: 'empty');
 
@@ -45,10 +80,65 @@ FieldValidation validateField(String fieldKey, String value) {
     FieldKeys.email => _email(text),
     FieldKeys.website => _website(text),
     FieldKeys.personName => _personName(text),
+    // Receipts and warranties (B2): typed values are re-read from the text,
+    // so the stored amount or day can never disagree with what is shown.
+    ReceiptKeys.total => _amount(text, currency),
+    ReceiptKeys.purchaseDate || WarrantyKeys.expiryDate => _day(text),
+    WarrantyKeys.coverMonths => _cover(text),
+    WarrantyKeys.serial => FieldValidation(
+      normalized: text.toUpperCase().replaceAll(RegExp(r'[\s-]'), ''),
+    ),
+    WarrantyKeys.model => FieldValidation(normalized: text.toUpperCase()),
     // Company, designation and address carry no canonical form and no rule
     // worth enforcing — anything is a plausible business name.
     _ => const FieldValidation.ok(),
   };
+}
+
+FieldValidation _amount(String text, String? currency) {
+  final Money? money = Money.parse(
+    text,
+    currency: currencyOf(text) ?? currency ?? 'BDT',
+  );
+  if (money == null) return const FieldValidation(issue: 'not_an_amount');
+  return FieldValidation(
+    normalized: '${money.minor}',
+    display: money.format(),
+    amountMinor: money.minor,
+    currency: money.currency,
+  );
+}
+
+FieldValidation _day(String text) {
+  final List<FoundDate> found = findDates(text);
+  if (found.isEmpty) return const FieldValidation(issue: 'not_a_date');
+  final LocalDate day = found.first.date;
+  return FieldValidation(
+    normalized: day.toIso(),
+    display: formatDay(day),
+    dateValue: day,
+  );
+}
+
+FieldValidation _cover(String text) {
+  final RegExpMatch? m = RegExp(
+    r'(\d{1,3})\s*(years?|yrs?|months?|mos?|মাস|বছর)?',
+    caseSensitive: false,
+  ).firstMatch(asciiDigits(text));
+  if (m == null) return const FieldValidation(issue: 'not_a_period');
+  final int n = int.parse(m[1]!);
+  final String unit = (m[2] ?? 'months').toLowerCase();
+  final bool years = unit.startsWith('y') || unit == 'বছর';
+  final int months = years ? n * 12 : n;
+  if (months <= 0 || months > 240) {
+    return const FieldValidation(issue: 'not_a_period');
+  }
+  return FieldValidation(
+    normalized: '$months',
+    display: years
+        ? '$n ${n == 1 ? 'year' : 'years'}'
+        : '$n ${n == 1 ? 'month' : 'months'}',
+  );
 }
 
 /// One validation issue, in words a person can act on.
@@ -73,6 +163,12 @@ String? describeFieldIssue(String? issue) => switch (issue) {
   'implausible_tld' => 'That domain ending looks unlikely.',
   'not_a_website' => 'That does not look like a web address.',
   'looks_like_address' => 'That reads like an address rather than a name.',
+  'not_an_amount' => 'That does not look like an amount.',
+  'not_a_date' => 'That does not look like a date. Try 12/10/2026.',
+  'not_a_period' => 'Say how long it lasts, like “2 years” or “18 months”.',
+  'split_cover' =>
+    'The cover is different for different parts. Check this is the one '
+        'you want reminded about.',
   // An issue nobody has written a sentence for is worth saying *something*
   // about — but never the token itself.
   _ => 'That does not look right.',

@@ -8,7 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/extraction/card_extractor.dart';
+import '../../../core/db/enums.dart';
+import '../../../core/extraction/document_reader.dart';
 import '../../../core/imaging/card_geometry.dart';
 import '../../../core/imaging/card_image_processor.dart';
 import '../../../core/imaging/photo_keyring.dart';
@@ -24,7 +25,9 @@ import '../../contacts/data/identity_repository.dart';
 import '../../events/data/wallet_events.dart';
 import '../../events/presentation/event_widgets.dart';
 import '../../search/data/search_repository.dart';
+import '../../warranty/presentation/purchase_blocks.dart';
 import '../data/card_repository.dart';
+import 'kind_sheet.dart';
 
 /// Opens the camera, reads the card, and lets the user correct it.
 ///
@@ -45,6 +48,9 @@ class CaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _CaptureScreenState extends ConsumerState<CaptureScreen> {
+  /// A context under [AppTheme.capture], for the sheets this screen opens.
+  BuildContext? _themed;
+
   /// The shared recogniser, not one of this screen's own. Building a private
   /// `MlKitOcrEngine` here meant a second native recogniser loaded alongside
   /// the one `ocrEngineProvider` keeps open for back-side and rescan work, and
@@ -56,6 +62,10 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
   int? _cardId;
   bool _loading = false;
   bool _saving = false;
+
+  /// What the scan was read as (B2): the classifier's answer, or the user's
+  /// when they changed it.
+  CardType _kind = CardType.visitingCard;
   String? _error;
 
   /// Region of the field currently being edited, boxed on the side it was
@@ -146,13 +156,19 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       setState(() => _image = working);
 
       final OcrResult result = await _engine.recognize(working);
-      final CardExtraction extraction = CardFieldExtractor.extract(
-        result.blocks,
-      );
+      // Read as whatever the page most looks like — a business card, a
+      // receipt, a warranty — and recorded as that, with how sure it was.
+      final DocumentReading reading = readDocument(result.blocks);
       await repo.attachExtraction(
         cardId: pending.id,
         result: result,
-        extraction: extraction,
+        extraction: reading.extraction,
+      );
+      await repo.setKind(
+        pending.id,
+        reading.type,
+        confidence: reading.classification.confidence,
+        title: reading.title,
       );
       // Index straight away so a card is findable even if the user backs out
       // before writing a note.
@@ -164,17 +180,61 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
+        _kind = reading.type;
         _error = result.isTotalFailure
-            ? 'No text found on this card. Save it anyway and tell RecallOS '
-                  'why it matters — that alone makes it findable.'
+            ? 'No text found on this. Save it anyway and say why it matters '
+                  '— that alone makes it findable.'
             : null;
       });
+      // Not sure what it is: ask once, rather than reading a receipt as a
+      // business card in silence. Closing the sheet keeps the guess.
+      if (reading.shouldAsk && !result.isTotalFailure && mounted) {
+        final CardType? chosen = await showKindSheet(
+          _themed ?? context,
+          suggested: reading.type,
+        );
+        if (chosen != null && mounted) await _changeKind(chosen);
+      }
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = 'Could not read the card: $e';
       });
+    }
+  }
+
+  /// Reads the scan again as [kind], from the words already read (B2).
+  ///
+  /// The user said what the paper is — from the sheet, or from *Change* on
+  /// the kind row — so it is recorded as their choice, re-read with that
+  /// kind's reader, re-indexed, and re-promoted: a receipt leaves the
+  /// contacts, a business card joins them.
+  Future<void> _changeKind(CardType kind) async {
+    final int? cardId = _cardId;
+    if (cardId == null) return;
+    setState(() => _loading = true);
+    try {
+      await ref.read(cardRepositoryProvider).reReadAs(cardId, kind);
+      await ref.read(searchRepositoryProvider).reindexCard(cardId);
+      await ref.read(identityRepositoryProvider).promote(cardId);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _kind = kind;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickKind() async {
+    final CardType? chosen = await showKindSheet(
+      _themed ?? context,
+      suggested: _kind,
+    );
+    if (chosen != null && chosen != _kind && mounted) {
+      await _changeKind(chosen);
     }
   }
 
@@ -248,14 +308,26 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
 
     // Frame 04b. "Skip for now" still saves — the card and its fields are
     // already on disk; it only declines to add a note.
+    final bool receipt = _kind == CardType.receipt;
+    final bool warranty = _kind == CardType.warrantyCard;
     final String? note = await showNoteSheet(
-      context,
-      question: 'Why are you saving this?',
+      _themed ?? context,
+      hint: noteHintFor(_kind),
+      question: receipt
+          ? 'What was this for?'
+          : warranty
+          ? 'What does this cover?'
+          : 'Why are you saving this?',
       explanation: nothingFound
-          ? 'Not much was readable on this card, so this note is how '
-                "you'll find it later."
+          ? 'Not much was readable on this ${kindNoun(_kind)}, so this note '
+                "is how you'll find it later."
+          : receipt
+          ? "You'll search by this later — “office chair”, “Ammu's "
+                'medicine”.'
+          : warranty
+          ? "You'll search by this later — “the fridge”, “my laptop”."
           : "You'll search by this later, so write it how you'd say it.",
-      primaryLabel: 'Save card',
+      primaryLabel: saveLabelFor(_kind),
       secondaryLabel: 'Skip for now',
       secondaryResult: '',
       emphasised: nothingFound,
@@ -296,6 +368,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       data: AppTheme.capture(),
       child: Builder(
         builder: (BuildContext context) {
+          // Sheets open from here, under the capture theme. Found on the
+          // phone: opened from the screen's own context, above this Theme,
+          // the note sheet came up light over the dark review — the flip
+          // in brightness this theme exists to prevent.
+          _themed = context;
           final AppColors c = AppColors.of(context);
 
           return PopScope(
@@ -359,6 +436,16 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                               ),
                               child: _ReadingRail(colors: c),
                             ),
+                          if (cardId != null && !_loading)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: Gap.lg,
+                              ),
+                              child: _KindRow(
+                                kind: _kind,
+                                onChange: _saving ? null : _pickKind,
+                              ),
+                            ),
                           if (_error != null)
                             Padding(
                               padding: const EdgeInsets.fromLTRB(
@@ -398,15 +485,16 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                               // end the scan while correcting a value.
                               child: Row(
                                 children: <Widget>[
-                                  Expanded(
-                                    child: OutlinePill(
-                                      label: 'Retake',
-                                      icon: Icons.refresh,
-                                      height: 58,
-                                      onTap: (_loading || _saving)
-                                          ? null
-                                          : _capture,
-                                    ),
+                                  // Its own width, not half the row: found on
+                                  // the phone, an even split cut the save
+                                  // button to "Save rece…" and "Save warr…".
+                                  OutlinePill(
+                                    label: 'Retake',
+                                    icon: Icons.refresh,
+                                    height: 58,
+                                    onTap: (_loading || _saving)
+                                        ? null
+                                        : _capture,
                                   ),
                                   const SizedBox(width: Gap.sm + 2),
                                   Expanded(
@@ -414,7 +502,9 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
                                     // A saved photo plus a note beats the paper
                                     // card the user was about to lose.
                                     child: InkPill(
-                                      label: _saving ? 'Saving…' : 'Save card',
+                                      label: _saving
+                                          ? 'Saving…'
+                                          : saveLabelFor(_kind),
                                       icon: Icons.check,
                                       height: 58,
                                       onTap:
@@ -436,6 +526,33 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// *Saved as a receipt · Change* — what the scan was read as, said rather
+/// than hidden, and one tap from being corrected (B2).
+class _KindRow extends StatelessWidget {
+  const _KindRow({required this.kind, required this.onChange});
+
+  final CardType kind;
+  final VoidCallback? onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text('Saved as a ${kindNoun(kind)}', style: AppText.body(c)),
+        ),
+        TextAction(
+          label: 'Change',
+          tint: c.ochreInk,
+          enabled: onChange != null,
+          onTap: onChange ?? () {},
+        ),
+      ],
     );
   }
 }
@@ -658,10 +775,13 @@ class _ReviewBody extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
               children: <Widget>[
                 EventMark(cardId: cardId),
+                // Straight after the second scan is when "is this its
+                // receipt?" is worth most (B3).
+                PurchaseBlocks(cardId: cardId, type: detail.card.type),
                 SectionHeader(
                   detail.fields.isEmpty
                       ? 'Nothing read yet'
-                      : 'Found on the card',
+                      : 'Found on the ${paperNoun(detail.card.type)}',
                   count: detail.fields.isEmpty ? null : detail.fields.length,
                 ),
                 const SizedBox(height: Gap.sm),
@@ -671,7 +791,9 @@ class _ReviewBody extends ConsumerWidget {
                 ),
                 if (detail.unassignedText.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Gap.lg),
-                  const SectionHeader('Other text on the card'),
+                  SectionHeader(
+                    'Other text on the ${paperNoun(detail.card.type)}',
+                  ),
                   const SizedBox(height: Gap.sm),
                   Text(
                     detail.unassignedText.join(' · '),
