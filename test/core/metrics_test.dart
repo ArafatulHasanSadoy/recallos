@@ -24,7 +24,10 @@ void main() {
   group('characterErrorRate', () {
     test('is zero for a perfect read', () {
       expect(
-        characterErrorRate(reference: 'Medica Books', hypothesis: 'Medica Books'),
+        characterErrorRate(
+          reference: 'Medica Books',
+          hypothesis: 'Medica Books',
+        ),
         0,
       );
     });
@@ -59,8 +62,16 @@ void main() {
   group('FieldScorer', () {
     test('scores a clean extraction', () {
       final FieldScorer s = FieldScorer()
-        ..record(fieldKey: 'phone', expected: '+8801711223344', actual: '+8801711223344')
-        ..record(fieldKey: 'phone', expected: '+8801911556677', actual: '+8801911556677');
+        ..record(
+          fieldKey: 'phone',
+          expected: '+8801711223344',
+          actual: '+8801711223344',
+        )
+        ..record(
+          fieldKey: 'phone',
+          expected: '+8801911556677',
+          actual: '+8801911556677',
+        );
 
       final FieldScore phone = s.scores().single;
       expect(phone.precision, 1.0);
@@ -70,7 +81,11 @@ void main() {
 
     test('a wrong value hurts precision and recall together', () {
       final FieldScorer s = FieldScorer()
-        ..record(fieldKey: 'phone', expected: '+8801711223344', actual: '+8801711999999');
+        ..record(
+          fieldKey: 'phone',
+          expected: '+8801711223344',
+          actual: '+8801711999999',
+        );
 
       final FieldScore phone = s.scores().single;
       expect(phone.truePositives, 0);
@@ -107,7 +122,11 @@ void main() {
 
     test('comparison ignores case and surrounding whitespace', () {
       final FieldScorer s = FieldScorer()
-        ..record(fieldKey: 'company', expected: 'Medica Books', actual: '  medica books ');
+        ..record(
+          fieldKey: 'company',
+          expected: 'Medica Books',
+          actual: '  medica books ',
+        );
       expect(s.scores().single.truePositives, 1);
     });
 
@@ -151,7 +170,11 @@ void main() {
     test('the gate passes on strong Bengali accuracy', () {
       final EngineReport r = EngineReport(engine: 'routed');
       for (int i = 0; i < 10; i++) {
-        r.bengaliCards.record(fieldKey: 'company', expected: 'c$i', actual: 'c$i');
+        r.bengaliCards.record(
+          fieldKey: 'company',
+          expected: 'c$i',
+          actual: 'c$i',
+        );
       }
       expect(clearsBengaliGate(r), isTrue);
     });
@@ -171,6 +194,31 @@ void main() {
 
     test('formats a report without throwing on an empty dataset', () {
       expect(EngineReport(engine: 'mlkit').format(), contains('mlkit'));
+    });
+  });
+
+  group('ClassificationScorer (B2, PLAN §6)', () {
+    test('accuracy, per-kind scores and macro-F1', () {
+      final ClassificationScorer c = ClassificationScorer()
+        ..record(expected: 'card', predicted: 'card')
+        ..record(expected: 'card', predicted: 'card')
+        ..record(expected: 'receipt', predicted: 'receipt')
+        ..record(expected: 'receipt', predicted: 'warranty')
+        ..record(expected: 'warranty', predicted: 'warranty');
+      expect(c.count, 5);
+      expect(c.accuracy, closeTo(0.8, 1e-9));
+      expect(c.scoreOf('card').f1, 1);
+      // receipt: P = 1/1, R = 1/2 → F1 = 2/3; warranty: P = 1/2, R = 1 → 2/3.
+      expect(c.scoreOf('receipt').f1, closeTo(2 / 3, 1e-9));
+      expect(c.scoreOf('warranty').f1, closeTo(2 / 3, 1e-9));
+      expect(c.macroF1, closeTo((1 + 2 / 3 + 2 / 3) / 3, 1e-9));
+    });
+
+    test('nothing said counts as wrong, and is not a kind', () {
+      final ClassificationScorer c = ClassificationScorer()
+        ..record(expected: 'receipt', predicted: null);
+      expect(c.accuracy, 0);
+      expect(c.kinds, <String>['receipt']);
     });
   });
 }

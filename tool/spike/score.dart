@@ -25,6 +25,13 @@
 // Bengali cards hides exactly what the gate needs to see.
 //
 // `rawText` is optional — supply it for CER, omit it for field scores only.
+//
+// Receipts and warranties (B2) — their own fields, the classifier's
+// accuracy and macro-F1, and groups such as thermal paper — are scored by
+// `lib/core/eval/ocr_scoring.dart` instead, run from
+// `test/eval/ocr_score_test.dart` with RECALLOS_OCR_RESULTS and
+// RECALLOS_OCR_LABELS set: comparing "432.60" with a stored 43260 needs the
+// app's own `validateField`, which plain `dart run` cannot load.
 
 import 'dart:convert';
 import 'dart:io';

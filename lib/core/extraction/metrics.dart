@@ -172,6 +172,79 @@ class FieldScorer {
   }
 }
 
+/// How often the document classifier names the right kind of paper (PLAN
+/// §6, *Classification*): accuracy, and each kind's precision, recall and F1,
+/// with their unweighted mean — macro-F1 — so a rare kind (warranties) counts
+/// as much as a common one (cards).
+class ClassificationScorer {
+  final Map<String, Map<String, int>> _confusion = <String, Map<String, int>>{};
+  int _total = 0;
+  int _right = 0;
+
+  /// One paper whose kind is [expected] was read as [predicted] (null when
+  /// the run said nothing, which counts as wrong).
+  void record({required String expected, required String? predicted}) {
+    final String got = predicted ?? '(none)';
+    _total++;
+    if (got == expected) _right++;
+    _confusion.putIfAbsent(expected, () => <String, int>{});
+    _confusion[expected]!.update(got, (int n) => n + 1, ifAbsent: () => 1);
+  }
+
+  int get count => _total;
+  double get accuracy => _total == 0 ? 0 : _right / _total;
+
+  /// Every kind that was expected or predicted, sorted.
+  List<String> get kinds => <String>{
+    ..._confusion.keys,
+    for (final Map<String, int> row in _confusion.values) ...row.keys,
+  }.where((String k) => k != '(none)').toList()..sort();
+
+  ({double precision, double recall, double f1}) scoreOf(String kind) {
+    final int tp = _confusion[kind]?[kind] ?? 0;
+    final int expected =
+        _confusion[kind]?.values.fold<int>(0, (int a, int b) => a + b) ?? 0;
+    int predicted = 0;
+    for (final Map<String, int> row in _confusion.values) {
+      predicted += row[kind] ?? 0;
+    }
+    final double p = predicted == 0 ? 0 : tp / predicted;
+    final double r = expected == 0 ? 0 : tp / expected;
+    final double f = p + r == 0 ? 0 : 2 * p * r / (p + r);
+    return (precision: p, recall: r, f1: f);
+  }
+
+  double get macroF1 {
+    final List<String> k = kinds;
+    if (k.isEmpty) return 0;
+    return k
+            .map((String x) => scoreOf(x).f1)
+            .reduce((double a, double b) => a + b) /
+        k.length;
+  }
+
+  String format() {
+    final StringBuffer b = StringBuffer()
+      ..writeln(
+        'Classification ($_total papers): '
+        'accuracy ${accuracy.toStringAsFixed(3)}, '
+        'macro-F1 ${macroF1.toStringAsFixed(3)}',
+      );
+    for (final String k in kinds) {
+      final ({double precision, double recall, double f1}) s = scoreOf(k);
+      b.writeln(
+        '  $k  P=${s.precision.toStringAsFixed(3)}  '
+        'R=${s.recall.toStringAsFixed(3)}  F1=${s.f1.toStringAsFixed(3)}',
+      );
+    }
+    b.writeln('  confusion (expected → read as):');
+    for (final MapEntry<String, Map<String, int>> row in _confusion.entries) {
+      b.writeln('    ${row.key} → ${row.value}');
+    }
+    return b.toString();
+  }
+}
+
 /// One engine's result over one dataset, split by script.
 ///
 /// The split is the point. A headline accuracy number averaged across English
@@ -184,6 +257,13 @@ class EngineReport {
   final FieldScorer overall = FieldScorer();
   final FieldScorer latinCards = FieldScorer();
   final FieldScorer bengaliCards = FieldScorer();
+
+  /// Field scores by a label's `group` — "thermal", "receipt", "warranty" —
+  /// reported apart, as PLAN §6 asks for thermal-printed receipts.
+  final Map<String, FieldScorer> groups = <String, FieldScorer>{};
+
+  /// Which kind of paper each was read as, when the labels say (B2).
+  final ClassificationScorer classification = ClassificationScorer();
 
   final List<double> _cers = <double>[];
   final List<int> _durationsMs = <int>[];
@@ -255,6 +335,19 @@ class EngineReport {
         'Bengali cards:     weighted F1 = '
         '${bengaliCards.weightedF1().toStringAsFixed(3)}',
       );
+    for (final MapEntry<String, FieldScorer> g in groups.entries) {
+      b.writeln('');
+      b.writeln('Group "${g.key}":');
+      for (final FieldScore s in g.value.scores()) {
+        b.writeln('  $s');
+      }
+      b.writeln('  weighted F1: ${g.value.weightedF1().toStringAsFixed(3)}');
+    }
+    if (classification.count > 0) {
+      b
+        ..writeln('')
+        ..write(classification.format());
+    }
     return b.toString();
   }
 }
