@@ -69,8 +69,15 @@
          unreadable. Backing up neither is the only coherent answer.
 
          The cost is real and worth naming: a lost or replaced phone loses the
-         wallet. Export exists for that, and stays the user's own decision. -->
+         wallet. Export exists for that, and stays the user's own decision.
+
+         `tools:replace`, because a library can declare backup rules of its
+         own and the merge must not let it: cunning_document_scanner 3.0.3
+         ships its own `fullBackupContent` and `dataExtractionRules`, and the
+         release build stopped at the manifest merge (7 Oct 2026). Ours win —
+         backup stays off whatever a dependency would prefer. -->
     <application
+        tools:replace="android:fullBackupContent,android:dataExtractionRules"
         android:label="RecallOS"
         android:name="${applicationName}"
         android:allowBackup="false"

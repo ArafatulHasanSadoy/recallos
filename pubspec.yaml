@@ -34,6 +34,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # Day-first dates in Material's own date picker ("Fri, 16 Oct", as every
+  # other date in the app is written). Part of the Flutter SDK: nothing to
+  # fetch, and nothing that reaches the network.
+  flutter_localizations:
+    sdk: flutter
   flutter_riverpod: ^3.4.2
   go_router: ^17.4.0
   drift: ^2.34.3
