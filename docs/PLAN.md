@@ -1,6 +1,7 @@
 # RecallOS — where the project stands, and the CSE499B plan
 
-**This file is the live plan and is kept up to date as work lands.** A row marked
+**This file is the live plan and is kept up to date as work lands.** For a
+short *where things stand / what's next* snapshot, read `docs/STATUS.md` first. A row marked
 ✅ was built, tested and walked on the phone; nothing is marked done because it
 was planned. Every claim below was re-checked against the code on 2026-09-28.
 
@@ -31,6 +32,36 @@ are the first release**; A5 and A6 follow as its first update around 26 Oct.
 The build order is now **A7 → A8 → (release) → A5 → A6**, A1–A4 being done.
 The billing spike's first half is answered: Play Billing adds no `INTERNET`.
 
+**2026-10-07, later — no deadlines; launch complete around 20 Nov.** The
+owner dropped the milestone dates. The whole app (Releases A and B) is to be
+built as fast as possible, for a **public launch with every feature around
+20 Nov**, after the 14-day closed test and Google's production review.
+Production access is still applied for as soon as the 14 days are up, but
+nothing is published to production until the app is complete. The dates in
+§7 are history; the order of work there still stands.
+
+**2026-10-07 — plan re-pinned to 10 Nov.** The 20 Oct public date does not
+hold, because the 14-day closed test started late. Production is applied for
+around 21 Oct with versionCode 2.
+
+- The work to 10 Nov is milestones **M0–M10** in §7.
+- The step being built now is the *Now working on* checklist in
+  `docs/STATUS.md`, ticked as each step lands.
+- Decided:
+  - A6 comes first, then v2 to testers, then Release B;
+  - the A6 Plus split (A6 below);
+  - B1 is cut down to what B2–B4 write (B1 below).
+
+**2026-10-07, UI/UX.** Every UI change now follows `design/UX-PROTOCOL.md`:
+- research first (Mobbin when connected);
+- handle every state;
+- write down the design reasoning;
+- walk it on the phone.
+
+A dedicated **UX pass over the core flow** (onboarding → home → scanner →
+OCR review → person detail → search → Ask) comes after Release B and before
+the freeze. Its reasoning is kept as evidence for the report.
+
 Pricing, revenue and competitor strategy are deliberately **not** here: this repo
 is public and `docs/` is served on GitHub Pages. They live in the gitignored
 `business/` folder.
@@ -45,7 +76,8 @@ is public and `docs/` is served on GitHub Pages. They live in the gitignored
   (2026-09-08), tagged `cse499b-start`.
 - 499B so far is seven commits on `main`, pushed 2026-09-29: My Card, F1–F4,
   and the phone-number label fix.
-- `flutter analyze`: clean. `flutter test`: **732 pass** (2026-10-04, after
+- `flutter analyze`: clean. `flutter test`: **805 pass** (2026-10-07, after
+  A6; 732 on 2026-10-04, after
   A5; 713 after merging the shop-card and address fixes; 667 after A7's build; 641 after A1–A4; 580 after F1–F4; 444 at the 499A baseline
   `b48d429`).
 - **Starting point:** everything after `cse499b-start` is 499B work
@@ -97,8 +129,9 @@ from OCR) — are correct for derived data and destructive for authored data.
 - [x] ✅ **B6** Uninstalling no longer has to destroy the wallet: an encrypted
   backup restores it on any phone (F3).
 - [x] ✅ **B7** Card photos, thumbnails and the portrait are encrypted at rest (F4).
-- [ ] **B8** Scaffolding nothing uses: `CardType` never set; `tags` / `subject_tags` never read or
-  written (FTS `tags` column written as `''`); `interactions` read by nothing, so `previousUse` is always 0;
+- [x] ✅ **B8** (decided 15 Oct: `CardType` is set by B2; the four empty tables are kept and documented in `tables.dart` — dropping costs a migration, a query log would put sensitive text in backups, and §6 uses a labelled question set instead) Scaffolding nothing uses: `CardType` never set; `tags` / `subject_tags` never read or
+  written (FTS `tags` column written as `''`); ~~`interactions` read by nothing, so `previousUse` is always 0~~
+  (fixed by A6, 7 Oct: calls, chats, emails and hellos opened feed `previousUse`);
   `search_queries` / `search_feedback` have no writers.
 - [ ] **B9** The OCR evaluation has never been run. (The spike's stale "3 engines"
   text, dead `tessdata/README.md` pointer and orphan `tessdata_config.json` are
@@ -452,10 +485,16 @@ stable first release matter more than holding the launch for them.
   waiting, the sixth step's sheet showed no switch, the limit sentence and
   *No limit with RecallOS Plus*, which opened the Plus screen. The five test
   steps were then removed and Android held no RecallOS alarms again.
-  **Still to do, needing Play Console** — the product, the licence key pasted
-  into `play_key.dart`, licence testers: a real test purchase, a refund and a
-  restore.
-- [ ] **A8. Release A gates** — **store listing ready 2026-10-04 and saved in Play Console** the same day (title *RecallOS: Business Card Wallet*; `store/`: text within Play's limits, six captioned 1080×1920 screenshots of real screens with demo cards, the 1024×500 feature graphic, the 512 icon — saved, not yet sent for review); **App content, 7 of 10 saved 2026-10-04:** privacy policy URL, no ads, content rating (IARC: utility, digital purchases — Everyone / PEGI 3 / USK 0 / 3+, Brazil 14+ for in-app purchases), no advertising ID, not a government app, no financial features, no health features; Data safety drafted as *collects and shares nothing* (Play Billing and user-started sharing are exempt), submittable once Target audience (18+) is in, which waits on Sign-in details — Plus is paid content, so the answer is *Yes — no account; Plus unlocked with a reviewer promo code for `recallos_plus`*, entered once the product exists after the first upload (a redeemed code turns Plus on when the app returns to the foreground); closed test running since ~3 Oct; production
+  **In Play Console, 2026-10-04:** the one-time product `recallos_plus`
+  (*RecallOS Plus*, purchase option `buy`, backwards compatible, 174
+  countries) is **active** at the price recorded in the gitignored
+  `business/` folder; the owner clicked Activate. 20 single-use promo
+  codes for it (*Play review access*, 4 Oct 2026 – 3 Oct 2027): three are in
+  the Sign-in details for Play's reviewers, the CSV is in the owner's
+  Downloads — keep it out of the repo. **Still to do:** licence testers
+  (needs the testers' Gmails), then on a Play-installed build a real test
+  purchase, a refund, a restore and a promo-code redemption.
+- [ ] **A8. Release A gates** — **store listing ready 2026-10-04 and saved in Play Console** the same day (title *RecallOS: Business Card Wallet*; `store/`: text within Play's limits, six captioned 1080×1920 screenshots of real screens with demo cards, the 1024×500 feature graphic, the 512 icon — saved, not yet sent for review); **App content, all 10 saved 2026-10-04:** privacy policy URL, no ads, content rating (IARC: utility, digital purchases — Everyone / PEGI 3 / USK 0 / 3+, Brazil 14+ for in-app purchases), no advertising ID, not a government app, no financial features, no health features, target audience 18+, Data safety *no data collected, none shared* (Play Billing and user-started sharing are exempt), Sign-in details *Yes — no account; Plus unlocked with a reviewer promo code* (Google's own test devices not given the codes); store settings: category Business, contact email set — **app setup complete**. **First upload 2026-10-04:** `0940360` (A1–A5, A7, the two side-session fixes), versionCode 1, signed with the upload key, 8 allowlisted permissions and no `INTERNET`, 25.9 MB to install, Android 8+ / target 36 — released to **Internal testing** at 20:34. **6 Oct:** the owner's 14 testers are one email list (*RecallOS testers*) on Internal testing, on licence testing (their Plus purchases are free test purchases — take them off at launch if any of them should count as a real buyer) and on **Closed testing - Alpha** (178 countries, feedback to the support email); release 1 (1.0.0) put on the closed track and **all 15 changes sent to Google for review** (store listing, App content, category, closed track). The closed-test opt-in link appears once the review passes; the 14-day clock starts when 12+ testers have opted in — with 14 on the list there is a margin of two. **Checked:** the app version Play delivers has nine permissions — our eight plus `com.android.vending.CHECK_LICENSE`, added by automatic protection's installer check — and no `INTERNET`; production
   access applied for the day its 14 days are up (~17 Oct); Data safety and privacy policy match the build;
   golden journeys on the phone.
 
@@ -505,7 +544,7 @@ stable first release matter more than holding the launch for them.
   Not walked: a real scan during an event (needs a physical card) — the
   capture path is covered by `event_mode_test.dart` against the real
   repository and files. 732 tests pass (19 new).
-- [ ] **A6. People search, grounded** (M) — interactions logged and fed into
+- [x] ✅ **A6. People search, grounded** (M) — interactions logged and fed into
   ranking; Ask for people: lookup ("Rahim's number") and need-shaped search,
   every answer citing its card. A3's hellos are the first interactions it has
   to rank by. **Seen on the phone 2026-10-04:** "AC repair" ranked TechFix
@@ -513,28 +552,523 @@ stable first release matter more than holding the launch for them.
   word each, and "repair" won. The person who services ACs is the answer;
   term specificity (an acronym like "AC" is rarer than "repair") or the
   semantic arm should carry it.
+  **Free or Plus (decided 2026-10-07):**
+  - **free for everyone:** better ranking, where you met in the search
+    index, and lookups such as "Rahim's number", each citing its card;
+  - **RecallOS Plus:** questions that filter people by when or where they
+    were met, or by follow-up state ("met last month", "met at CSE fest",
+    "still need a next step"). These give an exact list, not a ranking;
+  - a free user who asks one gets the normal results plus one line that
+    opens the Plus screen, never a dead control.
+
+  This follows STRATEGY's tiers: basic lookup and search are free;
+  cross-record and date questions are Plus.
+  **Design (2026-10-07; the steps are ticked in `docs/STATUS.md`):**
+  - **Short terms.** A query term of 2 characters or fewer matches exactly,
+    so "ac" no longer matches "account".
+  - **Weighting.**
+    - The note column is weighted in `bm25()`.
+    - The yes/no note signal becomes the IDF-weighted share of the query found
+      in the notes.
+  - **Where you met.** It goes into a new FTS column `met_text`.
+    - The table is rebuilt on open when its shape is old.
+    - `SearchRepository.indexVersion` in `settings` forces a re-index.
+    - `setEncounter` re-indexes the card.
+  - **Note vector.** The note gets its own embedding (`card_note`), and the
+    vector arm takes the higher of the two.
+  - **Interactions.** Taps that open Call, WhatsApp or Email are recorded as
+    `callOpened`, `messageOpened` or `emailOpened`, which is honest because
+    the app knows the action opened, not whether a call or message happened.
+    They feed `previousUse` as a decayed count.
+  - **Lookups.** `QueryPlan` parses them (`lib/core/search/query_plan.dart`)
+    and returns every match, each citing its card's field and provenance.
+  - **Evaluation switch.** `search(mode: lexical | semantic | hybrid)` with
+    P@k, RR and NDCG@k for §6.
+  - **Explanations.** Each result explains itself with the source and an
+    excerpt ("YOUR NOTE · AC servicing").
+
+  **Built 7 Oct; walked on the RMX3612, release build, the same day.** The
+  owner's real wallet, 16 cards. No schema change; the search index rebuilt
+  itself on first launch. 805 tests pass, 73 of them new. Step-by-step record
+  in the 7 Oct session log of `docs/STATUS.md`.
+  - **"AC repair"** now puts **CoolAir Services first**, the miss seen on
+    4 Oct.
+    - The cause was measured, not guessed. The embedder scores the note "AC
+      servicing" at 0.73 against "laptop repair" at 0.51. Inside the
+      whole-card vector the OCR text drowned the note and reversed the order
+      (0.34 against 0.44).
+    - The fix is a second vector per card for the notes alone, plus
+      rarity-weighted note coverage and exact matching for short words. "ac"
+      no longer matches "accounts".
+  - **"Mehedi's number"** gives one answer card:
+    - Mehedi Hasan · CoolAir Services;
+    - 0255012345 in serif, with *ON THE CARD* and a call icon;
+    - *From this card · 1W*.
+
+    "mehedi number" works the same. Not tapped on the phone, because that
+    would write a call to the real wallet; the tap is pinned by widget tests.
+  - **Free:** "met at CSE fest" gives *Filtering by when you met comes with
+    RecallOS Plus*, which opens the Plus screen (its new row checked), above
+    4 word matches.
+  - **Plus**, on the Plus-preview evaluation build (normal build put back
+    afterwards):
+    - the same query gives exactly **1** person, Nusrat: *Met at CSE fest at
+      NSU*, with her next step;
+    - "who do I need to follow up with" gives *Waiting on a next step · 1*.
+      Her two overdue steps are one person.
+  - **Light and dark** both checked.
+  - **At 1.3× text:** the phone refuses shell font changes (`WRITE_SETTINGS`),
+    so 1.3× on a 360dp phone is pinned by widget tests instead.
+  - **Found on the phone and fixed:**
+    - **The "why" block was inconsistent.** A note excerpt appeared under a
+      long note but not under a cut-off short one, because a 40-character
+      guess at the tile's line was wrong (it holds about 25). Now every
+      answer that matched on words gets one *why* block, and the tile's
+      second line says who it is.
+    - **The release build stopped at the manifest merge.** The kept
+      `pubspec.lock` upgrade brings `cunning_document_scanner` 3.0.3, which
+      declares its own backup rules. Fixed with `tools:replace` on
+      `<application>`, so ours still win (backup off). The build was checked:
+      the same eight permissions, no `INTERNET`, `allowBackup=false`.
 
 ### Release B — people plus purchases (core 499B)
 
 Target: shipped as updates between 20 Oct and 7 Nov; all in the final release on 10 Nov.
 
-- [ ] **B1. Schema v11, in place** (L) — see §5. Rehearsed on a copy of a real
+- [x] ✅ **B1. Schema v11, in place** (L) — see §5. Rehearsed on a copy of a real
   database; the encrypted backup (F3) must exist first.
+  **On the phone 15 Oct:** a raw copy of the real wallet taken first (a
+  debuggable build with the same key, `run-as tar`, sha256 checked), then
+  the v11 release build installed; the wallet migrated in place with every
+  count the same (16 cards, 13 people, 2 duplicate pairs, 2 overdue steps).
+  **Cut down 2026-10-07 to what B2–B4 write.**
+  - **Added:**
+    - on `cards`: `title`, `captureSource`, `classificationConfidence`;
+    - on `card_fields`: `origin`, `review` and `validity` (the `FactSource`
+      split, filled from `source` and `verified_by_user`), plus `amountMinor`,
+      `currency` and `dateValue` (`YYYY-MM-DD`);
+    - the `item_links` table;
+    - `DateKind.warrantyExpiry`.
+  - **Deferred:**
+    - `item_assets`, because `imagePath` is read in 17 files, so photos stay
+      on `cards`;
+    - `sensitivity`, `ticket` and `idDocument` (Release C);
+    - a separate `valueType` and `status`;
+    - dropping `source`.
+  - **Safety:**
+    - the v10 schema is frozen as a test fixture;
+    - the `from < 11` step runs in a transaction and is idempotent;
+    - a v10 backup restored into v11 is tested;
+    - next-step queries filter on `kind = followUp`, so a warranty date never
+      uses a free reminder slot;
+    - `IdentityRepository.promote` makes people only from visiting,
+      service-centre and older untyped cards.
+  - **Rehearsal source.** The phone's **in-app backup**, through a test
+    harness that is skipped by default. The phone runs a non-debuggable
+    build, so `run-as` cannot copy the database.
+
+  **Built 8 Oct** (steps 1–8; the phone step waits on the owner's in-app
+  backup):
+  - the v10 schema frozen from the v10 code (`test/fixtures/schema_v10.sql`);
+  - the `from < 11` step, transactional and idempotent;
+  - `FieldProvenance` writes both forms, and the readers use the new one;
+  - `Money` and `LocalDate`;
+  - follow-up-only next steps, with `pendingReminders` still holding every
+    kind;
+  - `peopleCardTypes` gates the contacts.
+  - **Tests**, 839 pass:
+    - a migrated v10 has the same shape as a fresh v11;
+    - every old source and confirmation is mapped;
+    - a half-migrated database finishes;
+    - a v10 backup restores into v11;
+    - the rehearsal harness, proven on a synthetic backup.
 - [ ] **B2. Receipts and warranties** (L) — classification (the capture
   category the user picked is a strong signal; rules next; "What did you
   save?" when unsure). Receipt: merchant, date, final total, currency,
   category. Warranty: product, model, serial, coverage, start basis, duration,
   printed expiry. Critical fields always reviewed.
-- [ ] **B3. Linking and derived expiry** (M) — suggested on serial / invoice /
+  **Built 13 Oct** (steps 1–8). **Walked 15 Oct** with sample papers
+  imported through the scanner, light and dark; release OCR reads them.
+  ✅ waits on a real receipt and warranty through the camera and 1.3× on
+  the phone (owner). Rule-based and explainable, tested on invented Bangladeshi
+  layouts until the owner's real receipts arrive.
+  - **Classifier:** `document_classifier.dart`, with a confidence and the
+    cues as reasons. It asks below 0.6.
+  - **Receipt reader:** grand total over subtotal; split columns rejoined;
+    Bangla "সর্বমোট"; no total rather than a guess; day-first dates; the
+    total and date always reviewed.
+  - **Warranty reader:** serial or IMEI, cover in months (a split cover is
+    flagged), printed expiry only.
+  - **Storage:** typed (`amount_minor`, `currency`, `date_value`); a
+    guessed category is stored as *inferred*.
+  - **Capture:** *What did you save?* when unsure; *Saved as a receipt ·
+    Change*, which re-reads the stored OCR.
+  - **Screens:** labels and the per-kind editor; *check this* on
+    unconfirmed critical fields; typed edits re-read; receipts and
+    warranties titled in every list.
+  - **Never people:** receipts never become contacts, nor "met" at events.
+  - **Tests:** 897 pass; 58 new for B2 across the readers, storage,
+    capture, fields and library.
+
+  **Design reasoning for B2's capture (13 Oct, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** A receipt or a warranty is saved with the same Scan as
+    a business card. The app gets the kind right without making the user
+    choose every time. When it cannot tell, it asks once, plainly. The kind
+    can always be corrected.
+  - **Existing problems.** Capture assumed a business card ("Save card",
+    the contacts built from every scan), and there was no way to say "this
+    is a receipt".
+  - **References studied.** Mobbin is **not connected**, so no Mobbin screen
+    was inspected. Searches to run when it is: *receipt scanner*, *document
+    capture*, *scan type selection*, *expense receipt review*, *extracted
+    data confirmation*. The decision below rests on general mobile
+    patterns, not on any named app.
+  - **Lessons.** One entry point with a sensible default costs fewer taps
+    than a mode picker before every scan. A classification shown as an
+    editable label stays honest. Ask only when uncertain, and make the
+    question answerable in one tap.
+  - **RecallOS solution.**
+    - One Scan button, unchanged.
+    - When the classifier is sure, the review opens as that kind, with a
+      row: *Saved as a receipt · Change*.
+    - When it is not sure, a sheet asks *What did you save?* (rule 3: the
+      app's own question, serif italic) with three 52px rows. Closing it
+      keeps the best guess, still changeable from the row.
+    - Changing the kind re-reads the stored OCR with that kind's reader;
+      nothing is scanned again.
+    - The save button and the note question follow the kind (*Save
+      receipt* · "What was this for?").
+  - **States.**
+    - reading: the existing rail;
+    - nothing readable: kind-neutral copy;
+    - unsure: the sheet;
+    - sheet dismissed: the guess, which can still be changed;
+    - kind changed: re-read in place;
+    - a confirmed field survives a re-read, as it does a re-scan.
+  - **Implementation impact.**
+    - `capture_screen.dart`;
+    - a new `capture/presentation/kind_sheet.dart`;
+    - `CardRepository.reReadAs`.
+
+    No new tokens, all existing components (`SettingRow`-style rows,
+    `TextAction`, `InkPill`, `ScreenHeader`).
+
+- [x] ✅ **B3. Linking and derived expiry** (M) — suggested on serial / invoice /
   reference evidence with reasons shown; confirmed, reversible; a derived
   expiry labelled *calculated*, recomputed when its inputs change.
+  **Built 15 Oct** (steps 1–6 in STATUS M5). **Walked 15 Oct:** suggested
+  on the serial, confirmed, the end calculated, the reminder in
+  `dumpsys alarm` and cancelled with its paper. No schema change: v11's `item_links`, `origin = derived`
+  and `DateKind.warrantyExpiry` were enough.
+  - **Rules** (`lib/core/linking/`, pure, so §6 measures the same code):
+    - a serial or an invoice number printed on both is strong;
+    - the same day, the model, the brand and the shop are weak, and count
+      only together;
+    - dates weeks apart silence the weak cues;
+    - reasons are stored as JSON and shown as lines.
+  - **Calculated expiry:** a printed or typed one wins. Otherwise the
+    purchase date (the warranty's own, or a *confirmed* receipt's) plus the
+    cover, to the last covered day, with its working. A cover counting from
+    installation adds a caveat.
+  - **Kept in step:** `PurchaseLinks.refresh`, called by `CardRepository`
+    after every write that can change an input. Only suggested rows follow
+    the evidence; the user's answers are never re-derived.
+  - **Reminder:** one `warrantyExpiry` date per warranty. The reminder is
+    9 AM a month before (else a week, else that morning) and is never
+    re-timed by an unrelated edit. It has its own Warranties channel, and
+    it is not one of the free five.
+  - **Screens:** *Covered until* and *Its receipt* / *Its warranty* on the
+    card screen and the capture review; *Is this its receipt?* with
+    reasons, Yes / Not this one, Unlink (each with Undo); linking by hand.
+  - **Tests:** 965 pass; 68 new across the rules, the expiry, the storage
+    (22 through the real repository), the notice and the screen (9 that
+    tap).
+
+  **Design reasoning for B3's screens (15 Oct, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** A warranty answers one question, *when does it end?*,
+    and shows how that is known. A receipt and its warranty find each other
+    without the user hunting, but nothing is joined until the user says so.
+  - **Existing problems.** The card screen was built for people: *Where
+    you met* sat on receipts, its heading read "Unread card" for a receipt
+    with no company, and the field list said *On the card*. A warranty's
+    end was only a field among the others, with no working and no reminder.
+  - **References studied.** Mobbin is **not connected** in this session, so
+    no Mobbin screen was inspected. Searches to run when it is: *warranty
+    tracker*, *linked documents*, *suggested match confirmation*, *expiry
+    reminder*, *receipt attached to item*. The decisions below rest on
+    general mobile patterns and on the app's own blocks, not on any named
+    app.
+  - **Lessons.** A suggestion earns trust by showing its evidence and
+    asking once, with both answers one tap away. A computed value should
+    carry its working where it is shown. Empty states point at the real
+    control, never at a dead one.
+  - **RecallOS solution.**
+    - On a warranty, a **Covered until** block comes first: the last day,
+      in roman serif (a standalone numeral, rule 3); one line of working
+      ("Calculated from the receipt's purchase date, 12 Oct 2026, plus 2
+      years", or *Printed on the warranty*); the caveat when the cover
+      counts from installation; when the reminder comes; and, when
+      notifications are off, the way to turn them on.
+    - Under it, **Its receipt**:
+      - a suggestion asks *Is this its receipt?* in the serif italic (rule 3,
+        the app's own question, at the inline size the field editor uses),
+        shows the receipt as a row you can open to check, its reasons as
+        plain lines, and *Yes, link them* (ink) / *Not this one* (outline);
+      - once linked: the receipt row, and *Unlink* with Undo;
+      - with nothing found: a line and *Link its receipt*, which opens a
+        picker (step 6).
+    - On a receipt, **Its warranty** appears only when there is a link or a
+      suggestion. Most receipts have no warranty, and a standing "link a
+      warranty" on every grocery bill would be noise; linking by hand
+      starts from the warranty, which is the paper that needs the date.
+    - The capture review shows the same blocks, because the moment of
+      visible value is straight after the second scan.
+    - *Where you met* shows only on people's cards. The field list's
+      heading names the paper: *On the receipt*, *On the warranty*.
+  - **States.** Nothing known yet (a hint pointing at the link and the
+    fields); calculated, printed or confirmed; the caveat; ended (said in
+    words, in vermilion); reminder set, none (ended), notifications off;
+    suggestion, several suggestions (the next appears after an answer),
+    linked, unlinked (Undo), the other paper in the bin (hidden).
+  - **Implementation impact.**
+    - new `lib/features/warranty/presentation/purchase_blocks.dart` and
+      `lib/features/warranty/data/purchase_link_providers.dart`;
+    - `card_detail_screen.dart` and `capture_screen.dart` place the blocks.
+
+    No new tokens. Existing pieces only: `AppDecoration.card`,
+    `MicroLabel`, `InkPill`, `OutlinePill`, `TextAction`, `PressFade`,
+    snackbars with Undo as on next steps.
 - [ ] **B4. Spending totals** (M) — exact sums from verified receipt facts, by
   period / category / merchant, one currency at a time; duplicates and
   unverified totals listed separately, never silently added.
-- [ ] **B5. Ask RecallOS across people and purchases** (L) — typed plans only:
+
+  **Built 15 Oct** (steps 1–6 in STATUS M6). **Walked 15 Oct:** checked,
+  counted, on Home and asked; a copy binned and a currency switched wait for
+  the owner's real receipts. No schema change: `kind` is stored as text, so
+  `LinkKind.duplicateOf` needed no migration.
+  - **Totals, pure** (`lib/core/spending/spending_totals.dart`, so B5's
+    "how much…" answers and §6 use the same code): counted only when the
+    total and the date were both checked; exact integer sums; one currency
+    at a time; periods (month, year); by shop, category, month; a stated
+    scope ("1–31 Oct 2026 · 7 receipts you checked").
+  - **Held back, never silent:** *Not added yet* (what to do, in words),
+    *No date* (every period), *Possible second copies* (same currency,
+    amount and day; shops and invoice numbers that do not disagree; the
+    first saved counts).
+  - **Stored:** only the user's "two purchases" answer, as a dismissed
+    `duplicateOf` link; B3's link queries name their kind.
+  - **Screen:** *Receipt totals*; free sees this month with every list,
+    Plus adds other periods and the breakdowns; a home row while the wallet
+    holds receipts; the Plus screen lists the entitlement.
+  - **Tests:** 1,013 pass (1 skipped, the rehearsal); 48 new across the
+    totals (23), the wallet (10), the screen (9 that tap, one pinning a
+    1.3× layout), the home row (5) and the Plus screen (1).
+
+  **Design reasoning for B4's screen (15 Oct, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** Answer "how much is in my receipts this month?" with
+    a number the user can trust, and show exactly what it is made of. A
+    receipt that is not counted must be visible, with the one step that
+    would count it.
+  - **Existing problems.** Receipts could be saved and checked (B2), but
+    nothing added them up; the only way to know a month's total was to open
+    every receipt. A receipt scanned twice would, under any naive sum, be
+    added twice without a word.
+  - **References studied.** Mobbin is **not connected** in this session, so
+    no Mobbin screen was inspected. Searches to run when it is: *spending
+    summary*, *expense report by month*, *category breakdown*, *budget
+    overview period picker*, *duplicate transaction review*, *receipt needs
+    review*. The decisions below rest on general mobile patterns and on the
+    app's own blocks, not on any named app.
+  - **Lessons.** One large figure with its scope stated beside it reads
+    faster than a chart, and a stated scope is what makes a total honest.
+    Breakdowns earn their place as lists that open what they summarise.
+    Items excluded from a figure belong on the same screen as the figure,
+    each with its fix one tap away. A period picker is a pair of arrows on
+    a label, with nothing past today.
+  - **RecallOS solution.**
+    - A *Receipt totals* screen. The total in roman serif (rule 3, a
+      standalone numeral), "in saved receipts" under it — never "spent"
+      (§5) — and its scope: "1–31 Oct 2026 · 7 receipts you checked".
+    - **What is not in the figure comes straight after it**, before any
+      breakdown, because each item makes the figure incomplete and is one
+      tap from being fixed; a long month of counted receipts must not bury
+      it. **Not added yet**: receipts dated in the period that are not
+      checked, each saying what to do ("Check the total and the date") and
+      opening the receipt where *check this* waits. **No date**: listed in
+      every period, never placed by the scan day.
+    - **Counted** are receipts whose total *and* date the user checked;
+      their list comes last, each row opening its receipt.
+    - **Possible second copies**: *Is this a second copy?* (rule 3, the
+      app's own question, at the inline size B3 uses), its reasons as lines,
+      and *Yes, bin this copy* (ink) / *No, count both* (outline), each with
+      Undo.
+    - **One currency at a time**: when a period holds more than one, chips
+      choose which is summed; nothing is converted.
+    - **Free**: this month, with every list. A single row says what Plus
+      adds and opens it — not a dead control.
+    - **Plus**: arrows for the month or year, a Month/Year choice, and
+      *By shop* / *By category* (and *By month* for a year) as rows with
+      their sums. A row narrows the figure and every list to that shop or
+      category; *Show all* undoes it. A category row says how many of its
+      receipts are guesses.
+    - **The way in**: a home row, only while the wallet holds receipts,
+      carrying this month's figure.
+  - **States.** Loading (ghost cards, rule 5); no receipts at all (an empty
+    state whose action scans one); receipts but none counted in the period
+    (says so, the held-back lists below); counted; several currencies;
+    focused on a shop or category; a possible copy, answered both ways and
+    undone; Plus checking, free, pending, owned, and refunded while away
+    from this month (back to this month); a receipt binned or restored
+    elsewhere (the stream follows); long shop names and 1.3× text.
+  - **Implementation impact.**
+    - new `lib/core/spending/spending_totals.dart` (pure),
+      `lib/features/spending/data/spending_repository.dart` and
+      `lib/features/spending/presentation/spending_screen.dart`;
+    - `LinkKind.duplicateOf` (no schema change: `kind` is stored as text);
+    - a route; a home row; the Plus screen's list.
+
+    No new tokens. Existing pieces only: `ScreenHeader`, `SettingGroup`,
+    `SettingRow`, `SelectChip`, `RoundIconButton`, `InkPill`,
+    `OutlinePill`, `TextAction`, `SectionHeader`, `EmptyState`,
+    `GhostStack`, snackbars with Undo.
+- [x] ✅ **B5. Ask RecallOS across people and purchases** (L) — typed plans only:
   lookup, search, filter, dates, captured-spending aggregate. Answers state
   their scope ("1–30 Sep, BDT, 12 verified receipts"), cite sources, and say
   "couldn't determine that" when they can't. No model-written SQL.
+  **Built 15 Oct** (STATUS M7, steps 1–6), **walked on the phone the same
+  day**: the three §3 stories typed and answered, light and dark (the
+  airplane-mode run is in M9's final checks). Typed plans only, in the same home search
+  box A6 answers people questions in:
+  - **`WarrantyPlan`** ("When does my laptop warranty expire?", free): the
+    end, how it is known, and both papers cited.
+  - **`ExpiringPlan`** ("What expires in the next 90 days?", Plus): what
+    ends in the window, soonest first.
+  - **`SpendingPlan`** ("How much did I spend on electronics this month?",
+    Plus except this month's plain total): B4's exact figure "in saved
+    receipts" with its scope ("1–31 Oct 2026 · 1 receipt you checked") and
+    its receipts.
+  - **Cannot answer:** a week, a month still to come, a shop or warranty
+    that is not there. Each is said in a sentence, never guessed.
+  - **Tests:** 1,042 pass (29 new: the planner with negatives, answers
+    through the real repositories, home tests that type and tap). Also an
+    **Ask question set** harness for §6 (plan accuracy, source correctness,
+    abstention). On the invented fixture it scores 20/20, 13/13, 5/5, which
+    is a regression check, not a result.
+
+  **Design reasoning for B5's answers (15 Oct, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** A question typed into *What do you need?* gets the
+    answer itself, not a list of cards to open. The answer says what it
+    covers, which papers it came from, and says so plainly when it cannot
+    answer.
+  - **Existing problems.** "When does my laptop warranty expire?" was
+    searched as words, and so were "what expires soon" and "how much did I
+    spend on electronics". The answer existed in the wallet (B3's end, B4's
+    total) but the user had to know which screen held it.
+  - **References studied.** Mobbin is **not connected** in this session, so
+    no Mobbin screen was inspected. Searches to run when it is:
+    *search answer card*, *spending summary answer*, *warranty status*,
+    *expiring items list*, *assistant answer with sources*. The decisions
+    below rest on A6's own answer blocks and general mobile patterns, not on
+    any named app.
+  - **Lessons.** An answer is one flat block (rule 4: computed, so it does
+    not stack), headed by what it is. The figure comes first and its scope
+    straight after it. Every source is a row that opens its paper. A
+    question that cannot be answered gets a sentence, not an empty state.
+  - **RecallOS solution.** In the answer slot A6 uses for "Rahim's
+    number":
+    - **A warranty question:** a block per matching warranty. *Covered
+      until* and the day in roman serif (a standalone numeral, rule 3), its
+      working ("Calculated from the receipt's purchase date…"), then *From*
+      with the warranty and its receipt as rows that open them. With no end
+      known, it says what would give one.
+    - **What ends when:** headed *Ends in the next 90 days* with a count;
+      one row per warranty with its last day, how it is known, and how far
+      off. An empty window is a sentence: *Nothing you saved ends in the
+      next 90 days.*
+    - **A total:** the figure in roman serif, *in saved receipts* (never
+      "spent"), the scope ("1–31 Oct 2026 · 1 receipt you checked"), the
+      shop or category, up to three counted receipts as rows, and one row to
+      Receipt totals for what was not added.
+    - **Cannot answer:** one plain sentence in the same slot, with the words
+      still searched below it when that helps.
+    - **Plus:** the A6 line, worded for the question ("Questions about dates
+      come with RecallOS Plus"), opening Plus.
+  - **States.** Answer; several answers; nothing in the window; end not
+    known; cannot answer; Plus needed; a source in the bin (never listed, as
+    the queries already exclude it).
+  - **Implementation impact.**
+    - new `lib/features/ask/presentation/ask_answers.dart`;
+    - `home_screen.dart` places it in the answer slot;
+    - `PlusFilterLine` takes its sentence;
+    - B3's `PaperRow` is reused for sources.
+
+    No new tokens or components.
+
+- [x] ✅ **M7½. UX pass over the core flow** (owner, 7 Oct). **Done 15 Oct**
+  (STATUS M7½, fixes 1–11), **walked on the phone the same day**: nine
+  more faults found and fixed with tests (STATUS M7½ step 12). Ten fixes, each
+  with a test that taps or measures it, and a rendered check of every changed
+  screen in light, dark and 1.3×. 1,057 tests pass.
+
+  **Design reasoning (15 Oct, `design/UX-PROTOCOL.md` §17–§18):**
+  - **UX objective.** Scan → remember → retrieve should feel finished
+    beside mature apps:
+    - the first screen says only true things;
+    - a question gets room for its answers;
+    - a card leads with its actions;
+    - a person shows why they matter;
+    - numbers read as written;
+    - what ends soon is on Today.
+  - **Existing problems** (audit: the phone's 7 Oct build by screenshots,
+    renders of B2–B5, a code search):
+    - onboarding claimed "the camera, and nothing else", but A2 asks for
+      notifications;
+    - while typing, the heading left one answer visible;
+    - *Scan a card* for a button that also saves receipts;
+    - *Call* below three blocks;
+    - the person screen without its note or next step;
+    - `0255012345`-style numbers;
+    - warranty ends missing from Today;
+    - *Contacts* versus *People*;
+    - a stop word marked as a match;
+    - a Material date picker.
+  - **References studied.** Mobbin is **not connected**, so no Mobbin
+    screen was inspected. Searches to run when it is:
+    - *onboarding permissions explanation*;
+    - *search focused state keyboard*;
+    - *contact detail actions*;
+    - *person profile notes*;
+    - *phone number formatting*;
+    - *today agenda upcoming expiry*.
+
+    The decisions rest on the phone screenshots, the app's own blocks, and
+    general mobile patterns, not on any named app.
+  - **Lessons.**
+    - A focused search gives the screen to results.
+    - A detail screen puts its primary actions next to the name.
+    - A profile shows the relationship, not only the record.
+    - Permission copy names every permission and when it is asked.
+  - **RecallOS solution.**
+    - Each fix uses existing pieces: `AnimatedSize` over the heading, the
+      card's existing action row moved up, the card note block reused on
+      the person, a display-only phone formatter, Today's existing row style
+      for *Ending soon*, and a date-picker theme from `AppColors`.
+    - No new tokens.
+    - The wallet metaphor and the five rules are unchanged (§19: no
+      redesign for its own sake).
+  - **States.**
+    - heading: folded with a question, back when cleared;
+    - person: no note, several cards with notes, no next step;
+    - phone: a mobile, a landline, a foreign number (only BD mobiles are
+      regrouped);
+    - *Ending soon*: none, one, several, ended (not listed);
+    - date picker: light and dark.
+  - **Implementation impact.**
+    - `onboarding_screen.dart`, `home_screen.dart`,
+      `card_detail_screen.dart`, the contacts screens, `phone.dart` with
+      its display sites, `today_screen.dart`, `match_evidence.dart`
+      (stop words) and `app_theme.dart` (date picker);
+    - tests for each.
 
 ### Release C — after the judging
 
@@ -645,12 +1179,19 @@ No "100% accurate", "military-grade" or "never miss a deadline" anywhere.
 
 - [ ] **OCR on cards** — character error rate and per-field F1, bucketed Latin /
   Bengali / mixed, on the benchmark build. Needs 30+ hand-labelled cards.
+  *Harness ready* (bench screen → `tool/spike/score.dart` or
+  `test/eval/ocr_score_test.dart`).
 - [ ] **Receipt and warranty extraction** — per-field F1 on real documents,
-  reported separately for Bangla and thermal-printed receipts.
-- [ ] **Classification** — accuracy and macro-F1.
+  reported separately for Bangla and thermal-printed receipts. *Harness
+  ready, 15 Oct* (`lib/core/eval/ocr_scoring.dart`: `script` and `group`
+  buckets).
+- [ ] **Classification** — accuracy and macro-F1. *Harness ready, 15 Oct*
+  (`ClassificationScorer`).
 - [ ] **Retrieval** — keyword vs semantic vs hybrid: P@3, MRR, NDCG over a
-  labelled set of English and Banglish queries.
+  labelled set of English and Banglish queries. *Harness ready, 15 Oct*
+  (bench screen → *Run a question set*, all three modes).
 - [ ] **Duplicates and link suggestions** — precision, recall, false-link rate.
+  *Link harness ready, 15 Oct* (question set `links`, on the phone).
 - [ ] **Ask RecallOS** — answer accuracy and grounded-answer rate (every
   statement traceable to a stored fact) on a fixed question set.
 - [ ] **Users** — System Usability Scale with the 20–30 closed-test users, plus a
@@ -671,17 +1212,28 @@ instant), with the build we have then.
 
 | Dates | Build | Play Store / evidence |
 |---|---|---|
-| 29 Sep – 2 Oct | ✅ F1–F4 · store listing, screenshots, upload-key bundle | **Owner:** Play Console account and ID check, upload key, `applicationId`, 12+ testers (aim for 20), merchant profile |
-| **by ~3 Oct** | current build (F1–F4) | internal test → **closed test live**: Google's 14-day clock starts |
-| 3 – 9 Oct | A1 ✅ + A2 ✅ checked on the phone · A3 ✅ intro handoff · A4 ✅ My Card QR · billing no-INTERNET spike ✅ (permissions; purchase waits on Play Console) · CI runner pinned ✅ | update to testers; OCR labels from real cards |
-| 10 – 16 Oct | A7 Offline Plus · A8 gates | update to testers; licence-test purchases |
-| ~17 Oct | — | 14 days done → **apply for production** |
-| **20 Oct** | **First release on Play: Release A core** (A1–A4, A7, A8) | public |
-| 20 – 26 Oct | A5 Event Mode ✅ (built early, 4 Oct) · A6 people search · B1 schema v11 (rehearsed on a copy; backup first) | update |
-| 27 Oct – 2 Nov | B2 receipts + warranties · B3 linking + expiry · B4 spending totals | update; receipt / warranty labels; retrieval query set |
-| 3 – 7 Nov | B5 Ask RecallOS · evaluation runs (OCR, retrieval) · short usability study | update |
-| 8 – 9 Nov | freeze — fixes only; golden journeys on the phone | report and demo rehearsal |
-| **10 Nov** | **Final release on Play + final code** | **submitted to the university; judged on this** |
+| 29 Sep – 2 Oct | ✅ F1–F4 · store listing, screenshots, upload-key bundle | Play Console account, upload key, `applicationId` |
+| 3 – 7 Oct | ✅ A1–A4 checked on the phone · ✅ A5 Event Mode · ✅ A7 built · billing no-INTERNET spike ✅ · CI runner pinned ✅ | ✅ v1 on Internal (4 Oct) and Closed - Alpha (approved 6 Oct); 14 testers invited 7 Oct |
+| 7 Oct | **M0** plan re-pinned; worktrees cleared | watch opt-ins |
+| 8 – 11 Oct | **M1** A6 people search | — |
+| 12 – 13 Oct | **M2** versionCode 2 · A7 real purchases on a Play-installed build | v2 to Internal + Alpha; licence-test purchase, refund, restore, promo code |
+| 13 – 16 Oct | **M3** B1 schema v11 (rehearsed on the phone's in-app backup) | OCR labels from real cards (owner, 16 Oct) |
+| ~21 Oct | — | 14 days done → **apply for production** with v2 (A8) |
+| 17 – 24 Oct | **M4** B2 receipts + warranties | v3 (B1 + B2); real receipt / warranty samples (owner, ~17 Oct) |
+| 25 – 28 Oct | **M5** B3 linking + calculated expiry | — |
+| 29 – 31 Oct | **M6** B4 spending totals | v4 (B3 + B4); receipt / warranty labels (owner, 2 Nov) |
+| 1 – 5 Nov | **M7** B5 Ask RecallOS | v5 |
+| 3 – 7 Nov | **M8** evaluation runs (OCR, retrieval, receipts, Ask) · SUS study | — |
+| 8 – 9 Nov | **M9** freeze — fixes only; the three §3 stories on the phone, airplane mode | report and demo rehearsal |
+| **10 Nov** | **M10 Final release on Play + final code** | **submitted to the university; judged on this** |
+
+**Superseded later on 7 Oct:** the dates above no longer bind. Build in this
+order, as fast as possible; the public launch carries every feature, around
+20 Nov (`docs/STATUS.md` → *The order of work*).
+
+The first public release is no longer 20 Oct. The closed test went live on
+6 Oct and testers were invited on 7 Oct, so the 14 days end around 21 Oct at
+the earliest, followed by Google's production review.
 
 **Stop rules:**
 - No destructive data change before a restore is proven — met (F3, 29 Sep).
@@ -699,11 +1251,13 @@ instant), with the build we have then.
 - [x] ✅ **Play Console account** — exists and verified (email and phone), checked 2026-10-04.
 - [x] ✅ **Personal account.** Once Plus is on sale, Google Play shows the account's address publicly.
 - [x] ✅ **Upload key made and wired** (2026-10-04): the key file outside the repository, `android/key.properties` written by the owner (gitignored, mode 600). The first signed bundle verified: signed by the upload key (CN=Arafat, O=RecallOS, SHA256withRSA 2048), the eight allowlisted permissions, no `INTERNET`. Still the owner's: back the key file and its passwords up in two places off this laptop.
-- [x] ✅ **App created in Play Console, 2026-10-04:** title *RecallOS*, package `com.recallos.recallos` — registered at creation under Android developer verification, so it is permanent now — English (US), App, **Free** (Plus is sold inside it), Play App Signing terms accepted, Google's automatic protection left on. **To check after the first upload:** download the APK Play delivers (App bundle explorer) and confirm it still carries no `INTERNET` — the protection adds code after upload, where our own check cannot see it; if it does, turn protection off.
+- [x] ✅ **App created in Play Console, 2026-10-04:** title *RecallOS*, package `com.recallos.recallos` — registered at creation under Android developer verification, so it is permanent now — English (US), App, **Free** (Plus is sold inside it), Play App Signing terms accepted, Google's automatic protection left on. **Checked after the first upload (6 Oct):** App bundle explorer lists the delivered version's permissions as ours plus `com.android.vending.CHECK_LICENSE` (the protection's installer check, through the Play Store app) — no `INTERNET`, so protection stays on. Re-check after every upload (`docs/RELEASE.md`).
 - [x] ✅ **Payments profile created** (2026-10-04). Still the owner's: the bank details for payouts when Google asks, and the **15% service-fee enrolment** (Play Console notification of 4 Oct) — without it Google takes 30%.
 - [x] ✅ **Licence key in the app** (2026-10-04, `lib/features/plus/data/play_key.dart`; a 2048-bit RSA key, checked by `release_surface_test.dart`). Plus is offered from this build on.
-- [ ] **For RecallOS Plus (A7):** create the one-time product `recallos_plus` and set its price; add licence testers (Settings → Licence testing) so test purchases are free.
-- [ ] **By 2 Oct:** about 20 closed testers lined up (Gmail addresses); at least 12 must opt in and stay for all 14 days.
+- [x] ✅ **RecallOS Plus product** created and activated by the owner (2026-10-04): `recallos_plus` (price in `business/`).
+- [x] ✅ **Licence testers** (6 Oct): the *RecallOS testers* list, so test purchases are free. Take them off at launch if any of their purchases should count as real sales.
+- [x] ✅ **Closed testers** (6 Oct, later than the 2 Oct target): 14 Gmail addresses, on Internal, Closed testing - Alpha and licence testing. At least 12 must opt in and stay for all 14 days — more names would widen a two-person margin.
+- [x] ✅ **Review passed** (published 6 Oct) and **testers invited 7 Oct, 20:47** — one email from the support address, all 14 in Bcc, with the closed-test opt-in link `https://play.google.com/apps/testing/com.recallos.recallos`, and asked to keep the app 14 days. **Next:** watch the opted-in count in Play Console (Closed testing - Alpha); 12+ must stay opted in for 14 continuous days before production access can be applied for — at the earliest ~21 Oct if they join now, then Google's production review.
 - [ ] Hand-label cards (by 16 Oct), receipts and warranties (by 2 Nov) for §6.
 - [x] ✅ Dates set (2026-09-29): first Play release 20 Oct, final submission 10 Nov.
 - [ ] Agree with the group partner which parts they own (proposed: the evaluation dataset and QA, or the receipt/warranty slice).

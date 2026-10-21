@@ -20,7 +20,7 @@ RecallOS: Business Card Wallet
 Scan business cards, note why they mattered, find people by what you need.
 ```
 
-**Full description** (2302/4000):
+**Full description** (3413/4000):
 
 ```
 RecallOS is a business-card wallet that remembers why you kept each card.
@@ -42,6 +42,16 @@ FOLLOW UP
 • Note where and when you met.
 • Mark a step done — and bring it back if you change your mind.
 
+RECEIPTS AND WARRANTIES
+• The same Scan saves a receipt or a warranty. RecallOS tells which it is, or asks you.
+• A receipt keeps its shop, date and total; a warranty keeps the product, its serial or IMEI number and how long the cover lasts. Totals and dates ask you to check them before anything counts on them.
+• When a warranty and a receipt share a serial or invoice number, RecallOS suggests they belong together and shows why. You decide.
+• It works out when the cover ends, says how it worked it out, and reminds you a month before.
+• This month's total of the receipts you checked, one currency at a time. Anything unchecked is listed apart, never added.
+
+ASK IN YOUR OWN WORDS
+• "When does my laptop warranty expire?", "Rahim's number" — the answer comes with the card or receipt it was read from, or a plain "no saved warranty matches".
+
 SAY HELLO
 • RecallOS drafts a short first message from your card and where you met. You change what you like and send it yourself in WhatsApp, SMS or email.
 
@@ -54,14 +64,19 @@ PEOPLE, NOT JUST CARDS
 
 PRIVATE BY DESIGN
 • Everything stays on your phone. RecallOS has no account and no server, and it is built without Android's internet permission, so it cannot send your contacts anywhere.
-• Card details and photos are encrypted on the phone.
+• Card, receipt and warranty details and photos are encrypted on the phone.
 • An optional fingerprint or PIN lock.
 • Encrypted backup to a file you keep, which restores on any phone.
 • Deleted cards wait 30 days in Recently deleted before they are gone.
 
 RECALLOS PLUS
-The free version keeps up to 5 reminders waiting at a time. RecallOS Plus is a one-time purchase that removes the limit. Scanning, search, notes, next steps, Say hello, your QR card, backup and the lock are always free.
+The free version keeps up to 5 reminders waiting at a time. RecallOS Plus is a one-time purchase that removes the limit and adds Event Mode, finding people by when you met, receipt totals for any month, shop and category, and questions about dates and totals ("what expires in the next 90 days?"). Scanning, search, notes, next steps, receipts and warranties, this month's total, warranty reminders, Say hello, your QR card, backup and the lock are always free.
 ```
+
+**15 Oct:** the *Receipts and warranties*, *Ask* and *Plus* lines were
+added for Release B and checked against the test suite, not yet on the
+phone. Walk each on a release build before pasting them into Play Console,
+and add a receipt or warranty screenshot then.
 
 Every claim above was checked against the build: Bangladeshi phone formats,
 the read-from highlight, people grouping with undoable merges, encrypted

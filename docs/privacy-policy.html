@@ -43,11 +43,13 @@
 <main>
 
 <h1>RecallOS — Privacy Policy</h1>
-<p class="meta">Last updated 4 October 2026</p>
+<p class="meta">Last updated 15 October 2026</p>
 
-<p>RecallOS is a business-card wallet that runs entirely on your phone. You
-photograph a card, the app reads it, and you find the person later by what you
-needed them for.</p>
+<p>RecallOS is a wallet for business cards, receipts and warranties that runs
+entirely on your phone. You photograph a card, the app reads it, and you find
+the person later by what you needed them for; you photograph a receipt or a
+warranty, and RecallOS keeps what it says, when the cover ends, and what your
+saved receipts add up to.</p>
 
 <p><strong>RecallOS collects no data. Nothing you put into it is transmitted
 anywhere, because there is nowhere for it to go: there is no RecallOS server,
@@ -71,6 +73,12 @@ itself enforces.</p>
       websites and postal addresses read from those cards or corrected by you.</li>
   <li>The raw text the on-device reader extracted from each card.</li>
   <li>Notes you write about why a card mattered.</li>
+  <li>The receipts and warranties you photograph, and what is read from them:
+      a receipt's shop, date, total and currency, invoice number and a guessed
+      category; a warranty's product, brand, model, serial or IMEI number,
+      length of cover and the dates printed on it. Also the links you confirm
+      between a warranty and its receipt, and the end of cover RecallOS
+      calculates from them.</li>
   <li>Next steps and reminders you set, and where and when you met someone,
       if you say.</li>
   <li>The events you name in Event Mode, and when they started and ended.
@@ -108,10 +116,14 @@ not copied to Google Drive or transferred to a new phone.</p>
       optional lock. Android performs the check and returns yes or no; no
       fingerprint or face data reaches the app.</li>
   <li><strong>Notifications</strong> — asked for only when you set your first
-      reminder on a next step. Reminders are scheduled by Android on your
-      phone; nothing is sent anywhere. On a locked screen a reminder shows
-      only that RecallOS has one, not who it is about. RecallOS also asks
-      Android to put reminders back after the phone restarts.</li>
+      reminder on a next step, or when you tap <em>Turn on notifications</em>
+      beside a warranty's end. A warranty you save gets a reminder a month
+      before its cover ends, in its own notification channel that you can
+      silence in Android's settings. Reminders are scheduled by Android on
+      your phone; nothing is sent anywhere. On a locked screen a reminder
+      shows only that RecallOS has one, not who or what it is about.
+      RecallOS also asks Android to put reminders back after the phone
+      restarts.</li>
 </ul>
 
 <p>RecallOS does not read your contacts, your location, your microphone, your
@@ -119,10 +131,13 @@ files, or the other apps installed on your phone.</p>
 
 <h2>Text recognition and search</h2>
 
-<p>Reading a card uses Google ML Kit's text recognition, which runs on your
-device with a model included in the app — no image or text is uploaded.
-Searching by meaning uses a small word model that is also bundled inside the
-app. RecallOS does not use any generative AI, on the phone or anywhere else.</p>
+<p>Reading a card, a receipt or a warranty uses Google ML Kit's text
+recognition, which runs on your device with a model included in the app — no
+image or text is uploaded. Telling a receipt from a warranty, suggesting which
+receipt a warranty belongs to, and answering a question typed into search are
+done by fixed rules over what is stored on the phone. Searching by meaning
+uses a small word model that is also bundled inside the app. RecallOS does not
+use any generative AI, on the phone or anywhere else.</p>
 
 <p>The document-scanner screen is provided by Google Play services, which may
 download its scanner component the first time you use it. That is a Google Play

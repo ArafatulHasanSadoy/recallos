@@ -187,6 +187,19 @@ unzip -o -p /tmp/recallos.apks universal.apk > /tmp/recallos-universal.apk
 # CI runs the same script on every push.
 tool/ci/check_permissions.sh
 
+# What Play delivers is not the bundle: automatic protection adds code after
+# upload, where the script above cannot look. Check the app version in Play
+# Console → App bundle explorer → Details → Permissions after every upload.
+# 1.0.0 (versionCode 1, 6 Oct): the eight above plus
+# com.android.vending.CHECK_LICENSE — the protection's installer check, which
+# asks the Play Store app — and still no INTERNET.
+
+# Android backup must stay off. A dependency can declare backup rules of its
+# own: cunning_document_scanner 3.0.3 does, and the merge refused the build
+# until <application> said tools:replace (7 Oct 2026). Expect
+# allowBackup=false and fullBackupContent=false:
+#   aapt2 dump xmltree --file AndroidManifest.xml <apk> | grep -i backup
+
 # 16 KB pages: every native library must pass (required from 1 Feb 2027).
 zipalign -c -P 16 -v 4 /tmp/recallos-universal.apk | grep '\.so'
 
@@ -241,8 +254,42 @@ testing or production.
 | Target audience | 18+, with Restrict Minor Access — keeps the app clear of the Families policy |
 | News app | No |
 | Government / health | No to both. The **Health apps** declaration still has to be completed |
-| Financial features | **Re-answer when spending totals ship.** Expense tracking from saved receipts is not lending or trading, but which category Play expects for it is unverified — read the options and answer truthfully |
+| Financial features | **Re-answer now that receipt totals (B4) are built.** Recommended: *My app doesn't provide any financial features* — see below |
 | Data safety | see below |
+
+### Financial features — checked 15 Oct 2026
+
+Google's help article lists the options as
+([source](https://support.google.com/googleplay/android-developer/answer/13849271?hl=en)):
+
+- **Banking and loans:** personal loan direct lender, loan facilitator,
+  payday loans, banking, line of credit, earned wage advances, microfinance
+  banking.
+- **Payments and transfers:** mobile payments and digital wallets, money
+  transfer and wire services.
+- **Purchase agreements:** rewards and points, buy now pay later.
+- **Trading and funds:** crypto wallets and exchanges, NFTs, stock trading
+  and portfolio management, crowdfunding and chit funds.
+- **Support services:** credit monitoring and reporting, financial advice,
+  insurance, other.
+
+An app with none must still file the form and certify *"My app doesn't
+provide any financial features."*
+
+None of the options names budgeting or expense tracking that moves no
+money. RecallOS's receipt totals add up the user's own photographed
+receipts on the phone:
+- no account or money is touched;
+- no credit, payment, trading or advice is offered;
+- the wording is "in saved receipts", never "spent".
+
+**Recommendation:** *My app doesn't provide any financial features.*
+*Support services → Other* is the only other plausible box, and nothing in
+the app is a financial service. This is a reading of the list, not a ruling
+from Google: read the live form's help text before submitting, as for Data
+safety, and if Play's form has changed since 15 Oct, answer what it says.
+RecallOS Plus is a one-time purchase through Play Billing, and an in-app
+purchase is not one of the listed features.
 
 ### Data safety — the one that matters
 
