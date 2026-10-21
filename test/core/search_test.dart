@@ -301,4 +301,65 @@ void main() {
       expect(trustFromFeedback(useful: 0, notRelevant: 5), lessThan(0.3));
     });
   });
+
+  group('how well the notes answer', () {
+    test('a rare word is worth more than a common one', () {
+      final double rare = inverseDocumentFrequency(cards: 20, cardsWithTerm: 1);
+      final double common = inverseDocumentFrequency(
+        cards: 20,
+        cardsWithTerm: 12,
+      );
+      expect(rare, greaterThan(common));
+      // A word on every card still counts a little, never against.
+      expect(
+        inverseDocumentFrequency(cards: 20, cardsWithTerm: 20),
+        greaterThan(0),
+      );
+    });
+
+    test('coverage is the share of the query weight found in the notes', () {
+      const Map<String, double> weights = <String, double>{
+        'ac': 3,
+        'repair': 1,
+      };
+      expect(noteCoverage(termWeights: weights, matchedInNotes: <String>[]), 0);
+      expect(
+        noteCoverage(termWeights: weights, matchedInNotes: <String>['ac']),
+        closeTo(0.75, 1e-9),
+      );
+      expect(
+        noteCoverage(termWeights: weights, matchedInNotes: <String>['repair']),
+        closeTo(0.25, 1e-9),
+      );
+      expect(
+        noteCoverage(
+          termWeights: weights,
+          matchedInNotes: <String>['ac', 'repair', 'ac'],
+        ),
+        1,
+      );
+    });
+
+    test('similarity below the floor is no match at all', () {
+      expect(noteSimilarity(0.2), 0);
+      expect(noteSimilarity(0.25), 0);
+      expect(noteSimilarity(1), 1);
+      expect(noteSimilarity(0.727), greaterThan(noteSimilarity(0.506)));
+    });
+
+    test('words and meaning both count; words alone without an embedder', () {
+      // "AC servicing" and "laptop repair" each share one word with "AC
+      // repair" and tie on words; on meaning the first is the answer.
+      final double acServicing = noteRelevance(
+        coverage: 0.5,
+        similarity: noteSimilarity(0.727),
+      );
+      final double laptopRepair = noteRelevance(
+        coverage: 0.5,
+        similarity: noteSimilarity(0.506),
+      );
+      expect(acServicing, greaterThan(laptopRepair));
+      expect(noteRelevance(coverage: 0.5), 0.5);
+    });
+  });
 }
