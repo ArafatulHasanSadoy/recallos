@@ -5,6 +5,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../../../core/db/enums.dart';
+import '../../../core/domain/local_date.dart';
+import '../../../core/extraction/receipt_extractor.dart' show formatDay;
 import 'follow_up_repository.dart';
 import 'reminder_engine.dart';
 
@@ -44,6 +47,69 @@ class ReminderResponse {
       reminderId: v['reminder'],
     );
   }
+}
+
+/// What a reminder says, and where Android files it.
+///
+/// Pure, so the words are tested without a phone. A next step is the user's
+/// own words over the card it is about, with Done and Snooze. A warranty's
+/// end (B3) is not a task — there is nothing to mark done and nothing to
+/// snooze an hour — so it says what is ending and when, sits in its own
+/// channel (which the user can silence without silencing their next steps),
+/// and a tap opens the warranty.
+class ReminderNotice {
+  const ReminderNotice._({
+    required this.title,
+    required this.body,
+    required this.channelId,
+    required this.channelName,
+    required this.channelDescription,
+    required this.actionable,
+  });
+
+  factory ReminderNotice.of(PendingReminder r) {
+    final DateTime? due = r.dueOn;
+    if (r.kind == DateKind.warrantyExpiry && due != null) {
+      final int days = DateTime.utc(due.year, due.month, due.day)
+          .difference(
+            DateTime.utc(r.remindAt.year, r.remindAt.month, r.remindAt.day),
+          )
+          .inDays;
+      final String when = switch (days) {
+        <= 0 => 'today',
+        1 => 'tomorrow',
+        7 => 'in a week',
+        _ => 'in $days days',
+      };
+      return ReminderNotice._(
+        title: 'Warranty ends $when',
+        body:
+            '${r.cardTitle} · covered until '
+            '${formatDay(LocalDate.fromDateTime(due))}',
+        channelId: 'warranties',
+        channelName: 'Warranties',
+        channelDescription: 'When a warranty you saved is about to end.',
+        actionable: false,
+      );
+    }
+    return ReminderNotice._(
+      title: r.stepTitle,
+      body: r.cardTitle,
+      channelId: LocalNotificationPort._channelId,
+      channelName: 'Next steps',
+      channelDescription: 'Reminders for the next steps you set on cards.',
+      actionable: true,
+    );
+  }
+
+  final String title;
+  final String body;
+  final String channelId;
+  final String channelName;
+  final String channelDescription;
+
+  /// Whether Done and Snooze are offered.
+  final bool actionable;
 }
 
 /// Reminders through `flutter_local_notifications`.
@@ -157,21 +223,22 @@ class LocalNotificationPort implements NotificationPort {
   @override
   Future<void> schedule(PendingReminder r) async {
     await _init();
+    final ReminderNotice notice = ReminderNotice.of(r);
     await _plugin.zonedSchedule(
       id: r.id,
-      title: r.stepTitle,
-      body: r.cardTitle,
+      title: notice.title,
+      body: notice.body,
       scheduledDate: tz.TZDateTime.from(r.remindAt, tz.local),
       payload: ReminderResponse.payloadFor(r),
       // Inexact on purpose: exact alarms need a permission Play reserves for
       // alarm clocks and calendars, and a follow-up a few minutes late is
       // still on time.
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _channelId,
-          'Next steps',
-          channelDescription: 'Reminders for the next steps you set on cards.',
+          notice.channelId,
+          notice.channelName,
+          channelDescription: notice.channelDescription,
           importance: Importance.high,
           priority: Priority.high,
           category: AndroidNotificationCategory.reminder,
@@ -179,18 +246,20 @@ class LocalNotificationPort implements NotificationPort {
           // On a locked phone Android shows only that RecallOS has a
           // reminder; who it is about stays behind the unlock.
           visibility: NotificationVisibility.private,
-          actions: <AndroidNotificationAction>[
-            AndroidNotificationAction(
-              ReminderResponse.done,
-              'Done',
-              showsUserInterface: true,
-            ),
-            AndroidNotificationAction(
-              ReminderResponse.snooze,
-              'Snooze 1 hour',
-              showsUserInterface: true,
-            ),
-          ],
+          actions: notice.actionable
+              ? const <AndroidNotificationAction>[
+                  AndroidNotificationAction(
+                    ReminderResponse.done,
+                    'Done',
+                    showsUserInterface: true,
+                  ),
+                  AndroidNotificationAction(
+                    ReminderResponse.snooze,
+                    'Snooze 1 hour',
+                    showsUserInterface: true,
+                  ),
+                ]
+              : null,
         ),
       ),
     );

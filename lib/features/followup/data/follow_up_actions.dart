@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/day_words.dart';
+import '../../search/data/search_repository.dart';
 import 'follow_up_answers.dart';
 import 'follow_up_repository.dart';
 import 'reminder_engine.dart';
@@ -10,6 +11,7 @@ final followUpActionsProvider = Provider<FollowUpActions>(
   (Ref ref) => FollowUpActions(
     repo: ref.watch(followUpRepositoryProvider),
     engine: ref.watch(reminderEngineProvider),
+    reindex: ref.watch(searchRepositoryProvider).reindexCard,
   ),
 );
 
@@ -22,14 +24,21 @@ class FollowUpActions {
     required this.repo,
     required this.engine,
     this.now = DateTime.now,
+    this.reindex,
   });
 
   final FollowUpRepository repo;
   final ReminderEngine engine;
   final DateTime Function() now;
 
-  Future<void> setEncounter(int cardId, EncounterAnswer a) =>
-      repo.setEncounter(cardId: cardId, metOn: a.metOn, place: a.place);
+  /// Rebuilds a card's search rows. Where someone was met is searchable
+  /// ("CSE fest"), so changing it has to reach the index.
+  final Future<void> Function(int cardId)? reindex;
+
+  Future<void> setEncounter(int cardId, EncounterAnswer a) async {
+    await repo.setEncounter(cardId: cardId, metOn: a.metOn, place: a.place);
+    await reindex?.call(cardId);
+  }
 
   /// Adds a step. Returns false when a reminder was asked for but Android is
   /// not allowed to show it — the step is saved either way, and the screen

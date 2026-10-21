@@ -5,6 +5,7 @@ import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../capture/data/card_repository.dart';
+import '../../contacts/data/identity_repository.dart';
 
 final followUpRepositoryProvider = Provider<FollowUpRepository>(
   (Ref ref) => FollowUpRepository(ref.watch(databaseProvider)),
@@ -31,6 +32,12 @@ final finishedStepsProvider = StreamProvider.family<List<ImportantDate>, int>(
 /// Every open next step on a live card: what Today is made of.
 final openFollowUpsProvider = StreamProvider<List<TodayEntry>>(
   (Ref ref) => ref.watch(followUpRepositoryProvider).watchOpen(),
+);
+
+/// Every warranty end still to come on a live warranty, soonest first
+/// (B3's `warrantyExpiry` dates): what Today's *Ending soon* is picked from.
+final warrantyEndsProvider = StreamProvider<List<TodayEntry>>(
+  (Ref ref) => ref.watch(followUpRepositoryProvider).watchWarrantyEnds(),
 );
 
 /// A calendar day, as local midnight. Encounter and due dates are days, and
@@ -133,6 +140,8 @@ class PendingReminder {
     required this.remindAt,
     required this.stepTitle,
     required this.cardTitle,
+    this.kind = DateKind.followUp,
+    this.dueOn,
   });
 
   /// Also the Android notification id.
@@ -142,6 +151,13 @@ class PendingReminder {
   final DateTime remindAt;
   final String stepTitle;
   final String cardTitle;
+
+  /// What the date is: a follow-up the user set, or (from B3) an expiry.
+  final DateKind kind;
+
+  /// The day the date falls on, at local midnight — a warranty's last
+  /// covered day, which its notice names.
+  final DateTime? dueOn;
 }
 
 /// When and where the user met someone, and what they said they would do next.
@@ -278,6 +294,7 @@ class FollowUpRepository {
                       ..where(
                         ($ImportantDatesTable d) =>
                             d.cardId.equals(cardId) &
+                            d.kind.equalsValue(DateKind.followUp) &
                             d.status.equalsValue(DateStatus.open) &
                             d.deletedAt.isNull(),
                       )
@@ -316,6 +333,7 @@ class FollowUpRepository {
           ..where(
             ($ImportantDatesTable d) =>
                 d.cardId.equals(cardId) &
+                d.kind.equalsValue(DateKind.followUp) &
                 d.status.equalsValue(DateStatus.open).not() &
                 d.deletedAt.isNull() &
                 d.updatedAt.isBiggerOrEqualValue(since),
@@ -328,13 +346,21 @@ class FollowUpRepository {
   }
 
   /// Open next steps on one card, soonest first, each with its live reminder.
+  ///
+  /// Follow-ups only. `important_dates` will hold other kinds of date — a
+  /// warranty's expiry (B3) — and those are not things the user said they
+  /// would do next.
   Stream<List<NextStep>> watchOpenSteps(int cardId) {
     return _db
         .customSelect(
           'SELECT id FROM important_dates '
           "WHERE card_id = ? AND status = 'open' AND deleted_at IS NULL "
+          'AND kind = ? '
           'ORDER BY due_on, id',
-          variables: <Variable<Object>>[Variable<int>(cardId)],
+          variables: <Variable<Object>>[
+            Variable<int>(cardId),
+            Variable<String>(DateKind.followUp.name),
+          ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             _db.importantDates,
             _db.reminders,
@@ -477,6 +503,7 @@ class FollowUpRepository {
   ///
   /// A deleted card's steps drop out without being touched, and come back
   /// with it on restore — the same soft delete everything else follows.
+  /// Follow-ups only, as on the card: a warranty's expiry is not a next step.
   Stream<List<TodayEntry>> watchOpen() {
     return _db
         .customSelect(
@@ -484,6 +511,7 @@ class FollowUpRepository {
           'JOIN cards c ON c.id = d.card_id '
           "WHERE d.status = 'open' AND d.deleted_at IS NULL "
           'AND c.deleted_at IS NULL '
+          "AND d.kind = 'followUp' "
           'ORDER BY d.due_on, d.id',
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
             _db.importantDates,
@@ -515,11 +543,55 @@ class FollowUpRepository {
         });
   }
 
-  /// How many reminders are waiting — exactly the ones Android should hold,
-  /// so the free limit counts what the user can see coming and nothing else.
-  /// A reminder already sent, a finished step or a deleted card frees its
-  /// place.
-  Future<int> activeReminderCount() async => (await pendingReminders()).length;
+  /// Every open warranty end on a warranty that is not in the bin, soonest
+  /// first, titled by the warranty (M7½: Today's *Ending soon*). Which of
+  /// them are "soon" is the screen's to say, against the clock, as with the
+  /// steps.
+  Stream<List<TodayEntry>> watchWarrantyEnds() {
+    return _db
+        .customSelect(
+          'SELECT d.id AS id, d.card_id AS card_id FROM important_dates d '
+          'JOIN cards c ON c.id = d.card_id '
+          "WHERE d.status = 'open' AND d.deleted_at IS NULL "
+          "AND c.deleted_at IS NULL AND c.type = 'warrantyCard' "
+          "AND d.kind = 'warrantyExpiry' "
+          'ORDER BY d.due_on, d.id',
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            _db.importantDates,
+            _db.cards,
+            _db.cardFields,
+          },
+        )
+        .watch()
+        .asyncMap((List<QueryRow> rows) async {
+          final List<TodayEntry> out = <TodayEntry>[];
+          for (final QueryRow r in rows) {
+            final ImportantDate? date = await _date(r.read<int>('id'));
+            if (date == null) continue;
+            out.add(
+              TodayEntry(
+                step: date,
+                cardId: date.cardId,
+                title: (await _whoIs(date.cardId)).title,
+              ),
+            );
+          }
+          return out;
+        });
+  }
+
+  /// How many follow-up reminders are waiting — of the ones Android should
+  /// hold, so the free limit counts what the user can see coming and nothing
+  /// else. A reminder already sent, a finished step or a deleted card frees
+  /// its place.
+  ///
+  /// Only follow-ups count. A warranty's expiry reminder (B3) is held by
+  /// Android like any other but is not one of the free five (decided 15
+  /// Oct): the user never asked for it — it comes with the warranty — and
+  /// one should never be refused because of follow-ups.
+  Future<int> activeReminderCount() async => (await pendingReminders())
+      .where((PendingReminder r) => r.kind == DateKind.followUp)
+      .length;
 
   /// The reminders Android should be holding right now: scheduled, still
   /// ahead, for an open step on a live card.
@@ -527,7 +599,9 @@ class FollowUpRepository {
     final List<QueryRow> rows = await _db
         .customSelect(
           'SELECT r.id AS id, r.remind_at AS remind_at, d.id AS step_id, '
-          'd.title AS title, d.card_id AS card_id FROM reminders r '
+          'd.title AS title, d.card_id AS card_id, d.kind AS kind, '
+          'd.due_on AS due_on '
+          'FROM reminders r '
           'JOIN important_dates d ON d.id = r.important_date_id '
           'JOIN cards c ON c.id = d.card_id '
           "WHERE r.status = 'scheduled' AND r.deleted_at IS NULL "
@@ -554,6 +628,14 @@ class FollowUpRepository {
           remindAt: r.read<DateTime>('remind_at'),
           stepTitle: r.read<String>('title'),
           cardTitle: (await _whoIs(cardId)).title,
+          // Read by name, so a kind this build does not know is held and
+          // shown like a follow-up rather than failing the whole schedule.
+          kind:
+              DateKind.values
+                  .where((DateKind k) => k.name == r.read<String>('kind'))
+                  .firstOrNull ??
+              DateKind.followUp,
+          dueOn: r.read<DateTime>('due_on'),
         ),
       );
     }
@@ -637,29 +719,33 @@ class FollowUpRepository {
     });
   }
 
-  /// A card's title and person, by the wallet's own rule: company, else the
-  /// person, else a number.
+  /// A card's title and person, by the wallet's own rule (`describeCard`):
+  /// a business card's company, else the person, else a number; a
+  /// warranty's product; a receipt's shop. A warranty's reminder used to be
+  /// titled "A card" because only a business card's fields were looked for.
   Future<({String title, String? person})> _whoIs(int cardId) async {
+    final CardRow? card = await (_db.select(
+      _db.cards,
+    )..where(($CardsTable c) => c.id.equals(cardId))).getSingleOrNull();
     final List<CardField> fields = await (_db.select(
       _db.cardFields,
     )..where(($CardFieldsTable f) => f.cardId.equals(cardId))).get();
-    String? valueOf(String key) {
-      for (final CardField f in fields) {
-        if (f.fieldKey == key) return f.value;
-      }
-      return null;
-    }
 
-    final String? person = valueOf(FieldKeys.personName);
+    final String? person = card == null || !_isPeopleCard(card.type)
+        ? null
+        : fields
+              .where((CardField f) => f.fieldKey == FieldKeys.personName)
+              .firstOrNull
+              ?.value;
     return (
       title:
-          valueOf(FieldKeys.company) ??
-          person ??
-          valueOf(FieldKeys.phone) ??
-          'A card',
+          (card == null ? null : describeCard(card, fields).title) ?? 'A card',
       person: person,
     );
   }
+
+  static bool _isPeopleCard(CardType t) =>
+      IdentityRepository.peopleCardTypes.contains(t);
 
   static String? _clean(String? raw) {
     final String t = (raw ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');

@@ -82,7 +82,19 @@ class _TodayScreenState extends ConsumerState<TodayScreen>
     final bool notificationsOn =
         ref.watch(notificationsEnabledProvider).value ?? true;
 
-    final bool nothing = view.isEmpty && pairs == 0 && repairs == 0;
+    // Warranties whose cover ends within a month (M7½). A warranty's end
+    // used to reach the user only as a notification; Today is where dated
+    // things live. Picked against the clock here, like the steps.
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime horizon = today.add(const Duration(days: 30));
+    final List<TodayEntry> ending = <TodayEntry>[
+      for (final TodayEntry e
+          in ref.watch(warrantyEndsProvider).value ?? const <TodayEntry>[])
+        if (!e.step.dueOn.isBefore(today) && !e.step.dueOn.isAfter(horizon)) e,
+    ];
+
+    final bool nothing =
+        view.isEmpty && ending.isEmpty && pairs == 0 && repairs == 0;
 
     return Scaffold(
       body: SafeArea(
@@ -138,6 +150,30 @@ class _TodayScreenState extends ConsumerState<TodayScreen>
                           now: now,
                           onDone: _done,
                         ),
+                        if (ending.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: Gap.lg),
+                          SettingGroup(
+                            label: 'Ending soon',
+                            children: <Widget>[
+                              for (final TodayEntry e in ending)
+                                SettingRow(
+                                  label: e.title,
+                                  description:
+                                      'Covered until '
+                                      '${dayMonth(e.step.dueOn, now)} · '
+                                      '${_inDays(e.step.dueOn, now)}',
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => unawaited(
+                                    openCardDetail<void>(
+                                      context,
+                                      cardId: e.cardId,
+                                      imagePath: null,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                         if (pairs > 0 || repairs > 0) ...<Widget>[
                           const SizedBox(height: Gap.lg),
                           SettingGroup(
@@ -173,6 +209,17 @@ class _TodayScreenState extends ConsumerState<TodayScreen>
       ),
     );
   }
+}
+
+/// "ends today", "ends tomorrow", "ends in 12 days" — counted to the last
+/// covered day, as B5's answers count it.
+String _inDays(DateTime lastDay, DateTime now) {
+  final int days = daysFrom(now, lastDay);
+  return switch (days) {
+    0 => 'ends today',
+    1 => 'ends tomorrow',
+    _ => 'ends in $days days',
+  };
 }
 
 class _Section extends StatelessWidget {

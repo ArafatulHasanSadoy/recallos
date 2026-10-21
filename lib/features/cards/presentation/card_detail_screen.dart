@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/db/database.dart';
+import '../../../core/db/enums.dart';
 import '../../../core/extraction/card_extractor.dart';
 import '../../../core/extraction/phone.dart';
 import '../../../core/theme/app_theme.dart';
@@ -14,6 +14,7 @@ import '../../../core/ui/card_face.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../core/ui/wallet_stack.dart';
 import '../../capture/data/card_repository.dart';
+import '../../capture/presentation/kind_sheet.dart' show noteHintFor, paperNoun;
 import '../../contacts/data/identity_repository.dart';
 import '../../followup/data/follow_up_repository.dart' show encounterProvider;
 import '../../followup/presentation/card_follow_up_blocks.dart';
@@ -21,6 +22,8 @@ import '../../introduction/data/hello.dart';
 import '../../introduction/presentation/say_hello_sheet.dart';
 import '../../profile/data/profile_repository.dart';
 import '../../search/data/search_repository.dart';
+import '../../warranty/presentation/purchase_blocks.dart';
+import 'reach_out.dart';
 import 'widgets/card_sides_view.dart';
 import 'widgets/editable_field_list.dart';
 import 'widgets/full_image_view.dart';
@@ -84,7 +87,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             ScreenHeader(
-              title: 'Card',
+              // Named for what it is: a receipt is not a card (B3).
+              title: d == null ? 'Card' : _heading(d.card.type),
               onBack: () => context.pop(),
               actions: <Widget>[
                 RoundIconButton(
@@ -157,8 +161,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     final CardRepository cards = ref.read(cardRepositoryProvider);
     final SearchRepository search = ref.read(searchRepositoryProvider);
 
+    final CardType? type = ref
+        .read(cardDetailProvider(widget.cardId))
+        .value
+        ?.card
+        .type;
     final String? result = await showNoteSheet(
       context,
+      hint: noteHintFor(type ?? CardType.visitingCard),
       question: 'Why did you save this?',
       explanation: current == null
           ? "You'll search by this later, so write it how you'd say it."
@@ -176,11 +186,23 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     await search.reindexCard(widget.cardId);
   }
 
+  /// "Card", "Receipt", "Warranty".
+  static String _heading(CardType type) {
+    final String noun = paperNoun(type);
+    return '${noun[0].toUpperCase()}${noun.substring(1)}';
+  }
+
   Future<void> _confirmDelete(BuildContext context) async {
+    final CardType? type = ref
+        .read(cardDetailProvider(widget.cardId))
+        .value
+        ?.card
+        .type;
+    final String noun = type == null ? 'card' : paperNoun(type);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: const Text('Delete this card?'),
+        title: Text('Delete this $noun?'),
         content: const Text(
           'It moves to Recently deleted, on the Needs attention screen, and '
           'waits there for 30 days before it is removed for good.',
@@ -243,19 +265,46 @@ class _Body extends StatelessWidget {
       children: <Widget>[
         Text(detail.title, style: AppText.title(c)),
         const SizedBox(height: Gap.md),
+        // What people open a card to do — call, say hello, find the shop —
+        // straight under the name (M7½). It sat under three blocks, at the
+        // bottom edge of the screen, below the fold on a smaller phone. A
+        // card with nothing to call or mail (most receipts) has no row and
+        // no gap.
+        if (_Actions.hasAny(detail)) ...<Widget>[
+          _Actions(detail: detail),
+          const SizedBox(height: Gap.md),
+        ],
         // Always present: a card with no note is exactly the one that most
         // needs one, and hiding the block hid the only way to add it.
-        _NoteBlock(note: note, colors: c, onTap: () => onEditNote(note)),
+        _NoteBlock(
+          note: note,
+          colors: c,
+          paper: paperNoun(detail.card.type),
+          ofPerson: IdentityRepository.peopleCardTypes.contains(
+            detail.card.type,
+          ),
+          onTap: () => onEditNote(note),
+        ),
         const SizedBox(height: Gap.sm),
+        // A warranty's end and what it was bought with, a receipt's warranty
+        // (B3). Nothing for anyone's card; each block spaces itself.
+        PurchaseBlocks(cardId: detail.card.id, type: detail.card.type),
         // What happens next, then how you know them: the note says why the
         // card mattered, these two say what to do about it.
         NextStepsBlock(cardId: detail.card.id),
-        const SizedBox(height: Gap.sm),
-        MetBlock(cardId: detail.card.id, scannedOn: detail.card.capturedAt),
+        // Only somebody's card has somebody you met. A receipt bought at a
+        // fair was not met there (B2), and the block said so on every one.
+        if (IdentityRepository.peopleCardTypes.contains(
+          detail.card.type,
+        )) ...<Widget>[
+          const SizedBox(height: Gap.sm),
+          MetBlock(cardId: detail.card.id, scannedOn: detail.card.capturedAt),
+        ],
         const SizedBox(height: Gap.lg),
-        _Actions(detail: detail),
-        const SizedBox(height: Gap.lg),
-        SectionHeader('On the card', count: detail.fields.length),
+        SectionHeader(
+          'On the ${paperNoun(detail.card.type)}',
+          count: detail.fields.length,
+        ),
         const SizedBox(height: Gap.sm),
         EditableFieldList(detail: detail, onRegionChanged: onRegionChanged),
         if (detail.unassignedText.isNotEmpty) ...<Widget>[
@@ -281,11 +330,18 @@ class _NoteBlock extends StatelessWidget {
     required this.note,
     required this.colors,
     required this.onTap,
+    this.paper = 'card',
+    this.ofPerson = true,
   });
 
   final String? note;
   final AppColors colors;
   final VoidCallback onTap;
+
+  /// What the paper is called, and whether somebody's name is on it — a
+  /// receipt is not found again by a name that was forgotten.
+  final String paper;
+  final bool ofPerson;
 
   @override
   Widget build(BuildContext context) {
@@ -334,8 +390,11 @@ class _NoteBlock extends StatelessWidget {
               )
             else
               Text(
-                "Nothing yet. Add a line — it's how you'll find this card "
-                'when you have forgotten the name.',
+                ofPerson
+                    ? "Nothing yet. Add a line — it's how you'll find this "
+                          'card when you have forgotten the name.'
+                    : "Nothing yet. Add a line — it's how you'll find this "
+                          '$paper later.',
                 style: AppText.body(colors).copyWith(color: colors.inkMuted),
               ),
           ],
@@ -350,6 +409,13 @@ class _Actions extends ConsumerWidget {
   const _Actions({required this.detail});
 
   final CardDetail detail;
+
+  /// Whether the card has anything to act on: a number, an email or an
+  /// address. Every action and the hello line hang off one of the three.
+  static bool hasAny(CardDetail d) =>
+      d.allOf(FieldKeys.phone).isNotEmpty ||
+      d.valueOf(FieldKeys.email) != null ||
+      d.valueOf(FieldKeys.address) != null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -386,7 +452,13 @@ class _Actions extends ConsumerWidget {
           _ActionPill(
             label: 'Call',
             primary: true,
-            onTap: () => _open(context, Uri(scheme: 'tel', path: primaryPhone)),
+            onTap: () => reachOut(
+              context,
+              ref,
+              Uri(scheme: 'tel', path: primaryPhone),
+              cardId: detail.card.id,
+              kind: InteractionKind.callOpened,
+            ),
           ),
         // Only where a hello can go: a card with nothing but a landline has
         // no button, rather than one that opens a sheet with no way out.
@@ -412,21 +484,32 @@ class _Actions extends ConsumerWidget {
         if (primaryPhone != null && PhoneExtractor.isMobile(primaryPhone))
           _ActionPill(
             label: 'WhatsApp',
-            onTap: () => _open(
+            onTap: () => reachOut(
               context,
+              ref,
               Uri.parse('https://wa.me/${primaryPhone.replaceAll("+", "")}'),
+              cardId: detail.card.id,
+              kind: InteractionKind.messageOpened,
+              detail: 'whatsapp',
             ),
           ),
         if (email != null)
           _ActionPill(
             label: 'Email',
-            onTap: () => _open(context, Uri(scheme: 'mailto', path: email)),
+            onTap: () => reachOut(
+              context,
+              ref,
+              Uri(scheme: 'mailto', path: email),
+              cardId: detail.card.id,
+              kind: InteractionKind.emailOpened,
+            ),
           ),
         if (address != null)
           _ActionPill(
             label: 'Map',
-            onTap: () => _open(
+            onTap: () => reachOut(
               context,
+              ref,
               Uri.https('www.google.com', '/maps/search/', <String, String>{
                 'api': '1',
                 'query': address,
@@ -443,15 +526,6 @@ class _Actions extends ConsumerWidget {
         HelloLine(cardId: detail.card.id),
       ],
     );
-  }
-
-  static Future<void> _open(BuildContext context, Uri uri) async {
-    final bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Nothing on this phone can open $uri')),
-      );
-    }
   }
 }
 
