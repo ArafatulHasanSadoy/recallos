@@ -20,6 +20,10 @@ const Set<CardType> kReceiptTypes = <CardType>{
 /// The kinds of paper that have a cover and an end.
 const Set<CardType> kWarrantyTypes = <CardType>{CardType.warrantyCard};
 
+/// A receipt or a warranty: a paper about a purchase rather than a person.
+bool isPurchasePaper(CardType type) =>
+    kReceiptTypes.contains(type) || kWarrantyTypes.contains(type);
+
 /// A link from one card's point of view: the other paper, and why.
 class PurchaseLink {
   const PurchaseLink({

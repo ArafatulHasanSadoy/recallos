@@ -97,6 +97,9 @@ class ReceiptFacts {
       totalState == FactState.checked &&
       dateState == FactState.checked;
 
+  /// Money that came back: it is counted, and comes off the figure.
+  bool get isRefund => total != null && total!.minor < 0;
+
   /// What to do before it counts, in a few words: "Check the total and the
   /// date", "Add the date". Null when it counts.
   String? get whatToDo {
@@ -415,6 +418,22 @@ class SpendingSummary {
       focus: focus,
     );
   }
+
+  /// What came back in the [counted] receipts, as a positive amount, or null
+  /// when nothing did. [total] is already net of it; this is so the figure
+  /// can say so rather than quietly being smaller.
+  Money? get refunded {
+    Money? sum;
+    for (final ReceiptFacts r in counted) {
+      if (!r.isRefund) continue;
+      final Money back = Money(-r.total!.minor, r.total!.currency);
+      sum = sum == null ? back : sum + back;
+    }
+    return sum;
+  }
+
+  /// How many of the [counted] receipts are refunds.
+  int get refundCount => counted.where((ReceiptFacts r) => r.isRefund).length;
 
   final SpendingPeriod period;
 

@@ -13,9 +13,11 @@ import 'package:recallos/core/domain/local_date.dart';
 import 'package:recallos/core/domain/money.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
 import 'package:recallos/core/extraction/receipt_extractor.dart' show formatDay;
+import 'package:recallos/core/spending/spending_totals.dart';
 import 'package:recallos/core/theme/app_theme.dart';
 import 'package:recallos/features/capture/data/card_repository.dart';
 import 'package:recallos/features/plus/data/plus_controller.dart';
+import 'package:recallos/features/spending/data/spending_share.dart';
 import 'package:recallos/features/spending/presentation/spending_screen.dart';
 import 'package:recallos/router.dart';
 
@@ -134,6 +136,7 @@ void main() {
     WidgetTester tester, {
     bool plus = false,
     double textScale = 1,
+    SpendingShare? sharer,
   }) async {
     // Tall, so every section is built at once.
     tester.view.physicalSize = const Size(1080, 7200);
@@ -172,6 +175,7 @@ void main() {
           storePortProvider.overrideWithValue(FakeStore()),
           grantStoreProvider.overrideWithValue(grants),
           playKeyProvider.overrideWithValue(testPlayKey),
+          if (sharer != null) spendingShareProvider.overrideWithValue(sharer),
         ],
         child: MaterialApp.router(
           theme: AppTheme.light(),
@@ -395,4 +399,93 @@ void main() {
     }
     await unmount(tester);
   });
+
+  // B4's export: the month on screen, asked about first.
+  group('Share this total', () {
+    testWidgets('asks first, and Cancel shares nothing', (
+      WidgetTester tester,
+    ) async {
+      final FakeSharer sharer = FakeSharer();
+      await tester.runAsync(() async {
+        await receipt();
+        await receipt(shop: 'Agora', minor: 999, totalChecked: false);
+      });
+      await pump(tester, sharer: sharer);
+
+      await tester.tap(find.bySemanticsLabel('Share this total'));
+      await tester.pumpAndSettle();
+      expect(find.text('Share this total?'), findsOneWidget);
+      expect(
+        find.textContaining('October 2026: BDT 432.60 in saved receipts'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('the 1 held back'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(sharer.shared, isEmpty);
+      await unmount(tester);
+    });
+
+    testWidgets('Share hands over what the screen shows', (
+      WidgetTester tester,
+    ) async {
+      final FakeSharer sharer = FakeSharer();
+      await tester.runAsync(() async {
+        await receipt();
+        await receipt(shop: 'Agora', minor: 999, totalChecked: false);
+      });
+      await pump(tester, sharer: sharer);
+
+      await tester.tap(find.bySemanticsLabel('Share this total'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Share'));
+      await tester.pumpAndSettle();
+
+      final SpendingSummary s = sharer.shared.single;
+      expect(s.period, const SpendingPeriod.month(2026, 10));
+      expect(s.total, const Money(43260, 'BDT'));
+      expect(s.counted, hasLength(1));
+      expect(s.notAdded, hasLength(1));
+      expect(find.text('Handed to the app you chose.'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('a failed share says so', (WidgetTester tester) async {
+      final FakeSharer sharer = FakeSharer(ok: false);
+      await tester.runAsync(() async => receipt());
+      await pump(tester, sharer: sharer);
+
+      await tester.tap(find.bySemanticsLabel('Share this total'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Share'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('That did not work. Nothing was shared.'),
+        findsOneWidget,
+      );
+      await unmount(tester);
+    });
+
+    testWidgets('an empty wallet has nothing to share', (
+      WidgetTester tester,
+    ) async {
+      await pump(tester, sharer: FakeSharer());
+      expect(find.bySemanticsLabel('Share this total'), findsNothing);
+      await unmount(tester);
+    });
+  });
+}
+
+class FakeSharer extends SpendingShare {
+  FakeSharer({this.ok = true});
+
+  final bool ok;
+  final List<SpendingSummary> shared = <SpendingSummary>[];
+
+  @override
+  Future<bool> share(SpendingSummary s) async {
+    shared.add(s);
+    return ok;
+  }
 }

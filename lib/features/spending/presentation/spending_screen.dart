@@ -14,6 +14,7 @@ import '../../../router.dart';
 import '../../capture/data/card_repository.dart';
 import '../../plus/data/plus_controller.dart';
 import '../data/spending_repository.dart';
+import '../data/spending_share.dart';
 
 /// *Receipt totals* (B4): what the saved receipts add up to, and exactly
 /// what that figure is made of.
@@ -48,6 +49,11 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
       receiptFactsProvider,
     );
     final PlusPhase phase = ref.watch(plusProvider).phase;
+    final List<ReceiptFacts>? loaded = facts.value;
+    // What the screen shows is what is shared: the same summary, built once.
+    final SpendingSummary? shown = loaded == null || loaded.isEmpty
+        ? null
+        : _summaryFor(loaded, phase);
 
     final Widget body = facts.when(
       // Rule 5: a ghost, never a spinner.
@@ -80,9 +86,57 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            ScreenHeader(title: 'Receipt totals', onBack: () => context.pop()),
+            ScreenHeader(
+              title: 'Receipt totals',
+              onBack: () => context.pop(),
+              actions: <Widget>[
+                if (shown != null && !shown.isEmpty)
+                  RoundIconButton(
+                    icon: Icons.ios_share,
+                    tooltip: 'Share this total',
+                    onTap: () => unawaited(_share(shown)),
+                  ),
+              ],
+            ),
             Expanded(child: body),
           ],
+        ),
+      ),
+    );
+  }
+
+  SpendingSummary _summaryFor(List<ReceiptFacts> all, PlusPhase phase) {
+    final bool plus = phase == PlusPhase.owned;
+    final SpendingPeriod thisMonth = SpendingPeriod.monthOf(widget.now());
+    // Without Plus — never bought, or refunded while another month was open
+    // — this month is what there is.
+    return SpendingSummary.of(
+      all,
+      period: plus ? (_period ?? thisMonth) : thisMonth,
+      currency: _currency,
+      focus: plus ? _focus : null,
+    );
+  }
+
+  /// Asks first, saying what the file holds, then hands it over (B4).
+  Future<void> _share(SpendingSummary s) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final SpendingShare sharer = ref.read(spendingShareProvider);
+    final bool? go = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (BuildContext context) => ShareTotalSheet(summary: s),
+    );
+    if (go != true) return;
+    final bool ok = await sharer.share(s);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Handed to the app you chose.'
+              : 'That did not work. Nothing was shared.',
         ),
       ),
     );
@@ -93,16 +147,8 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
     final DateTime now = widget.now();
     final bool plus = phase == PlusPhase.owned;
     final SpendingPeriod thisMonth = SpendingPeriod.monthOf(now);
-    // Without Plus — never bought, or refunded while another month was open
-    // — this month is what there is.
-    final SpendingPeriod period = plus ? (_period ?? thisMonth) : thisMonth;
-    final SpendingFocus? focus = plus ? _focus : null;
-    final SpendingSummary s = SpendingSummary.of(
-      all,
-      period: period,
-      currency: _currency,
-      focus: focus,
-    );
+    final SpendingSummary s = _summaryFor(all, phase);
+    final SpendingPeriod period = s.period;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.xl),
@@ -176,7 +222,7 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
           ),
           const SizedBox(height: Gap.lg),
         ],
-        if (plus && focus == null && s.counted.isNotEmpty) ...<Widget>[
+        if (plus && s.focus == null && s.counted.isNotEmpty) ...<Widget>[
           if (s.byMonth.isNotEmpty) ...<Widget>[
             _Groups(
               label: 'By month',
@@ -377,6 +423,12 @@ class _Answer extends StatelessWidget {
           'in saved receipts$where',
           style: AppText.body(c).copyWith(color: c.ink),
         ),
+        if (s.refunded != null)
+          Text(
+            'After ${s.refunded!.format()} refunded on '
+            '${s.refundCount == 1 ? '1 receipt' : '${s.refundCount} receipts'}',
+            style: AppText.small(c),
+          ),
         const SizedBox(height: 2),
         Text(s.scope, style: AppText.small(c)),
       ];
@@ -495,6 +547,7 @@ class _CountedRow extends StatelessWidget {
     return _SumRow(
       label: r.title ?? 'Receipt',
       description: <String>[
+        if (r.isRefund) 'Refund',
         formatDay(r.date!),
         if (category != null)
           r.categoryGuessed ? '$category (guess)' : category,
@@ -798,4 +851,61 @@ String homeReceiptsWords(SpendingSummary month) {
         : '$waiting receipts this month to check';
   }
   return 'Receipt totals';
+}
+
+/// *Share this total?* — what the file holds, before it leaves (B4).
+class ShareTotalSheet extends StatelessWidget {
+  const ShareTotalSheet({required this.summary, super.key});
+
+  final SpendingSummary summary;
+
+  static String _receipts(int n) => n == 1 ? '1 receipt' : '$n receipts';
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    final SpendingSummary s = summary;
+    final String figure = s.total == null
+        ? 'nothing counted yet'
+        : '${s.total!.format()} in saved receipts';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // Rule 3: the app asking the user something.
+          Text(
+            'Share this total?',
+            style: AppText.displayAsk(c).copyWith(fontSize: 24, height: 1.1),
+          ),
+          const SizedBox(height: Gap.sm),
+          Text(
+            '${s.period.label}: $figure. A spreadsheet with a row for each '
+            'of the ${_receipts(s.counted.length)} counted'
+            '${s.heldBack == 0 ? '' : ' and the ${s.heldBack} held back, each saying why'}'
+            ', and a note saying what the figure covers. No photographs.',
+            style: AppText.body(c),
+          ),
+          const SizedBox(height: Gap.md),
+          InkPill(
+            label: 'Share',
+            icon: Icons.ios_share,
+            onTap: () => Navigator.of(context).pop(true),
+          ),
+          const SizedBox(height: Gap.sm),
+          PressFade(
+            onTap: () => Navigator.of(context).pop(false),
+            child: SizedBox(
+              height: kMinTarget,
+              child: Center(
+                child: Text('Cancel', style: AppText.button(c, on: c.inkMuted)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
