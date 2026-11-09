@@ -14,6 +14,9 @@ abstract interface class NotificationPort {
   /// phone that changed zone is corrected the next time anything runs.
   Future<void> prepare();
 
+  /// The zone [prepare] settled on, by name.
+  String get zone;
+
   /// Whether RecallOS may post notifications at all.
   Future<bool> enabled();
 
@@ -71,19 +74,34 @@ class ReminderEngine {
   Future<void> reconcile() async {
     try {
       await _port.prepare();
+      // Before anything is read: this is what keeps a stored day the same
+      // day, and a 9 AM reminder at 9 AM, on a phone that has travelled.
+      await _attempt(() => _repo.followZone(_port.zone));
       final List<PendingReminder> due = await _repo.pendingReminders();
       final Set<int> wanted = <int>{for (final PendingReminder r in due) r.id};
 
       for (final int id in await _port.scheduledIds()) {
-        if (!wanted.contains(id)) await _port.cancel(id);
+        if (!wanted.contains(id)) await _attempt(() => _port.cancel(id));
       }
       // Scheduled again even when already held: the time or the words may
       // have changed, and the same id replaces rather than duplicates.
       for (final PendingReminder r in due) {
-        await _port.schedule(r);
+        await _attempt(() => _port.schedule(r));
       }
     } on Object {
       // Deliberately quiet; see above.
+    }
+  }
+
+  /// One step of a reconcile, on its own: a reminder that cannot be scheduled
+  /// must not cost the ones after it. The plugin throws for a time already
+  /// past, and one due in the next instant passes the query and then fails
+  /// here, which used to stop every later reminder in the list.
+  Future<void> _attempt(Future<void> Function() step) async {
+    try {
+      await step();
+    } on Object {
+      // Still on Today, and the next reconcile tries again.
     }
   }
 

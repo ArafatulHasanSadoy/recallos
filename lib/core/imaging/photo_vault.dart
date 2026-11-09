@@ -89,10 +89,16 @@ Uint8List readPhotoSync(String path, Uint8List? key) =>
 /// never sees half a file.
 void writePhotoSync(String path, Uint8List plain, Uint8List? key) {
   final Uint8List bytes = key == null ? plain : sealPhoto(key, plain);
-  final File temp = File('$path.writing')
-    ..parent.createSync(recursive: true)
-    ..writeAsBytesSync(bytes, flush: true);
-  temp.renameSync(path);
+  final File temp = File('$path.writing')..parent.createSync(recursive: true);
+  try {
+    temp
+      ..writeAsBytesSync(bytes, flush: true)
+      ..renameSync(path);
+  } on Object {
+    // A full phone stops part-way, and the part written is room it needs.
+    _quietlyDelete(temp);
+    rethrow;
+  }
 }
 
 /// Copies a photograph into app storage, sealed. [from] may be sealed or

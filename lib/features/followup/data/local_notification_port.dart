@@ -170,8 +170,12 @@ class LocalNotificationPort implements NotificationPort {
     tz.setLocalLocation(await _zone());
   }
 
+  @override
+  String get zone => tz.local.name;
+
   /// The phone's zone, asked of Android each time, because a phone that
-  /// travelled should remind at 9 AM where it is now.
+  /// travelled should remind at 9 AM where it is now (see
+  /// [FollowUpRepository.followZone], which is what moves the reminder).
   Future<tz.Location> _zone() async {
     try {
       final String? id = await _appInfo.invokeMethod<String>('timezone');

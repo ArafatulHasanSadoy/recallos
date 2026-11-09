@@ -2,11 +2,16 @@ package com.recallos.recallos
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 /**
  * A [FlutterFragmentActivity] rather than a plain `FlutterActivity`.
@@ -68,6 +73,62 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // A PDF becomes one picture, and from there it is a scan like any
+        // other. Android's own renderer: no package, no permission.
+        MethodChannel(engine.dartExecutor.binaryMessenger, PDF_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method != "renderFirstPage") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val from = call.argument<String>("path")!!
+                val to = call.argument<String>("out")!!
+                Thread {
+                    val outcome = runCatching { renderFirstPage(File(from), File(to)) }
+                    runOnUiThread {
+                        outcome.fold(
+                            onSuccess = { result.success(it) },
+                            onFailure = {
+                                // A password-protected PDF is a SecurityException.
+                                val code = if (it is SecurityException) "locked" else "unreadable"
+                                result.error(code, null, null)
+                            },
+                        )
+                    }
+                }.start()
+            }
+    }
+
+    /** Draws page one of [pdf] into [out] as a JPEG; returns how many pages it has. */
+    private fun renderFirstPage(pdf: File, out: File): Int {
+        ParcelFileDescriptor.open(pdf, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+            PdfRenderer(descriptor).use { document ->
+                document.openPage(0).use { page ->
+                    // Print resolution, capped so a poster-sized page cannot
+                    // ask for more memory than a low-end phone has.
+                    val scale = minOf(
+                        300f / 72f,
+                        PDF_MAX_SIDE.toFloat() / maxOf(page.width, page.height),
+                    )
+                    val bitmap = Bitmap.createBitmap(
+                        (page.width * scale).toInt().coerceAtLeast(1),
+                        (page.height * scale).toInt().coerceAtLeast(1),
+                        Bitmap.Config.ARGB_8888,
+                    )
+                    try {
+                        bitmap.eraseColor(Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                        out.outputStream().use {
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it)
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+                return document.pageCount
+            }
+        }
     }
 
     /**
@@ -126,5 +187,7 @@ class MainActivity : FlutterFragmentActivity() {
     private companion object {
         const val CHANNEL = "recallos/system_settings"
         const val APP_INFO_CHANNEL = "recallos/app_info"
+        const val PDF_CHANNEL = "recallos/pdf"
+        const val PDF_MAX_SIDE = 2600
     }
 }

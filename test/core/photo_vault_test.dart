@@ -121,6 +121,18 @@ void main() {
   });
 
   group('new photographs', () {
+    test('a write that fails leaves no part-written file behind', () {
+      // A folder in the way makes the last step fail, as a full phone would.
+      final String path = p.join(docs.path, 'cards', 'card_1.jpg');
+      File(p.join(path, 'in_the_way')).createSync(recursive: true);
+
+      expect(
+        () => writePhotoSync(path, jpeg(), key),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(File('$path.writing').existsSync(), isFalse);
+    });
+
     test('a captured card and its thumbnail are written sealed', () {
       final File scan = put('scan.jpg', jpeg(w: 900, h: 560));
       final Directory cards = Directory(p.join(docs.path, 'cards'))..createSync();

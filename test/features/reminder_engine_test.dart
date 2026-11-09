@@ -216,6 +216,27 @@ void main() {
     );
   });
 
+  test('a reminder that cannot be scheduled does not cost the rest', () async {
+    final int id = await card('Padma Soft Ltd');
+    for (int day = 2; day <= 4; day++) {
+      await actions.addStep(id, (
+        title: 'Step $day',
+        dueOn: DateTime(2026, 10, day),
+        remindAt: DateTime(2026, 10, day, 9),
+        remove: false,
+      ));
+    }
+    port.held.clear();
+    final List<PendingReminder> due = await repo.pendingReminders();
+    expect(due, hasLength(3));
+    // The earliest, the one the list reaches first.
+    port.refused.add(due.first.id);
+
+    await engine.reconcile();
+
+    expect(port.held.keys.toSet(), <int>{due[1].id, due[2].id});
+  });
+
   test('a reconcile that fails leaves the app running', () async {
     final ReminderEngine broken = ReminderEngine(
       repo: repo,
@@ -227,6 +248,8 @@ void main() {
 }
 
 class _ThrowingPort implements NotificationPort {
+  @override
+  String get zone => throw StateError('no plugin');
   @override
   Future<void> prepare() => throw StateError('no plugin');
   @override

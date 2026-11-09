@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/db/database.dart';
 import '../../../core/db/enums.dart';
@@ -42,8 +43,25 @@ final warrantyEndsProvider = StreamProvider<List<TodayEntry>>(
 
 /// A calendar day, as local midnight. Encounter and due dates are days, and
 /// storing a time of day with them would make "today" depend on when the row
-/// happened to be written.
+/// happened to be written. A new column holding one of these must be added
+/// to [FollowUpRepository.followZone], or it reads a day out abroad.
 DateTime dayOf(DateTime t) => DateTime(t.year, t.month, t.day);
+
+/// The moment that reads, in [to], what [at] read in [from]: the same date
+/// and the same time on the clock.
+DateTime sameClockIn(DateTime at, tz.Location from, tz.Location to) {
+  final tz.TZDateTime was = tz.TZDateTime.from(at, from);
+  final tz.TZDateTime moved = tz.TZDateTime(
+    to,
+    was.year,
+    was.month,
+    was.day,
+    was.hour,
+    was.minute,
+    was.second,
+  );
+  return DateTime.fromMillisecondsSinceEpoch(moved.millisecondsSinceEpoch);
+}
 
 /// One open next step, and the reminder that is still due to fire for it.
 class NextStep {
@@ -595,6 +613,76 @@ class FollowUpRepository {
   Future<int> activeReminderCount() async => (await pendingReminders())
       .where((PendingReminder r) => r.kind == DateKind.followUp)
       .length;
+
+  /// Keeps stored days and reminder times meaning what they meant, on a
+  /// phone that is now in [zone].
+  ///
+  /// A day is stored as local midnight, which is an instant, so a zone change
+  /// moves what it reads as. Midnight on 12 Nov in Dhaka is 10 PM on 11 Nov in
+  /// Dubai: every next step and "met on" read a day early there, and a
+  /// warranty's end stopped matching its own last day and got a fresh
+  /// reminder. So the zone in use is kept beside the data, and when it
+  /// changes the rows are carried across, in one transaction, because two
+  /// reconciles can overlap and moving a row twice would corrupt it. Kept in
+  /// the database so a backup restored in another country is corrected too.
+  ///
+  /// A snooze is "an hour from now", not a time on the clock, so it stays
+  /// put. A reminder only moves while it is still ahead and would stay ahead:
+  /// one already shown must not come round again, and one about to fire
+  /// should not be lost.
+  Future<void> followZone(String zone) => _db.transaction(() async {
+    final Setting? kept = await (_db.select(
+      _db.settings,
+    )..where(($SettingsTable s) => s.key.equals(_zoneKey))).getSingleOrNull();
+    if (kept?.value == zone) return;
+    await _db
+        .into(_db.settings)
+        .insertOnConflictUpdate(
+          SettingsCompanion.insert(key: _zoneKey, value: zone),
+        );
+
+    final tz.Location? from = tz.timeZoneDatabase.locations[kept?.value];
+    final tz.Location? to = tz.timeZoneDatabase.locations[zone];
+    if (from == null || to == null) return;
+
+    for (final ImportantDate d in await _db.select(_db.importantDates).get()) {
+      await (_db.update(
+        _db.importantDates,
+      )..where(($ImportantDatesTable t) => t.id.equals(d.id))).write(
+        ImportantDatesCompanion(
+          dueOn: Value<DateTime>(sameClockIn(d.dueOn, from, to)),
+        ),
+      );
+    }
+    for (final Encounter e in await _db.select(_db.encounters).get()) {
+      final DateTime? metOn = e.metOn;
+      if (metOn == null) continue;
+      await (_db.update(
+        _db.encounters,
+      )..where(($EncountersTable t) => t.id.equals(e.id))).write(
+        EncountersCompanion(
+          metOn: Value<DateTime?>(sameClockIn(metOn, from, to)),
+        ),
+      );
+    }
+
+    final DateTime now = _now();
+    final List<Reminder> ahead =
+        await (_db.select(_db.reminders)..where(
+              ($RemindersTable r) =>
+                  r.remindAt.isBiggerThanValue(now) & r.snoozeCount.equals(0),
+            ))
+            .get();
+    for (final Reminder r in ahead) {
+      final DateTime moved = sameClockIn(r.remindAt, from, to);
+      if (!moved.isAfter(now)) continue;
+      await (_db.update(_db.reminders)
+            ..where(($RemindersTable t) => t.id.equals(r.id)))
+          .write(RemindersCompanion(remindAt: Value<DateTime>(moved)));
+    }
+  });
+
+  static const String _zoneKey = 'reminders.zone';
 
   /// The reminders Android should be holding right now: scheduled, still
   /// ahead, for an open step on a live card.

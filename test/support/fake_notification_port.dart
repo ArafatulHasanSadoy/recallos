@@ -9,6 +9,13 @@ class FakePort implements NotificationPort {
   int asked = 0;
   int prepared = 0;
 
+  /// Which zone the phone says it is in.
+  @override
+  String zone = 'Asia/Dhaka';
+
+  /// Reminders the phone refuses to schedule.
+  final Set<int> refused = <int>{};
+
   @override
   Future<void> prepare() async => prepared++;
   @override
@@ -23,7 +30,11 @@ class FakePort implements NotificationPort {
   @override
   Future<Set<int>> scheduledIds() async => held.keys.toSet();
   @override
-  Future<void> schedule(PendingReminder r) async => held[r.id] = r;
+  Future<void> schedule(PendingReminder r) async {
+    if (refused.contains(r.id)) throw StateError('in the past');
+    held[r.id] = r;
+  }
+
   @override
   Future<void> cancel(int id) async => held.remove(id);
 
