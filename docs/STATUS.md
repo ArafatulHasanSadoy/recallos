@@ -5,7 +5,7 @@ is in `CLAUDE.md`.) The owner starts fresh chats to save tokens, so anything
 decided or built in a chat that is not written here or in `docs/PLAN.md` is
 lost.
 
-Last updated: **15 Oct 2026** (M6 / B4 built, steps 1–6).
+Last updated: **10 Nov 2026** (M13: the rest of the readiness list).
 
 ## Read in this order
 
@@ -29,20 +29,19 @@ in a tracked file.
 
 ## Where things stand
 
-**Code** — local `main` at `0940360`. **GitHub's `main` is ahead, at
-`01884e6`** (checked 15 Oct): PR #1, merged on GitHub on 7 Oct (reminder
-undo, overnight events, contact title corrections, roles kept through
-merged-identity backfill), is not in the local tree. Merge it in after the
-local work is committed; it overlaps `identity_repository.dart`,
-`follow_up_repository.dart` and `card_repository_test.dart`. Target API is
-36 (Flutter 3.44's default), which meets Play's current rule. **A6, B1's
-schema v11, B2 (receipts and warranties), B3 (linking and calculated
-expiry), B4 (spending totals), B5 (Ask) and the M7½ UX pass are in the
-working tree, uncommitted — and on the phone since 15 Oct.** Flutter,
-Riverpod, Drift + SQLCipher, schema **v11** (B3–B5 needed no schema
-change); the phone's real wallet was migrated to v11 in place on 15 Oct.
-`flutter analyze` clean, **1,075 tests** pass (2 skipped: the rehearsal,
-and the real OCR scoring run).
+**Code** — local `main` at `f9dba7f` (21 Oct: everything through B5, the
+UX pass and the evaluation tooling is committed). **GitHub's PR #1
+(`01884e6`) is merged into the working tree and staged, not committed**,
+with `pubspec.yaml` bumped to `1.0.0+2` beside it: the git chat commits the
+merge, then the bump, then pushes. Flutter, Riverpod, Drift + SQLCipher,
+schema **v11**, matching rules **6**. **8 Nov (M11, uncommitted, unstaged
+beside the merge):** the readiness handoff audited (`docs/READINESS.md`),
+the "… House" reader fix, Settings → *Licences* and *Help*, `SECURITY.md`,
+and the B3 and B4 exports. **9 Nov (M12 and M13, uncommitted, beside M11):**
+the reminder checks, then everything else a developer could do in
+`docs/READINESS.md`. `flutter analyze` clean, **1,173 tests** pass (2
+skipped). The phone runs `1.0.0 (2) · f9dba7f-m13` (debug-signed release
+build of this working tree, 9 Nov).
 
 - **Built and walked on the phone:** F1–F4 (foundation: fixes, encrypted
   backup and restore, photos encrypted at rest), **A1** context and next step,
@@ -125,6 +124,252 @@ and the real OCR scoring run).
 **Read this before anything else in a new chat.** Continue from the first
 unticked box below.
 
+### M13 — The rest of the readiness list (9 Nov)
+
+The owner asked for everything left in `docs/READINESS.md` to be done, and for
+the time-zone check to be done for them. A separate emulator AVD,
+`RecallOS_TZ_Test`, stands in for changing a system setting on the owner's
+phone: the zone is a launch flag there.
+
+- [x] **1. Time zone on real Android.** Emulator started in `Asia/Dhaka`,
+  card scanned, next step due Thu 12 Nov with a 9 AM reminder, met Mon 9 Nov.
+  Rebooted in `Asia/Dubai`. Before opening the app the alarm was back by
+  itself at 07:00 Dubai (the same moment). After opening: the alarm moved to
+  09:00 Dubai (`dumpsys alarm`), and home, Today and the card all still said
+  Thu 12 Nov, 9 AM, and met Mon 9 Nov. M12 step 5 is closed by this.
+- [x] **2. Low memory.** On the emulator: `am send-trim-memory` at
+  `RUNNING_LOW`, `RUNNING_CRITICAL` and `COMPLETE` left the app running; a
+  background kill (`am kill`, what Android's low-memory killer does) kept the
+  alarm, and reopening brought the wallet back with no crash.
+- [x] **3. Reduced motion.** Flutter already shortens finite animations for
+  Android's *Remove animations*; `repeat()` is the exception. The two capture
+  loops go through `AppMotion.loop`. `reduced_motion_test.dart` (3), and
+  `design_system_test.dart` fails on any other `.repeat(`.
+- [x] **4. Print date is not purchase date** (P3). A reprint stamp is no
+  longer read as the day of purchase; one date is still stored. 3 tests.
+- [x] **5. Refunds as their own entries.** A paper headed *Refund* or with a
+  refund total comes off the figure, printed with a minus or not; "No refund
+  without this receipt" does not make a sale one. The row says *Refund*, the
+  figure says how much came back, the export marks the row. 5 tests.
+- [x] **6. A record with no photograph.** Home → the button beside *Scan* →
+  *Type it in*. `image_path` is empty (no schema change), status `manual`, so
+  it never needs attention. Tests: `add_without_scanning_test.dart`.
+- [x] **7. Bringing in a file.** Same button → *From a file*: PDF, JPG or
+  PNG, 25 MB, judged by its first bytes, page 1 of a PDF drawn by Android's
+  `PdfRenderer` over a channel (no new package or permission), then read as a
+  scan. `paper_import_test.dart` (7).
+- [x] **8. Large wallet.** The wallet list ran three queries per card on
+  every write (9,000 at 3,000 cards). Now a few set queries per 900 cards:
+  listing went from 1.4 s to 90 ms on the Mac, and a cold start with 3,000
+  cards from 6.1 s to 3.3 s on the emulator. `large_wallet_test.dart` fails
+  on any return to per-card queries. Search finds the right card first.
+  Settings → Development → *Fill with test cards* (evaluation builds only).
+- [x] **9. Report documents.** `docs/ARCHITECTURE.md` (layers, scan sequence,
+  data flow, ER, reminders, search) and `docs/THREAT-MODEL.md`.
+- [x] **10. Walked on the emulator** with sample PDFs, on evaluation builds:
+  - a password-protected PDF (refused in words), a two-page PDF (*Kept page 1
+    of 2*), a refund slip (-BDT 400.00, stayed negative through confirming,
+    *Refund* in the list, "After BDT 400.00 refunded" under the figure), the
+    totals export to the share sheet, and a typed record;
+  - **"… House"**, through real ML Kit: *Dhaka Print House* as company, *Sales
+    Lead* as title;
+  - two bugs only the walk could find, both fixed with a test that fails on
+    the old code: *Type it in* saved nothing (the button left the tree when
+    the keyboard rose), and a name with a capital I was dropped.
+- [x] **11. A capital I read as a small l.** ML Kit read "Islam" as "lslam" in
+  a sans-serif face, so the sentence-case rule dropped the name; Iqbal,
+  Imran, Ibrahim and "lnternational" go the same way. `repairLeadingI` runs
+  at the top of all three readers and the classifier; emails and web
+  addresses are left alone. 6 tests.
+- [x] **12. The three §3 stories, as a dry run** on the emulator, 3,008 cards:
+  - *Person:* card from a PDF, note "esports sponsorship", then "Who was
+    interested in sponsorship?" answers Rafiq Islam with the note as evidence.
+    WhatsApp is not on the emulator, so *Say hello* was not run.
+  - *Purchase:* warranty then receipt, *Is this its warranty?* with the
+    serial as evidence, linked, then "When does my laptop warranty expire?"
+    answers 1 Nov 2028, calculated, reminder 2 Oct 2028, both papers cited.
+  - *Memory:* the free-tier total is right (BDT 84,600.00 = 85,000 − 400).
+    The two questions are Plus features, so they lead to the Plus page; no
+    purchase was made. Their answers are covered by `ask_question_set_test`.
+  - **REL-006 still stands**: it is for the release candidate, on the phone.
+- [x] **13. On the phone** (10 Nov, once the owner unlocked it). The final
+  build `1.0.0 (2) · f9dba7f-m13` (8 permissions, no `INTERNET`, checksum
+  matches, no Development group). Walked: *Add it* with nothing written says
+  so; *Type it in* with the keyboard up saved and opened the record, with no
+  photo frame; *From a file* through the phone's own picker, a sample PDF read
+  as *Dhaka Print House* (company), *Nasima Akter* (name), *Sales Lead*
+  (title). Both test records were then deleted (in Recently deleted for 30
+  days), the sample PDF removed, the wallet back at 16 cards, the app closed
+  with `am stop-app`. The emulator AVD was deleted; to
+  make it again: `avdmanager create avd -n RecallOS_TZ_Test -k
+  "system-images;android-35;google_apis_playstore;arm64-v8a" -d pixel_6`
+  (Android Studio's JBR as `JAVA_HOME`), then `emulator -avd RecallOS_TZ_Test
+  -timezone Asia/Dhaka -no-snapshot`.
+- **Not done, and why:** the phone's own zone and 1.3× text (system settings;
+  renders at 1.3× pass), *Remove animations* on a device (same), a real
+  low-end phone, and a truly full phone.
+
+### M12 — Reminder checks: restart, time zone, full phone (9 Nov)
+
+READINESS P1. Each check was run against the code first; these are the
+faults it found.
+
+- [x] **1. One failed reminder stopped the rest.** `reconcile` was one
+  `try` around the whole list, and the plugin throws for a time already
+  past, so one due in the next instant cost every later reminder until the
+  next reconcile. Each step is now on its own (`_attempt`); test in
+  `reminder_engine_test.dart`, checked to fail on the old behaviour.
+- [x] **2. Time zone.** A day is stored as local midnight, which is an
+  instant, so 12 Nov written in Dhaka read as 11 Nov in Dubai; every next
+  step and "met on" was a day early west of home. A warranty's end also
+  stopped matching its own last day and would get a fresh reminder.
+  `FollowUpRepository.followZone` keeps the zone in `settings`
+  (`reminders.zone`) and, when it changes, carries `due_on`, `met_on` and
+  future unsnoozed `remind_at` across in one transaction, using named zones
+  so summer time is right. **No schema change.** `zone_change_test.dart`
+  (also run with the machine on Los Angeles time).
+- [x] **3. Full phone.** A next step that failed to save closed its sheet
+  as if it had worked. `core/storage/out_of_space.dart`: one notice, from a
+  `PlatformDispatcher` hook, so every uncaught write is covered; capture
+  and the back of a card say it in words instead of `errno = 28`; a failed
+  write no longer leaves part of a photograph, and a card whose row could
+  not be written no longer leaves its photograph behind.
+  `out_of_space_test.dart` uses SQLite's real full-database error.
+- [x] **4. On the phone** (9 Nov), release build `f9dba7f-m12`, sample
+  warranty and receipt restored for the walk and deleted again; 16 cards.
+  With the app closed and never opened, `dumpsys alarm` showed the reminder
+  (11 Sep 2028, 9 AM) back **after `adb install -r`** and **after a real
+  restart**. After a restart it waits for the first unlock
+  (`RUNNING_LOCKED` until then: Android holds `BOOT_COMPLETED`), so a PIN
+  phone that has not been unlocked gets no reminders yet. Realme delivered
+  the boot broadcast on this phone.
+- [x] **5. Time zone change.** Closed by M13 step 1, on an emulator, because
+  the phone's zone is a system setting Claude does not change.
+- **Not checked on a truly full phone:** there are 94 GB free, and filling
+  the owner's phone is not worth the risk. Covered by the tests above.
+  **Low memory and large libraries** stay open, P2, in READINESS.
+
+### M11 — Gaps from the readiness handoff (started 8 Nov)
+
+The owner added `RecallOS_Complete_Product_Readiness_and_Claude_Code_Handoff.docx`
+(7 Nov) at the repo root: a full readiness checklist (gates 1–5). It was
+written from GitHub's 7 Oct snapshot, so most of it is already built here.
+`docs/READINESS.md` maps every item to what is true now. The code gaps it
+found, in order:
+
+- [x] **1. A company named "… House" read as an address** (the 21 Oct known
+  defect). Mechanism: "House" and place names are address words, so "Dhaka
+  Print House" was filed as the address and the person's name promoted to
+  company; "Sales Lead" was no job title. `CardFieldExtractor.namesABusiness`
+  (ends in a business word, only place words or a bare "House") now keeps it
+  a company, in the card reader **and the receipt reader's shop name**,
+  which had the same fault. *Lead* and *team lead* are titles. Tests: 4 in
+  `card_extractor_test.dart`, 2 in `receipt_extractor_test.dart` (three fail
+  on the old code).
+- [x] **2. Licences** (Settings → About → *Licences*). The two OFL fonts and
+  the MIT search model ship with no notice; both licences require one in
+  every copy. Registered at start-up (`lib/features/settings/data/licences.dart`)
+  beside every package's own; a paper list and a text screen, not Material's
+  `LicensePage`. Tests: `test/features/licences_test.dart` (3).
+- [x] **3. `docs/READINESS.md`**: every item of the handoff, its status and
+  its evidence, the P0 list for the first public release, and the next work
+  packages in order. Claims checked against the code as written (Play's own
+  price, the grant outside backups, the passphrase warning, no logging in
+  `lib/`, the backup failure tests).
+- [x] **4. Purchase papers export** (B3): from a receipt or warranty, share
+  its photographs and its linked partner's with a summary that marks every
+  value printed, corrected or calculated, after a preview of all of it.
+  - **The way in:** a share button in the card screen's header, on receipts
+    and warranties only. It opens *Share these papers?* (serif italic): the
+    note's every value with where it came from, the working of a calculated
+    end, each photograph (or *no longer on this phone, not attached*), why
+    the papers are together, and "The photographs leave the phone
+    unencrypted." *Share* / *Cancel*; a failure says *Nothing was shared.*
+  - **What goes:** a `.txt` note plus each photograph opened from its sealed
+    copy, written to the outbox and deleted when the share sheet returns
+    (the launch sweep clears share_plus's copy after a day). Only a
+    **confirmed** partner comes along; a suggestion stays behind. The note
+    ends by saying it is a copy of what was saved, not a statement from the
+    shop or the maker.
+  - **One wording:** `describeProvenance` (moved into
+    `core/db/field_provenance.dart` with `needsALook`) gives the chip on the
+    card screen and the note the same words.
+  - **Files:** `lib/features/warranty/data/purchase_papers.dart`,
+    `presentation/purchase_papers_sheet.dart`, `isPurchasePaper` in
+    `purchase_links.dart`, the header in `card_detail_screen.dart`.
+  - **Tests:** `test/features/purchase_papers_test.dart` (9): the warranty
+    brings its confirmed receipt with every value labelled; *you
+    confirmed*; a suggestion stays behind; a business card or a binned paper
+    has nothing; the files as opened; a missing photograph; and on the card
+    screen, tapping Share (nothing leaves before it), a failure, and no
+    button on a business card.
+  - **§18 reasoning:** in PLAN B3 (Mobbin not connected).
+- [x] **5. Receipt totals export** (B4): share the figure with its scope and
+  every receipt counted and held back.
+  - **The way in:** a share button in *Receipt totals*' header while there
+    is anything in the period. *Share this total?* says what goes ("October
+    2026: BDT 432.60 in saved receipts. A spreadsheet with a row for each of
+    the 1 receipt counted and the 1 held back, each saying why, and a note
+    saying what the figure covers. No photographs.") — *Share* / *Cancel*.
+    What is shared is the summary the screen shows (period, currency, Plus
+    focus), built once.
+  - **What goes:** `RecallOS receipts - October 2026 - BDT.csv` — one row
+    per receipt: status (*Counted*, *Not added yet*, *Possible second
+    copy*, *No date*), ISO date, shop, category and whether it is a guess,
+    the amount as a spreadsheet number, currency, invoice, why, and the
+    RecallOS id. The *Counted* rows add up to the figure. The note gives the
+    figure "in saved receipts", the scope, what was held back, other
+    currencies "kept apart, never converted", and "not all spending".
+  - **OCR text is data:** a shop name starting with `=`, `+`, `-` or `@` is
+    written with a leading apostrophe, so a spreadsheet never runs it.
+  - **Files:** `lib/core/spending/spending_export.dart` (pure),
+    `lib/features/spending/data/spending_share.dart`, the header and
+    `ShareTotalSheet` in `spending_screen.dart`.
+  - **Tests:** `test/core/spending_export_test.dart` (5: rows and their
+    order, the Counted rows re-add to the figure, amounts in each currency's
+    decimals, no formula and commas quoted, the note's wording and "nothing
+    counted yet") and 4 in `spending_screen_test.dart` (asks first and
+    Cancel shares nothing; Share hands over what is on screen; a failure
+    says so; an empty wallet has no button).
+- [x] **6. `SECURITY.md` and a help page** (`docs/help.html`).
+  - `SECURITY.md`: how to report (the support email, subject "RecallOS
+    security", no real wallets attached), what to expect (acknowledgement
+    aimed at 7 days — **the owner should confirm that promise**), scope, and
+    the incident steps.
+  - `docs/help.html`, in the privacy policy's style: a bad reading, Bangla
+    text, why a receipt is not counted, a warranty's end, sharing papers, a
+    missing reminder, backup and a new phone (a lost passphrase cannot be
+    reset), Plus restore and refunds, deleting. Every action it names was
+    checked against the app's labels.
+  - Settings → About → **Help** opens it in the browser (`kHelpUrl`); with
+    no browser the row says where it is. **The link works once
+    `docs/help.html` is pushed** (GitHub Pages). Tests: 2 in
+    `about_rows_test.dart`.
+  - **Privacy policy** (8 Nov): *Sharing a receipt or warranty* and
+    *Sharing a receipt total* added to *When data leaves your phone*.
+- [x] **7. On the phone** (8 Nov), a `RECALLOS_ALLOW_DEBUG_SIGNING=true`
+  release build stamped `f9dba7f-m11`, `adb install -r` over the 21 Oct
+  build (same key, no migration; 16 cards before and after; eight
+  permissions, no `INTERNET`, checked with `aapt2`).
+  - **Licences:** 239 works on paper; Archivo's text in full. **Found and
+    fixed:** the OFL's headings ran into their paragraphs ("PREAMBLE The
+    goals…"), because Flutter joins single line breaks; each heading is
+    now its own paragraph (test in `licences_test.dart`).
+  - **Share these papers?** on the sample warranty (restored from Recently
+    deleted for the walk, then deleted again, as on 21 Oct): every value
+    with its source, the calculated end and its working, both photographs,
+    why they are together. **Found and fixed:** "RECEIPT · STARTECH &
+    ENGINEERING LTD" in header capitals wrapped and squeezed its rule; the
+    header is now the kind, with the title on a line of its own. Cancelled
+    each time; nothing was shared.
+  - **Not walked:** *Share this total?* — the sample receipt is October's
+    and the phone has no Plus, so November has nothing to share and,
+    correctly, no button (covered by its 4 widget tests); *Help* (its page
+    is not on GitHub Pages until pushed); a "… House" card through the
+    camera (the reader is pure and tested; the owner's next real card will
+    show it).
+  - Closed with `am stop-app`.
+
 - Tick a box **in the same turn its sub-step lands**, with the test that
   proves it, not at the end of the chat.
 - When every box is ticked and the feature has been walked on the phone:
@@ -139,10 +384,13 @@ be read in git, in the session log below, and in PLAN's A6 row.
 
 **If the owner is not free for this, start M3 below** and come back to M2.
 
-- [ ] **1. Commit first.** The git chat commits the working tree (A6 + docs +
-  `pubspec.lock` + the manifest fix), so the build can be stamped with a real
-  commit.
-- [ ] **2. Bump** `version:` in `pubspec.yaml` to `1.0.0+2`.
+- [x] **1. Commit first.** The owner's git chat committed it all on 21 Oct
+  (9 commits, `bbfecc6`…`f9dba7f`). **GitHub's PR #1 is merged into the
+  working tree, staged, not committed** (`git merge --no-commit
+  origin/main`, no conflicts, matching rules 5 → 6, 1,087 tests pass): the
+  git chat commits that merge, then the version bump, then pushes.
+- [x] **2. Bump** `version:` in `pubspec.yaml` to `1.0.0+2` (21 Oct,
+  unstaged, its own commit after the merge).
 - [ ] **3. Build the AAB with the upload key**, following `docs/RELEASE.md`
   → *Every release*:
   - `flutter build appbundle --release
@@ -1211,6 +1459,15 @@ evaluation.
   empty and documented in `tables.dart`.
 - A card for a brand named after a place keeps its old company and address
   after the shop-card fix. It is fixed by hand on the card screen.
+- **Found 21 Oct, while making the app tour:** on a plain person-first card
+  (name biggest, then "Sales Lead", then the company "Dhaka Print House"),
+  the reader took the **name as the company**, joined "Dhaka Print House"
+  onto the **address**, and dropped the designation. Likely mechanism:
+  "House" (as in "House 7") and "Dhaka" count as address words, so a
+  company line ending in *House* is read as an address — common in
+  Bangladesh ("Print House", "Fashion House"). **Fixed in code 8 Nov** (M11
+  step 1, PLAN B10); the phone check is in M11 step 7.
+  The test card was rendered and scanned from the gallery, then discarded.
 
 ### Only the owner can do these (`docs/PLAN.md` §8)
 
@@ -1539,3 +1796,65 @@ One short entry per chat, newest last. The details live in `docs/PLAN.md`.
   - The app's own build work is done. What is left needs the commit and
     merge, the owner's phone and papers, or Play; the full list was given
     to the owner in chat and matches *What's left* above.
+- **21 Oct, later** (app-tour chat):
+  - The owner's 9 commits checked; **PR #1 merged into the working tree**
+    (staged, not committed; rules 5 → 6); version bumped to `1.0.0+2`;
+    1,087 tests pass, analyze clean.
+  - **Phone:** raw backup taken first (debug build installed unopened, then
+    `run-as tar` of the app data, hashes match); then the v2 release build
+    (`1.0.0 (2) · f9dba7f-merge`) installed. The rules-6 rebuild ran on
+    launch; 16 cards, as before.
+  - **The app tour:** 37 screenshots of every screen, light and dark,
+    written up as an 18-page PDF in the gitignored `business/` folder (it
+    shows the owner's real wallet). The sample receipt and warranty were
+    restored for it and deleted again; Appearance put back to *Follow
+    system*; the demo image removed from the phone.
+  - **Found:** the "… House" company line read as an address (see *Known
+    defects*). One stray tap opened the dialer on a demo number; nothing
+    was called.
+- **8 Nov** (readiness chat): the owner added
+  `RecallOS_Complete_Product_Readiness_and_Claude_Code_Handoff.docx` and
+  asked what is left and to start on it.
+  - **Audit:** written from GitHub's 7 Oct snapshot, so most of it was
+    already built. `docs/READINESS.md` maps every item to its status and
+    evidence; the P0 list for the first release is all owner or Play work
+    (testers, the git chat, A7 on a Play build, the partner agreement).
+  - **M11 built (steps 1–6):** "… House" companies no longer read as
+    addresses, on cards and receipts (PLAN B10); Settings → *Licences* (the
+    fonts' OFL and the model's MIT notices, which nothing showed before);
+    Settings → *Help* and `docs/help.html`; `SECURITY.md`; B3's *Share
+    these papers?* and B4's *Share this total?*; the privacy policy covers
+    both. 1,116 tests (29 new), analyze clean.
+  - **Phone (step 7):** installed and walked; two faults found and fixed
+    (licence headings, the sheet's long header). The sample receipt and
+    warranty were restored for the walk and deleted again.
+  - **For the owner:** commit order is the staged PR #1 merge, then the
+    `1.0.0+2` bump, then M11 (suggested message in the chat); push so
+    `docs/help.html` goes live; confirm the 7-day acknowledgement promise in
+    `SECURITY.md`.
+  - **Slip:** `dart format lib/features/settings` reflowed three untouched
+    files; they were restored from the index (not part of the staged
+    merge), and the reader test was rebuilt from HEAD plus the new group so
+    its diff carries no reflow.
+- **9 Nov** (readiness chat, continued): the owner asked for the reminder
+  checks (READINESS P1). **M12:** one failed reminder no longer stops the
+  rest; days and reminder times follow the phone's zone (`followZone`, no
+  schema change); a full phone is said in words and leaves no stray files.
+  1,138 tests, analyze clean. Restart and update walked on the phone, build
+  `f9dba7f-m12`; the sample papers are back in Recently deleted, 16 cards.
+  - **For the owner:** M12 step 5 (change the time zone on the phone). Commit
+    M12 with M11, after the staged merge and the bump.
+    `follow_up_repository.dart` is both staged (PR #1) and edited (M12).
+- **9 Nov** (M13, same chat as M11 and M12): the owner asked for everything
+  left in READINESS and for the time-zone test to be done for them.
+  - Time zone, low memory and a 3,000-card wallet walked on an Android
+    emulator (`RecallOS_TZ_Test`, Dhaka then Dubai), because the phone's zone
+    is a system setting Claude does not change.
+  - Built: typed records, file import, refunds as entries, reprint dates,
+    reduced motion, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`.
+  - The walk found one bug no test had: *Type it in* saved nothing, because
+    the home button that started it left the tree when the keyboard rose.
+  - It also found the capital-I fault and a per-card query at the heart of
+    the wallet list.
+  - 1,173 tests pass. The final build is on the phone and the new add flows
+    were walked there on 10 Nov; wallet back at 16 cards. Nothing committed.

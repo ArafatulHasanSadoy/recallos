@@ -11,6 +11,48 @@ out of it and are applied below: sell the people workflow first (Release A),
 verify the first purchase on the phone so `INTERNET` stays out, and tag
 `b48d429` as `cse499b-start`.
 
+**2026-11-08 — the readiness handoff.** The owner's *Complete Product
+Readiness* document (7 Nov, at the repo root) was audited item by item
+against the working tree: **`docs/READINESS.md`** gives each item's status
+and evidence, and the P0 list for the first public release. Its code gaps
+became M11 (STATUS): the "… House" reader fix (B10), Settings → *Licences*,
+Settings → *Help* (`docs/help.html`), `SECURITY.md`, and the B3 and B4
+exports below.
+
+**2026-11-09 — the rest of the readiness list (M13).** Typed records and
+file import (Home, beside *Scan*), refunds as their own entries, reprint dates
+ignored, reduced motion, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`. The
+time-zone change, low memory, a 3,000-card wallet, the "… House" reader fix
+and the totals export were walked on an Android emulator (`RecallOS_TZ_Test`,
+Dhaka then Dubai). The walk found what the tests could not: the home button
+that started *Type it in* left the tree when the keyboard rose, so the save
+stopped silently; ML Kit reads a capital I as a small l, which dropped names
+like Islam; and the wallet list ran three queries per card on every write. All
+fixed, each with a test that fails on the old code.
+
+  **Design reasoning for adding without the camera (9 Nov,
+  `design/UX-PROTOCOL.md` §18).** *Problem:* every record started with a
+  photograph, so an online order, a warranty somebody told you about or a
+  bill emailed as a PDF had no way in. *Research:* Mobbin is not connected, so
+  no reference screens were inspected; searches to run when it is: "manual
+  entry business card scanner", "import PDF receipt", "scan or enter
+  manually". *Flow:* Scan stays the one large button, because scanning is the
+  product. A quiet round button beside it opens *No paper to scan?* with two
+  rows, so the extra choice costs Scan nothing. *Type it in* asks what it is
+  and the one thing it is known by, so it is never a blank row, and hands over
+  to the same card screen and editor as a scan. *From a file* ends in the same
+  capture review as a scan. *States:* nothing written (the button answers with
+  a line, rather than doing nothing), a refused file (says why, stays on
+  home), a backed-out picker (nothing), a many-page PDF (says only page 1 was
+  kept), a full phone (the out-of-space notice). *Why no photo frame on a
+  typed record:* an empty frame reads as a lost photograph, and nothing was
+  lost.
+
+**2026-11-09 — reminder checks (READINESS P1).** A failed reminder no longer
+stops the ones after it. Stored days and reminder times now follow the phone's
+time zone (`followZone`), and a full phone is said in words instead of a save
+silently failing. Restart and update walked on the phone. M12 in STATUS.
+
 **2026-09-29, later — the dates are fixed.** The **first release is live on
 Google Play on 20 Oct 2026**. The **final code and the final Play release are
 submitted to the university on 10 Nov 2026**, and the project is judged on that
@@ -133,6 +175,13 @@ from OCR) — are correct for derived data and destructive for authored data.
   written (FTS `tags` column written as `''`); ~~`interactions` read by nothing, so `previousUse` is always 0~~
   (fixed by A6, 7 Oct: calls, chats, emails and hellos opened feed `previousUse`);
   `search_queries` / `search_feedback` have no writers.
+- [x] **B10** (found 21 Oct, **fixed in code 8 Nov**, M11 step 1) A company
+  line ending in *House* ("Dhaka Print House") is read as an address, so the
+  person's name becomes the company and the designation is dropped.
+  `CardFieldExtractor.namesABusiness` keeps a line that ends in a business
+  word, with only place words or a bare "House", a business — in the card
+  reader and in the receipt reader's shop name, which threw such names out
+  the same way. "Lead" is a job title. Not yet seen on a real card.
 - [ ] **B9** The OCR evaluation has never been run. (The spike's stale "3 engines"
   text, dead `tessdata/README.md` pointer and orphan `tessdata_config.json` are
   fixed; the run itself needs labelled cards.)
@@ -838,6 +887,43 @@ Target: shipped as updates between 20 Oct and 7 Nov; all in the final release on
     No new tokens. Existing pieces only: `AppDecoration.card`,
     `MicroLabel`, `InkPill`, `OutlinePill`, `TextAction`, `PressFade`,
     snackbars with Undo as on next steps.
+  **Export, 8 Nov (M11 step 4, from the readiness handoff):** a share
+  button in the header of a receipt or warranty opens *Share these
+  papers?* — a preview of everything that leaves: a note with every value
+  and where it came from (`describeProvenance`, the chip's own words),
+  the working of a calculated end, each photograph (or *no longer on this
+  phone*), and why the papers are together. Only a confirmed partner comes
+  along. Files are opened from their sealed copies into the outbox and
+  deleted when the share sheet returns. `purchase_papers.dart`,
+  `purchase_papers_sheet.dart`; `purchase_papers_test.dart` (9). Walked on
+  the phone 8 Nov with the sample papers (the long header fixed there).
+
+  **Design reasoning for the export (8 Nov, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** A warranty claim needs the receipt and the warranty,
+    sent to a shop or service centre, usually by WhatsApp or email. Send
+    both originals in one go, and say which values were printed, which the
+    owner checked, and which RecallOS worked out.
+  - **Existing problems.** No way to get a paper out except *Take a copy*
+    of the whole wallet. A calculated end, sent as a screenshot, reads as
+    if the warranty printed it.
+  - **References studied.** Mobbin is **not connected** in this session,
+    so no Mobbin screen was inspected. Searches to run: *share sheet
+    preview*, *export receipt*, *share document with attachments*,
+    *expense report share*. Pattern used from Android itself: the header
+    share action, then the system share sheet.
+  - **Lessons.** Preview before anything leaves (privacy in the UX, §14);
+    the system share sheet, not a custom list of apps; plain text plus the
+    images, because a chat app shows images and a zip it cannot.
+  - **RecallOS solution.** Header share icon (receipts and warranties
+    only) → a sheet with the serif question, the full preview and one ink
+    *Share*; the share sheet; a snackbar on return.
+  - **States.** Loading (ghost), the paper gone, a photograph missing (in
+    words, in vermilion), a failed share (the sheet stays, *Nothing was
+    shared*), no partner (one paper, *Share this paper?*).
+  - **Implementation impact.** New `purchase_papers.dart` and
+    `purchase_papers_sheet.dart`; `describeProvenance` moved into
+    `field_provenance.dart` so `SourceChip` and the note share words;
+    `isPurchasePaper`; the card screen's header. No new tokens.
 - [ ] **B4. Spending totals** (M) — exact sums from verified receipt facts, by
   period / category / merchant, one currency at a time; duplicates and
   unverified totals listed separately, never silently added.
@@ -931,6 +1017,34 @@ Target: shipped as updates between 20 Oct and 7 Nov; all in the final release on
     `SettingRow`, `SelectChip`, `RoundIconButton`, `InkPill`,
     `OutlinePill`, `TextAction`, `SectionHeader`, `EmptyState`,
     `GhostStack`, snackbars with Undo.
+  **Export, 8 Nov (M11 step 5, from the readiness handoff):** a share
+  button in *Receipt totals*' header; *Share this total?* says what goes;
+  then a spreadsheet (`RecallOS receipts - October 2026 - BDT.csv`) with a
+  row per receipt — *Counted*, *Not added yet*, *Possible second copy*,
+  *No date* — each with why and its RecallOS id, and a note with the
+  figure "in saved receipts", its scope, what was held back, other
+  currencies "never converted", and "not all spending". The *Counted* rows
+  add up to the figure. Text read off a paper that starts like a formula is
+  written as text. `spending_export.dart` (pure), `spending_share.dart`,
+  `ShareTotalSheet`; `spending_export_test.dart` (5) and 4 screen tests.
+
+  **Design reasoning for the export (8 Nov, `design/UX-PROTOCOL.md` §18):**
+  - **UX objective.** Hand a month's receipts to an accountant, a partner
+    or a spreadsheet, with the figure provably made of its rows.
+  - **Existing problems.** The figure lived only on the screen.
+  - **References studied.** Mobbin **not connected**; searches to run:
+    *export expenses CSV*, *share report*, *download statement*.
+  - **Lessons.** A spreadsheet people can re-add; the held-back receipts in
+    the same file, not hidden; the scope travels with the number.
+  - **RecallOS solution.** The month on screen (and the Plus focus) is
+    what is shared — built once, so the file cannot disagree with the
+    screen. A short confirm sheet, then the system share sheet.
+  - **States.** Empty wallet (no button), nothing counted ("Nothing
+    counted yet", never "BDT 0"), failure (snackbar), more than one
+    currency (the one on screen; the others named in the note).
+  - **Implementation impact.** New `spending_export.dart`,
+    `spending_share.dart`; the screen builds its summary once
+    (`_summaryFor`). No new tokens.
 - [x] ✅ **B5. Ask RecallOS across people and purchases** (L) — typed plans only:
   lookup, search, filter, dates, captured-spending aggregate. Answers state
   their scope ("1–30 Sep, BDT, 12 verified receipts"), cite sources, and say
