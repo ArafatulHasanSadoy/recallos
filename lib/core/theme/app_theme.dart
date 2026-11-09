@@ -839,4 +839,27 @@ abstract final class AppMotion {
   static const Duration hero = Duration(milliseconds: 420);
 
   static const Curve curve = Curves.easeOutCubic;
+
+  /// Keeps [controller] looping, or holds it at [still] when the phone is set
+  /// to remove animations.
+  ///
+  /// With Android's *Remove animations* on, Flutter already runs every finite
+  /// animation (a route, a hero, an implicit `AnimatedFoo`) at 5% of its
+  /// length, so those need nothing. `repeat()` is the exception: it is not
+  /// scaled, so a loop would carry on moving for somebody who asked for
+  /// nothing to move. Call from `didChangeDependencies`, so the setting is
+  /// followed if it changes while the screen is open.
+  static void loop(
+    BuildContext context,
+    AnimationController controller, {
+    double still = 0.5,
+  }) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      controller
+        ..stop()
+        ..value = still;
+    } else if (!controller.isAnimating) {
+      controller.repeat();
+    }
+  }
 }

@@ -250,7 +250,11 @@ class _EditableFieldListState extends ConsumerState<EditableFieldList> {
         Align(
           alignment: Alignment.centerLeft,
           child: TextAction(
-            label: widget.detail.fields.isEmpty
+            // Nothing was read off a record that was typed in, so nothing
+            // was missed.
+            label:
+                widget.detail.fields.isEmpty ||
+                    widget.detail.card.captureSource == CaptureSource.typed
                 ? 'Add a detail'
                 : 'Add something it missed',
             icon: Icons.add,
@@ -829,13 +833,6 @@ class _FieldEditorState extends State<_FieldEditor> {
   }
 }
 
-/// Issues that describe *how* a value was arrived at rather than something
-/// still wrong with it. A user confirmation settles these.
-const Set<String> _provenanceIssues = <String>{
-  'digit_restored',
-  'ocr_repaired',
-};
-
 /// Whether [field] is one a person must look at before anything counts on
 /// it, and nobody has yet (B2): a receipt's total and date, a warranty's
 /// cover and expiry. Read wrong, these are wrong totals and late reminders.
@@ -849,11 +846,6 @@ bool needsChecking(CardField field) =>
         WarrantyKeys.critical.contains(field.fieldKey)) &&
     field.origin != FactOrigin.derived &&
     !isConfirmed(field);
-
-/// Whether a field still has an objection nobody has resolved.
-bool needsALook(CardField field) =>
-    field.validationIssue != null &&
-    !_provenanceIssues.contains(field.validationIssue);
 
 /// Where a fact came from, on the fact itself.
 ///
@@ -887,27 +879,21 @@ class SourceChip extends StatelessWidget {
   }
 
   (String, Color) _describe(AppColors c) {
-    // An unresolved objection outranks even the user's own confirmation. A
-    // number too short to dial must not read as settled just because somebody
-    // tapped Save on it — silent wrong data is the failure mode that costs
-    // trust in everything else the app says.
-    if (needsALook(field)) return ('needs a look', c.vermilion);
-    if (isConfirmed(field)) return ('you confirmed', c.ochreInk);
-    if (field.validity == FactValidity.outdated) {
-      return ('may be old', c.vermilion);
-    }
-
-    return switch (field.validationIssue) {
-      'digit_restored' => ('digit restored', c.olive),
-      'ocr_repaired' => ('OCR repaired', c.olive),
-      _ => switch (field.origin) {
-        FactOrigin.printed => ('on the $paper', c.inkMuted),
-        FactOrigin.user => ('you typed', c.ochreInk),
-        // Worked out from other facts by a rule — a warranty's expiry from
-        // its purchase date. Said so, never shown as printed.
-        FactOrigin.derived => ('calculated', c.olive),
-        FactOrigin.inferred => ('guess', c.olive),
+    // The words are shared with what leaves the phone (the purchase papers'
+    // summary), so the screen and the export cannot say two different things
+    // about one value. Only the colour is decided here.
+    final (String words, ProvenanceTone tone) = describeProvenance(
+      field,
+      paper: paper,
+    );
+    return (
+      words,
+      switch (tone) {
+        ProvenanceTone.alert => c.vermilion,
+        ProvenanceTone.yours => c.ochreInk,
+        ProvenanceTone.printed => c.inkMuted,
+        ProvenanceTone.worked => c.olive,
       },
-    };
+    );
   }
 }

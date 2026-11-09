@@ -15,6 +15,7 @@ import '../../../core/imaging/photo_vault.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine_provider.dart';
 import '../../../core/storage/hand_offs.dart';
+import '../../../core/storage/out_of_space.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../search/data/search_repository.dart';
 import 'card_repository.dart';
@@ -125,7 +126,7 @@ class BackCaptureService {
     } on Object catch (e) {
       return (
         outcome: BackCaptureOutcome.failed,
-        message: 'Could not open the scanner: $e',
+        message: failureWords(e, 'Could not open the scanner'),
       );
     }
 
@@ -142,7 +143,7 @@ class BackCaptureService {
     } on Object catch (e) {
       return (
         outcome: BackCaptureOutcome.failed,
-        message: 'Could not save the back: $e',
+        message: failureWords(e, 'Could not save the back'),
       );
     }
 

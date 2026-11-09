@@ -340,7 +340,9 @@ class EmptyState extends StatelessWidget {
     final String? action = actionLabel;
 
     return Center(
-      child: Padding(
+      // Scrolls, because a keyboard or large text can leave it less room than
+      // it needs, and on a release build that is silently cut off.
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,

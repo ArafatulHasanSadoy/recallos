@@ -63,6 +63,13 @@ void main() {
     expect(hits(r'InkWell\('), isEmpty);
   });
 
+  test('a loop goes through AppMotion, so it can hold still', () {
+    // `repeat()` is the one animation Flutter does not shorten for Android's
+    // *Remove animations*. The theme, which holds `AppMotion.loop`, is the
+    // one file these sources leave out.
+    expect(hits(r'\.repeat\('), isEmpty);
+  });
+
   test('Material chips are replaced by SelectChip', () {
     expect(hits(r'ChoiceChip\('), isEmpty);
     expect(hits(r'FilterChip\('), isEmpty);

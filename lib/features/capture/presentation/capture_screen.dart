@@ -16,6 +16,7 @@ import '../../../core/imaging/photo_keyring.dart';
 import '../../../core/intelligence/ocr_engine.dart';
 import '../../../core/intelligence/ocr_engine_provider.dart';
 import '../../../core/storage/hand_offs.dart';
+import '../../../core/storage/out_of_space.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/primitives.dart';
 import '../../cards/presentation/widgets/card_sides_view.dart';
@@ -27,6 +28,7 @@ import '../../events/presentation/event_widgets.dart';
 import '../../search/data/search_repository.dart';
 import '../../warranty/presentation/purchase_blocks.dart';
 import '../data/card_repository.dart';
+import '../data/paper_import.dart';
 import 'kind_sheet.dart';
 
 /// Opens the camera, reads the card, and lets the user correct it.
@@ -41,13 +43,20 @@ import 'kind_sheet.dart';
 /// and a correction made here is saved the moment it is made — consistent with
 /// save-first rather than an exception to it.
 class CaptureScreen extends ConsumerStatefulWidget {
-  const CaptureScreen({super.key});
+  const CaptureScreen({this.imported, super.key});
+
+  /// A PDF page or picture to read instead of opening the scanner. Used for
+  /// the first attempt only: *Retake* is the scanner, as it always is.
+  final ImportedPaper? imported;
 
   @override
   ConsumerState<CaptureScreen> createState() => _CaptureScreenState();
 }
 
 class _CaptureScreenState extends ConsumerState<CaptureScreen> {
+  /// Not yet read; cleared by the first attempt.
+  late ImportedPaper? _imported = widget.imported;
+
   /// A context under [AppTheme.capture], for the sheets this screen opens.
   BuildContext? _themed;
 
@@ -93,33 +102,40 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       _cardId = null;
     }
 
+    final ImportedPaper? paper = _imported;
+    _imported = null;
+
     final List<String>? pages;
-    try {
-      pages = await CunningDocumentScanner.getPictures(
-        // One card at a time. The scanner finds the edges, corrects the
-        // perspective and hands back the card alone rather than the desk it
-        // was lying on — which is also a large free win for OCR, since the
-        // text now fills the frame instead of a third of it.
-        noOfPages: 1,
-        scannerSource: ScannerSource.cameraAndGallery,
-        androidScannerMode: AndroidScannerMode.full,
-        iosScannerOptions: IosScannerOptions(
-          imageFormat: IosImageFormat.jpg,
-          jpgCompressionQuality: 0.9,
-        ),
-      );
-    } on CunningDocumentScannerException catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _error = e.code == 'permission_denied'
-            ? 'RecallOS needs camera access to scan a card.'
-            : 'Could not open the scanner: ${e.message}',
-      );
-      return;
-    } on Object catch (e) {
-      if (!mounted) return;
-      setState(() => _error = 'Could not open the scanner: $e');
-      return;
+    if (paper != null) {
+      pages = <String>[paper.file.path];
+    } else {
+      try {
+        pages = await CunningDocumentScanner.getPictures(
+          // One card at a time. The scanner finds the edges, corrects the
+          // perspective and hands back the card alone rather than the desk it
+          // was lying on — which is also a large free win for OCR, since the
+          // text now fills the frame instead of a third of it.
+          noOfPages: 1,
+          scannerSource: ScannerSource.cameraAndGallery,
+          androidScannerMode: AndroidScannerMode.full,
+          iosScannerOptions: IosScannerOptions(
+            imageFormat: IosImageFormat.jpg,
+            jpgCompressionQuality: 0.9,
+          ),
+        );
+      } on CunningDocumentScannerException catch (e) {
+        if (!mounted) return;
+        setState(
+          () => _error = e.code == 'permission_denied'
+              ? 'RecallOS needs camera access to scan a card.'
+              : 'Could not open the scanner: ${e.message}',
+        );
+        return;
+      } on Object catch (e) {
+        if (!mounted) return;
+        setState(() => _error = failureWords(e, 'Could not open the scanner'));
+        return;
+      }
     }
     if (!mounted) return;
 
@@ -147,6 +163,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       final ({int id, File image}) pending = await repo.createPending(
         scanned,
         metAt: event?.name,
+        via: paper == null ? CaptureSource.documentScanner : CaptureSource.file,
       );
       if (!mounted) return;
       setState(() => _cardId = pending.id);
@@ -154,6 +171,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       final File working = await _prepare(repo, pending, scanned);
       if (!mounted) return;
       setState(() => _image = working);
+      if (paper != null) {
+        // Sealed now; the plain copy has served its purpose.
+        unawaited(discardHandOff(paper.file));
+        if (paper.pages > 1) noticeFirstPageOnly(paper.pages);
+      }
 
       final OcrResult result = await _engine.recognize(working);
       // Read as whatever the page most looks like — a business card, a
@@ -199,7 +221,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Could not read the card: $e';
+        _error = failureWords(e, 'Could not read the card');
       });
     }
   }
@@ -576,7 +598,13 @@ class _ViewfinderState extends State<_Viewfinder>
   late final AnimationController _sweep = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    AppMotion.loop(context, _sweep);
+  }
 
   @override
   void dispose() {
@@ -715,7 +743,13 @@ class _ReadingRailState extends State<_ReadingRail>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    AppMotion.loop(context, _c);
+  }
 
   @override
   void dispose() {

@@ -18,6 +18,7 @@ import '../../../router.dart';
 import '../../ask/presentation/ask_answers.dart';
 import '../../capture/data/back_capture_service.dart';
 import '../../capture/data/card_repository.dart';
+import '../../capture/presentation/add_without_scanning.dart';
 import '../../cards/data/retention_sweep.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
@@ -408,6 +409,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Row(
                   children: <Widget>[
                     const _EventButton(),
+                    const SizedBox(width: Gap.sm + 2),
+                    // Started from here and not from the button: the row
+                    // leaves the tree as soon as a sheet raises the keyboard,
+                    // and a flow holding the button's context would stop
+                    // dead at its next `mounted` check, saving nothing.
+                    _AddButton(
+                      onTap: () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        unawaited(addWithoutScanning(context, ref));
+                      },
+                    ),
                     const SizedBox(width: Gap.sm + 2),
                     Expanded(
                       // "Scan", not "Scan a card": since B2 the same button
@@ -1231,6 +1243,36 @@ class _AttentionRow extends ConsumerWidget {
 /// Filled with the page, not hollow: it sits over the bottom of the card
 /// stack, and an outline alone would show the cards through it. While an
 /// event runs, its ring turns ochre — a marker, rule 2.
+/// Adds something without the camera: typed in, or from a file.
+class _AddButton extends StatelessWidget {
+  const _AddButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const double _size = 58;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return PressFade(
+      onTap: onTap,
+      scale: 0.92,
+      semanticLabel: 'Add without scanning',
+      child: Container(
+        width: _size,
+        height: _size,
+        decoration: BoxDecoration(
+          color: c.page,
+          shape: BoxShape.circle,
+          border: Border.all(color: c.hairline, width: 1.5),
+        ),
+        child: Icon(Icons.edit_note, size: 24, color: c.ink),
+      ),
+    );
+  }
+}
+
 class _EventButton extends ConsumerWidget {
   const _EventButton();
 

@@ -22,7 +22,10 @@ import '../../introduction/data/hello.dart';
 import '../../introduction/presentation/say_hello_sheet.dart';
 import '../../profile/data/profile_repository.dart';
 import '../../search/data/search_repository.dart';
+import '../../warranty/data/purchase_links.dart' show isPurchasePaper;
+import '../../warranty/data/purchase_papers.dart' show PapersShareResult;
 import '../../warranty/presentation/purchase_blocks.dart';
+import '../../warranty/presentation/purchase_papers_sheet.dart';
 import 'reach_out.dart';
 import 'widgets/card_sides_view.dart';
 import 'widgets/editable_field_list.dart';
@@ -91,6 +94,15 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               title: d == null ? 'Card' : _heading(d.card.type),
               onBack: () => context.pop(),
               actions: <Widget>[
+                // A receipt or warranty goes to a shop or a service centre
+                // with the paper it belongs with (B3). After a preview of
+                // everything that leaves the phone.
+                if (d != null && isPurchasePaper(d.card.type))
+                  RoundIconButton(
+                    icon: Icons.ios_share,
+                    tooltip: 'Share the papers',
+                    onTap: () => unawaited(_sharePapers(context, d.card.id)),
+                  ),
                 RoundIconButton(
                   icon: Icons.delete_outline,
                   tooltip: 'Delete',
@@ -98,7 +110,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 ),
               ],
             ),
-            if (front != null && !gone)
+            // A record that was typed in has no photograph to frame.
+            if (front != null && front.isNotEmpty && !gone)
               Padding(
                 padding: const EdgeInsets.fromLTRB(Gap.lg, 0, Gap.lg, Gap.sm),
                 child: CardSidesView(
@@ -187,6 +200,19 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   }
 
   /// "Card", "Receipt", "Warranty".
+  Future<void> _sharePapers(BuildContext context, int cardId) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final PapersShareResult? result = await showPurchasePapersSheet(
+      context,
+      cardId: cardId,
+    );
+    if (result == PapersShareResult.shared) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Handed to the app you chose.')),
+      );
+    }
+  }
+
   static String _heading(CardType type) {
     final String noun = paperNoun(type);
     return '${noun[0].toUpperCase()}${noun.substring(1)}';

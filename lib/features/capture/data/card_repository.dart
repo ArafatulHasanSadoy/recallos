@@ -86,6 +86,9 @@ class CardSummary {
       status == ExtractionStatus.failed || status == ExtractionStatus.partial;
 }
 
+/// What `image_path` holds on a record that was typed in.
+const String kNoPhotograph = '';
+
 /// What a card is called in a list, and the line under it.
 ///
 /// One function for every list — the library, search, needs-attention,
@@ -268,9 +271,51 @@ class CardRepository {
     await Isolate.run(() => sealCopySync(from, target, key));
     final File stored = File(target);
 
-    final int id = await _insertPending(stored.path, metAt, type, via);
+    final int id;
+    try {
+      id = await _insertPending(stored.path, metAt, type, via);
+    } on Object {
+      // No row points at the photograph, so nothing would ever remove it —
+      // and the likeliest reason is a phone already out of room.
+      try {
+        stored.deleteSync();
+      } on Object {
+        // Already gone.
+      }
+      rethrow;
+    }
     return (id: id, image: stored);
   }
+
+  /// A record with no photograph: an online order, a warranty somebody told
+  /// you about, a card that is long gone.
+  ///
+  /// `image_path` stays empty ([kNoPhotograph]), which every reader already
+  /// treats as "no picture", so this needs no schema change. Marked
+  /// [ExtractionStatus.manual], because nothing was misread and nothing needs
+  /// attention. [value] is the first thing about it, so it is never a blank
+  /// row in the wallet.
+  Future<int> createTyped({
+    required CardType type,
+    required String fieldKey,
+    required String value,
+  }) => _db.transaction(() async {
+    final int id = await _db
+        .into(_db.cards)
+        .insert(
+          CardsCompanion.insert(
+            imagePath: kNoPhotograph,
+            capturedAt: DateTime.now(),
+            type: Value<CardType>(type),
+            captureSource: const Value<CaptureSource>(CaptureSource.typed),
+            extractionStatus: const Value<ExtractionStatus>(
+              ExtractionStatus.manual,
+            ),
+          ),
+        );
+    await addField(cardId: id, fieldKey: fieldKey, value: value);
+    return id;
+  });
 
   /// The card row, and Event Mode's encounter for it, in one transaction.
   Future<int> _insertPending(
@@ -1302,48 +1347,77 @@ class CardRepository {
         )
         .watch()
         .asyncMap((List<QueryRow> ids) async {
-          final List<CardSummary> out = <CardSummary>[];
-          for (final QueryRow id in ids) {
-            final CardRow? row =
-                await (_db.select(_db.cards)..where(
-                      ($CardsTable c) => c.id.equals(id.read<int>('id')),
-                    ))
-                    .getSingleOrNull();
-            if (row == null) continue;
-
-            final List<CardField> fields = await (_db.select(
-              _db.cardFields,
-            )..where(($CardFieldsTable f) => f.cardId.equals(row.id))).get();
-            final Note? note =
-                await (_db.select(_db.notes)
+          // A set of queries per chunk rather than three per card: this runs
+          // on every write to a card, a field or a note, and at three
+          // thousand cards the per-card version was nine thousand queries
+          // each time. Chunked because SQLite limits bound variables.
+          final Map<int, CardRow> rows = <int, CardRow>{};
+          final Map<int, List<CardField>> fields = <int, List<CardField>>{};
+          final Map<int, String?> notes = <int, String?>{};
+          final List<int> order = <int>[
+            for (final QueryRow id in ids) id.read<int>('id'),
+          ];
+          for (int at = 0; at < order.length; at += _idsPerQuery) {
+            final List<int> chunk = order.sublist(
+              at,
+              math.min(at + _idsPerQuery, order.length),
+            );
+            for (final CardRow row in await (_db.select(
+              _db.cards,
+            )..where(($CardsTable c) => c.id.isIn(chunk))).get()) {
+              rows[row.id] = row;
+            }
+            for (final CardField f
+                in await (_db.select(_db.cardFields)
+                      ..where(($CardFieldsTable f) => f.cardId.isIn(chunk))
+                      ..orderBy(<OrderClauseGenerator<$CardFieldsTable>>[
+                        ($CardFieldsTable f) => OrderingTerm.asc(f.id),
+                      ]))
+                    .get()) {
+              (fields[f.cardId] ??= <CardField>[]).add(f);
+            }
+            for (final Note n
+                in await (_db.select(_db.notes)
                       ..where(
                         ($NotesTable n) =>
                             n.subjectType.equals('card') &
-                            n.subjectId.equals(row.id),
+                            n.subjectId.isIn(chunk),
                       )
-                      ..limit(1))
-                    .getSingleOrNull();
-
-            final ({String? title, String? subtitle}) named = describeCard(
-              row,
-              fields,
-            );
-            out.add(
-              CardSummary(
-                id: row.id,
-                imagePath: row.imagePath,
-                thumbPath: row.thumbPath,
-                capturedAt: row.capturedAt,
-                status: row.extractionStatus,
-                title: named.title,
-                subtitle: named.subtitle,
-                note: note?.body,
-                type: row.type,
-              ),
-            );
+                      ..orderBy(<OrderClauseGenerator<$NotesTable>>[
+                        ($NotesTable n) => OrderingTerm.asc(n.id),
+                      ]))
+                    .get()) {
+              notes.putIfAbsent(n.subjectId, () => n.body);
+            }
           }
-          return out;
+
+          return <CardSummary>[
+            for (final int id in order)
+              if (rows[id] case final CardRow row)
+                _summaryOf(row, fields[id] ?? const <CardField>[], notes[id]),
+          ];
         });
+  }
+
+  static const int _idsPerQuery = 900;
+
+  static CardSummary _summaryOf(
+    CardRow row,
+    List<CardField> fields,
+    String? note,
+  ) {
+    final ({String? title, String? subtitle}) named = describeCard(row, fields);
+    return CardSummary(
+      id: row.id,
+      imagePath: row.imagePath,
+      thumbPath: row.thumbPath,
+      capturedAt: row.capturedAt,
+      status: row.extractionStatus,
+      title: named.title,
+      subtitle: named.subtitle,
+      note: note,
+      type: row.type,
+    );
   }
 
   /// Watches one card and everything attached to it.

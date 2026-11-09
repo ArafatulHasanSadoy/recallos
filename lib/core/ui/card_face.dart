@@ -125,7 +125,9 @@ Widget _flight(
   final CardHero header = from.frame.full ? from : to;
   final CardHero thumb = from.frame.full ? to : from;
   final String? sharp = header.imagePath ?? thumb.imagePath;
-  if (sharp == null) return (toHeroContext.widget as Hero).child;
+  if (sharp == null || sharp.isEmpty) {
+    return (toHeroContext.widget as Hero).child;
+  }
 
   return CardFlight(
     // The wallet's own decode underneath, the big one over it. See the note in
@@ -342,7 +344,8 @@ class _Photo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String? path = imagePath;
+    // Empty on a record that was typed in, rather than photographed.
+    final String? path = imagePath?.isEmpty ?? true ? null : imagePath;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),

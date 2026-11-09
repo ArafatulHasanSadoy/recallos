@@ -78,6 +78,53 @@ class FieldProvenance {
 /// what `verified_by_user` used to say on its own.
 bool isConfirmed(CardField field) => field.review == FactReview.confirmed;
 
+/// Issues that describe *how* a value was arrived at rather than something
+/// still wrong with it. A user confirmation settles these.
+const Set<String> _provenanceIssues = <String>{
+  'digit_restored',
+  'ocr_repaired',
+};
+
+/// Whether a field still has an objection nobody has resolved.
+bool needsALook(CardField field) =>
+    field.validationIssue != null &&
+    !_provenanceIssues.contains(field.validationIssue);
+
+/// How a provenance reads: a fault, the user's own word, printed, or worked
+/// out by a rule. The screen gives each its colour.
+enum ProvenanceTone { alert, yours, printed, worked }
+
+/// Where [field] came from, in the words the app uses for it everywhere: the
+/// chip on the card screen and the summary that goes with shared papers.
+/// [paper] names what it was printed on — "card", "receipt", "warranty".
+(String, ProvenanceTone) describeProvenance(
+  CardField field, {
+  String paper = 'card',
+}) {
+  // An unresolved objection outranks even the user's own confirmation. A
+  // number too short to dial must not read as settled just because somebody
+  // tapped Save on it — silent wrong data is the failure mode that costs
+  // trust in everything else the app says.
+  if (needsALook(field)) return ('needs a look', ProvenanceTone.alert);
+  if (isConfirmed(field)) return ('you confirmed', ProvenanceTone.yours);
+  if (field.validity == FactValidity.outdated) {
+    return ('may be old', ProvenanceTone.alert);
+  }
+
+  return switch (field.validationIssue) {
+    'digit_restored' => ('digit restored', ProvenanceTone.worked),
+    'ocr_repaired' => ('OCR repaired', ProvenanceTone.worked),
+    _ => switch (field.origin) {
+      FactOrigin.printed => ('on the $paper', ProvenanceTone.printed),
+      FactOrigin.user => ('you typed', ProvenanceTone.yours),
+      // Worked out from other facts by a rule — a warranty's expiry from
+      // its purchase date. Said so, never shown as printed.
+      FactOrigin.derived => ('calculated', ProvenanceTone.worked),
+      FactOrigin.inferred => ('guess', ProvenanceTone.worked),
+    },
+  };
+}
+
 /// The provenance a freshly read [field] is stored with: printed, unless the
 /// reader guessed it.
 FieldProvenance provenanceOf(ExtractedField field) =>

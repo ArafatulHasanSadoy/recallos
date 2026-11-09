@@ -67,6 +67,12 @@ enum CaptureSource {
   /// Chosen from the phone's gallery outside the scanner.
   gallery,
 
+  /// Imported from a PDF or a picture file.
+  file,
+
+  /// There is no photograph: somebody typed it in.
+  typed,
+
   /// Captured before this was recorded.
   unknown,
 }

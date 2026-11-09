@@ -1,19 +1,28 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/storage/out_of_space.dart';
 import 'core/theme/app_theme.dart';
 import 'features/followup/presentation/reminder_responder.dart';
 import 'features/plus/presentation/plus_watch.dart';
 import 'features/settings/data/app_settings.dart';
+import 'features/settings/data/licences.dart';
 import 'features/settings/presentation/lock_gate.dart';
 import 'router.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // A write that fails on a full phone reaches no screen by itself.
+  PlatformDispatcher.instance.onError = (Object e, StackTrace _) =>
+      noticeOutOfSpace(e);
+  // The fonts and the search model are files, not packages, so their
+  // licences reach Settings → Licences only by being added here.
+  registerBundledLicences();
   // Portrait only. Every screen is a one-handed, hurried, card-shaped layout
   // and none of them were designed sideways. The Android manifest pins the
   // activity as well — that is the half that stops the rotation happening at
@@ -44,6 +53,7 @@ class RecallOsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'RecallOS',
+      scaffoldMessengerKey: appMessengerKey,
       locale: kAppLocale,
       supportedLocales: const <Locale>[kAppLocale],
       localizationsDelegates: kAppLocalizations,
