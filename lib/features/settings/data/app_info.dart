@@ -6,6 +6,12 @@ import '../../../core/build_flags.dart';
 /// Where feedback goes — the privacy contact in `docs/privacy-policy.html`.
 const String kFeedbackEmail = 'arafatsadoy@gmail.com';
 
+/// Help for the common failures — a bad reading, a missing reminder, a new
+/// phone, a refund — published beside the policy and opened the same way.
+final Uri kHelpUrl = Uri.parse(
+  'https://arafatulhasansadoy.github.io/recallos/help.html',
+);
+
 /// The published policy. Opened in the browser, so the app itself needs no
 /// network permission to show it.
 final Uri kPrivacyPolicyUrl = Uri.parse(

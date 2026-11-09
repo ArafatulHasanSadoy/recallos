@@ -12,14 +12,17 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/ui/brand.dart';
 import '../../../core/ui/primitives.dart';
 import '../../../router.dart';
+import '../../capture/data/card_repository.dart';
 import '../../cards/presentation/needs_attention_screen.dart';
 import '../../contacts/data/identity_repository.dart';
 import '../../plus/data/plus_controller.dart';
 import '../../profile/data/profile_repository.dart';
+import '../../search/data/search_repository.dart';
 import '../data/app_info.dart';
 import '../data/app_lock.dart';
 import '../data/app_settings.dart';
 import '../data/photo_protection.dart';
+import '../data/test_wallet.dart';
 import '../data/wallet_export.dart';
 import 'backup_rows.dart';
 import 'lock_gate.dart';
@@ -49,6 +52,18 @@ final storageStatusProvider = FutureProvider<StorageStatus>(
 /// type"; none of those has a store or a consumer yet, and a switch that
 /// remembers nothing is worse than an absent one — so they ship with their
 /// features, not before.
+/// Development only: see `kEvaluationTools` where this is offered.
+Future<void> _fillTestCards(BuildContext context, WidgetRef ref) async {
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  final CardRepository cards = ref.read(cardRepositoryProvider);
+  final SearchRepository search = ref.read(searchRepositoryProvider);
+  messenger.showSnackBar(
+    const SnackBar(content: Text('Adding 3,000 test cards…')),
+  );
+  final int added = await fillWithTestCards(cards, search);
+  messenger.showSnackBar(SnackBar(content: Text('Added $added test cards.')));
+}
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -185,8 +200,10 @@ class SettingsScreen extends ConsumerWidget {
                     label: 'About',
                     children: <Widget>[
                       VersionRow(),
+                      HelpRow(),
                       FeedbackRow(),
                       PrivacyPolicyRow(),
+                      LicencesRow(),
                     ],
                   ),
                   // Phase 0 scaffolding, and the last thing still reachable
@@ -214,6 +231,11 @@ class SettingsScreen extends ConsumerWidget {
                             color: c.inkFaint,
                           ),
                           onTap: () => context.push(Routes.spike),
+                        ),
+                        SettingRow(
+                          label: 'Fill with test cards',
+                          description: 'Adds 3,000, to try a large wallet',
+                          onTap: () => unawaited(_fillTestCards(context, ref)),
                         ),
                       ],
                     ),
@@ -358,8 +380,7 @@ class LockRow extends ConsumerStatefulWidget {
   ConsumerState<LockRow> createState() => _LockRowState();
 }
 
-class _LockRowState extends ConsumerState<LockRow>
-    with WidgetsBindingObserver {
+class _LockRowState extends ConsumerState<LockRow> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -480,7 +501,6 @@ class LockNowRow extends ConsumerWidget {
     );
   }
 }
-
 
 /// Takes a copy of the whole wallet out of the phone.
 ///
@@ -658,8 +678,7 @@ class _MyCardRow extends ConsumerWidget {
       label: 'Your card',
       description: switch (detail) {
         null => 'Not made yet — say who you are and hand it over.',
-        final ProfileDetail d when d.isEmpty =>
-          'Nothing on it yet.',
+        final ProfileDetail d when d.isEmpty => 'Nothing on it yet.',
         final ProfileDetail d => d.name.isEmpty ? 'Ready to hand over' : d.name,
       },
       trailing: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
@@ -779,6 +798,62 @@ class _FeedbackRowState extends ConsumerState<FeedbackRow> {
         final bool ok = await widget.launch(AppInfo.feedbackEmail(v));
         if (mounted) setState(() => _failed = !ok);
       },
+    );
+  }
+}
+
+/// The help page, opened in the browser. With no browser, the row says
+/// where the page is rather than doing nothing.
+class HelpRow extends StatefulWidget {
+  const HelpRow({super.key, this.launch = FeedbackRow._launch});
+
+  final Future<bool> Function(Uri) launch;
+
+  @override
+  State<HelpRow> createState() => _HelpRowState();
+}
+
+class _HelpRowState extends State<HelpRow> {
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+
+    return SettingRow(
+      label: 'Help',
+      description: _failed
+          ? 'No browser on this phone. It is at '
+                '${kHelpUrl.host}${kHelpUrl.path}'
+          : 'A scan read wrong, a reminder did not come, a new phone, a '
+                'refund. Opens in your browser.',
+      trailing: Icon(
+        _failed ? Icons.error_outline : Icons.open_in_new,
+        size: 18,
+        color: _failed ? c.vermilion : c.inkFaint,
+      ),
+      onTap: () async {
+        final bool ok = await widget.launch(kHelpUrl);
+        if (mounted) setState(() => _failed = !ok);
+      },
+    );
+  }
+}
+
+/// The open-source work the app is built on, each with its licence.
+class LicencesRow extends StatelessWidget {
+  const LicencesRow({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors c = AppColors.of(context);
+    return SettingRow(
+      label: 'Licences',
+      description:
+          'The fonts, the search model and the code libraries '
+          'RecallOS is built on.',
+      trailing: Icon(Icons.chevron_right, size: 18, color: c.inkFaint),
+      onTap: () => context.push(Routes.licences),
     );
   }
 }

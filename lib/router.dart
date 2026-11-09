@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'core/build_flags.dart';
 import 'core/theme/app_theme.dart';
+import 'features/capture/data/paper_import.dart';
 import 'features/capture/presentation/capture_screen.dart';
 import 'features/capture/presentation/spike_screen.dart';
 import 'features/cards/presentation/card_detail_screen.dart';
@@ -20,6 +21,7 @@ import 'features/profile/presentation/my_card_screen.dart';
 import 'features/profile/presentation/profile_editor_screen.dart';
 import 'features/search/presentation/home_screen.dart';
 import 'features/settings/data/app_settings.dart';
+import 'features/settings/presentation/licences_screen.dart';
 import 'features/settings/presentation/onboarding_screen.dart';
 import 'features/settings/presentation/settings_screen.dart';
 import 'features/spending/presentation/spending_screen.dart';
@@ -54,6 +56,11 @@ abstract final class Routes {
 
   /// What the saved receipts add up to (B4).
   static const String receiptTotals = '/receipts';
+
+  /// Every open-source work in the app, and one work's licence text.
+  static const String licences = '/licences';
+  static String licenceOf(String name) =>
+      '/licences/${Uri.encodeComponent(name)}';
 
   /// Phase 0 scaffolding. Delete once the OCR gate has been answered.
   static const String spike = '/spike';
@@ -110,7 +117,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: <RouteBase>[
       GoRoute(path: Routes.home, builder: (_, _) => const HomeScreen()),
-      GoRoute(path: Routes.capture, builder: (_, _) => const CaptureScreen()),
+      GoRoute(
+        path: Routes.capture,
+        builder: (_, GoRouterState state) =>
+            CaptureScreen(imported: state.extra as ImportedPaper?),
+      ),
       // Developer scaffolding, and it stays out of shipped builds entirely.
       // The spike screen reads whatever the user picks out of the gallery,
       // runs OCR over it and writes the raw result to a file — an
@@ -145,6 +156,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: Routes.settings, builder: (_, _) => const SettingsScreen()),
+      GoRoute(path: Routes.licences, builder: (_, _) => const LicencesScreen()),
+      GoRoute(
+        path: '/licences/:name',
+        builder: (_, GoRouterState state) =>
+            LicenceScreen(name: state.pathParameters['name'] ?? ''),
+      ),
       GoRoute(
         path: Routes.receiptTotals,
         builder: (_, _) => const SpendingScreen(),

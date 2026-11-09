@@ -133,4 +133,36 @@ void main() {
 
     expect(find.textContaining('arafatulhasansadoy.github.io'), findsOneWidget);
   });
+
+  testWidgets('help opens the published help page', (
+    WidgetTester tester,
+  ) async {
+    Uri? opened;
+    await pump(
+      tester,
+      HelpRow(
+        launch: (Uri uri) async {
+          opened = uri;
+          return true;
+        },
+      ),
+    );
+
+    await tester.tap(find.text('Help'));
+    await tester.pumpAndSettle();
+
+    expect(opened, kHelpUrl);
+    expect(kHelpUrl.path, '/recallos/help.html');
+  });
+
+  testWidgets('with no browser, help shows where the page is', (
+    WidgetTester tester,
+  ) async {
+    await pump(tester, HelpRow(launch: (Uri _) async => false));
+
+    await tester.tap(find.text('Help'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('github.io/recallos/help.html'), findsOneWidget);
+  });
 }

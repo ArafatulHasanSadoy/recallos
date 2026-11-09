@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecallOS — Help</title>
+<style>
+  :root {
+    --page: #E4DAC5; --card: #FBF7EE; --ink: #1F1B13;
+    --muted: #6B6047; --hairline: #E3D9C4; --ochre: #8A5A12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #15130F; --card: #1D1A15; --ink: #F0EADC;
+      --muted: #8A8271; --hairline: #2C271F; --ochre: #C8901A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+    background: var(--page); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main {
+    max-width: 42rem; margin: 0 auto; padding: 2.25rem 2rem;
+    background: var(--card); border-radius: 14px;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.08rem; margin: 2.25rem 0 .6rem; letter-spacing: -0.005em; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .4rem; }
+  .meta { color: var(--muted); font-size: .82rem; margin: 0 0 2rem;
+          text-transform: uppercase; letter-spacing: .08em; }
+  p, li { color: var(--ink); }
+  li { margin: .35rem 0; }
+  ul, ol { padding-left: 1.15rem; }
+  strong { font-weight: 650; }
+  em { font-style: normal; font-weight: 600; }
+  hr { border: 0; border-top: 1px solid var(--hairline); margin: 2.5rem 0 1.5rem; }
+  a { color: var(--ochre); }
+  nav ul { list-style: none; padding: 0; }
+  nav li { margin: .2rem 0; }
+  footer { color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>RecallOS — Help</h1>
+<p class="meta">Last updated 9 November 2026</p>
+
+<p>RecallOS keeps business cards, receipts and warranties on your phone and
+nowhere else. That is why most answers below start in the app itself: there is
+no account to log into and no copy on a server to fall back on.</p>
+
+<nav>
+<ul>
+  <li><a href="#scanning">A scan read something wrong</a></li>
+  <li><a href="#adding">Adding something without the camera</a></li>
+  <li><a href="#receipts">Receipts, warranties and totals</a></li>
+  <li><a href="#reminders">A reminder did not arrive</a></li>
+  <li><a href="#backup">Backing up, and moving to a new phone</a></li>
+  <li><a href="#plus">RecallOS Plus: buying, restoring, refunds</a></li>
+  <li><a href="#deleting">Deleting, and getting things back</a></li>
+  <li><a href="#contact">Contact</a></li>
+</ul>
+</nav>
+
+<h2 id="scanning">A scan read something wrong</h2>
+
+<p>The photograph is always kept, so nothing on the paper is lost even when
+the reading is poor. To fix a value, open the card and tap the value:</p>
+<ul>
+  <li><strong>Wrong label</strong> (a company read as an address) — change
+      what it is under <em>What is this?</em></li>
+  <li><strong>Wrong text</strong> — pick the right words under <em>Or take it
+      from the card</em>; they are the text the phone read, so nothing needs
+      typing. Or type it.</li>
+  <li><strong>Missing</strong> — <em>Add something it missed</em>, at the end
+      of the list.</li>
+</ul>
+<p>Every value carries a small label saying where it came from: <em>on the
+card</em> (read from the photograph), <em>you confirmed</em> or <em>you
+typed</em>, <em>calculated</em> (worked out by RecallOS), or <em>needs a
+look</em>.</p>
+<p>Cards that did not read cleanly are listed under Settings → <em>Needs
+attention</em>, with <em>Try reading them again</em>.</p>
+<p><strong>Bangla text.</strong> The phone's text reader reads Latin script
+(English letters and numbers). A name printed only in Bangla is usually not
+read. Write it in the card's note, or type it into the name — search finds
+both.</p>
+<p>A card that could not be read at all is still saved. Write why you kept it
+in the note and you will find it by that.</p>
+
+<h2 id="adding">Adding something without the camera</h2>
+
+<p>On the home screen, tap the button beside <em>Scan</em>:</p>
+<ul>
+  <li><strong>Type it in</strong> — for a paper you no longer have, or that
+      never existed: an online order, a warranty you were told about. Say
+      what it is and what it is called, then add the rest on its own
+      screen.</li>
+  <li><strong>From a file</strong> — a PDF, JPG or PNG on your phone, up to
+      25 MB. It is read like a scan. Only the first page of a PDF is kept,
+      and a PDF with a password cannot be opened.</li>
+</ul>
+
+<h2 id="receipts">Receipts, warranties and totals</h2>
+
+<h3>Why is a receipt not in the total?</h3>
+<p>A receipt is added only when you have checked its <strong>total and its
+date</strong>, because a wrong reading would make a wrong sum. Open
+<em>Receipt totals</em>: every receipt that is not added is listed with what
+to do (<em>Check the total</em>, <em>Add the date</em>). A receipt that looks
+like a second copy of one already counted is asked about instead of being
+added twice. Each currency has its own total; nothing is converted.</p>
+<p>The figure is what your <strong>saved, checked receipts</strong> add up
+to — not everything you spent. A refund slip comes off the figure, is marked
+<em>Refund</em> in the list, and the figure says how much came back.</p>
+
+<h3>When does a warranty end?</h3>
+<p>Open the warranty. <em>Covered until</em> shows the last covered day and
+how it is known: printed on the warranty, confirmed by you, or calculated
+from the purchase date and the length of cover. A calculated end needs the
+purchase date: link the warranty to its receipt (<em>Is this its
+receipt?</em> → <em>Yes, link them</em>, or <em>Link its receipt</em>), or add
+the date yourself. RecallOS reminds you about a month before the end.</p>
+<p>RecallOS records what the papers say. It cannot tell you whether a shop or
+maker will accept a claim.</p>
+
+<h3>Sending papers to a shop or service centre</h3>
+<p>On a receipt or warranty, tap the share button at the top. RecallOS first
+shows everything that will go — every value with where it came from, and the
+photographs of that paper and the one linked to it — and sends nothing until
+you tap <em>Share</em>. The photographs are not encrypted once shared.</p>
+<p>In <em>Receipt totals</em>, the share button sends a spreadsheet of the
+receipts behind the figure and those held back, each with why.</p>
+
+<h2 id="reminders">A reminder did not arrive</h2>
+<ol>
+  <li><strong>Notifications must be on for RecallOS.</strong> When they are
+      off, <em>Today</em> says so with a way to turn them on, and so does a
+      warranty's <em>Covered until</em>. Next steps still show on
+      <em>Today</em> either way.</li>
+  <li>Reminders come back after the phone restarts, once you have unlocked
+      it. Some phones stop apps they think are idle; if reminders still go
+      missing, allow RecallOS to start by itself and run in the background in
+      your phone's settings.</li>
+  <li><strong>Travelling.</strong> Days and times follow the phone's clock: a
+      9 AM reminder stays at 9 AM where you are, once you have opened RecallOS
+      there. If you have not opened it, the reminder comes at the moment it
+      would have at home.</li>
+  <li>The free version keeps up to five next steps with reminders at a time.
+      Warranty reminders are not counted in the five.</li>
+</ol>
+
+<h2 id="backup">Backing up, and moving to a new phone</h2>
+<p><strong>RecallOS keeps your wallet only on this phone, and Android's own
+backup is switched off for it on purpose.</strong> Uninstalling the app, or
+losing the phone, loses the wallet unless you made a backup.</p>
+<ol>
+  <li>Settings → <em>Back up the wallet</em>.</li>
+  <li>Choose a passphrase — a short sentence is easiest. <strong>Nobody can
+      reset it, not even RecallOS.</strong> Write it down somewhere safe.</li>
+  <li>Save the file somewhere that is not this phone: your email, Google
+      Drive, a computer.</li>
+</ol>
+<p>On the new phone: install RecallOS, then Settings → <em>Restore from a
+backup</em>, pick the file and type the passphrase. You see what the backup
+holds before anything changes; the app restarts to finish. Restoring
+replaces what is on that phone.</p>
+<p>A forgotten passphrase cannot be recovered, and a backup cannot be opened
+without it. <em>Take a copy</em> in Settings makes a readable, unencrypted
+archive (contacts as <code>.vcf</code>, everything else as a file) that needs
+no passphrase — keep it somewhere private.</p>
+
+<h2 id="plus">RecallOS Plus: buying, restoring, refunds</h2>
+<ul>
+  <li>Plus is a single purchase through Google Play, shown at Play's own
+      price for your country.</li>
+  <li><strong>On a new phone,</strong> sign in to the Play Store with the
+      same Google account; Plus comes back on its own. It is not part of
+      your backup.</li>
+  <li><strong>Refunds</strong> go through Google Play (your Play order
+      history). If Plus is refunded, the app returns to the free features.
+      Nothing in your wallet is deleted.</li>
+  <li>Payment problems, or a purchase that did not unlock: write to the
+      address below with the version from Settings → <em>Version</em>.</li>
+</ul>
+
+<h2 id="deleting">Deleting, and getting things back</h2>
+<p>Deleting a card, receipt or warranty moves it to <em>Recently
+deleted</em> (on the <em>Needs attention</em> screen) for 30 days, where it
+can be put back. <em>Delete for good</em> removes it and its photographs
+permanently.</p>
+<p>To remove everything, uninstall RecallOS. Without a backup this cannot be
+undone.</p>
+
+<h2 id="contact">Contact</h2>
+<p>Settings → <em>Send feedback</em> opens your email with the app's version
+and your phone's model filled in; you see it all before it is sent. Please do
+not attach photographs of other people's cards.</p>
+<p>Security problems: see <a
+href="https://github.com/ArafatulHasanSadoy/recallos/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+
+<hr>
+
+<footer>
+<p>Questions: <a href="mailto:arafatsadoy@gmail.com">arafatsadoy@gmail.com</a> ·
+<a href="privacy-policy.html">Privacy policy</a></p>
+<p>RecallOS is an independent project. Source code:
+<a href="https://github.com/ArafatulHasanSadoy/recallos">github.com/ArafatulHasanSadoy/recallos</a></p>
+</footer>
+
+</main>
+</body>
+</html>
