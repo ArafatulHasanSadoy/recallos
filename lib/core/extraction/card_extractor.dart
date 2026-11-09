@@ -3,6 +3,7 @@ import 'dart:ui' show Rect;
 
 import '../domain/local_date.dart';
 import '../intelligence/ocr_engine.dart';
+import 'document_lines.dart' show withLeadingIRepaired;
 import 'phone.dart';
 import 'web.dart';
 
@@ -297,6 +298,8 @@ abstract final class CardFieldExtractor {
     'consultant',
     'advisor',
     'head',
+    'lead',
+    'team lead',
     'chief',
     'supervisor',
     'coordinator',
@@ -409,7 +412,8 @@ abstract final class CardFieldExtractor {
   ///
   /// Never throws and never returns null: a card that yields nothing produces an
   /// empty extraction, which the caller turns into a note prompt.
-  static CardExtraction extract(List<OcrBlock> blocks) {
+  static CardExtraction extract(List<OcrBlock> read) {
+    final List<OcrBlock> blocks = withLeadingIRepaired(read);
     if (blocks.isEmpty) {
       return const CardExtraction(
         fields: <ExtractedField>[],
@@ -554,10 +558,77 @@ abstract final class CardFieldExtractor {
   /// or reassigned, not only of one OCR produced — see `field_validator.dart`.
   static bool looksLikeAddress(String text) => _looksLikeAddress(text);
 
-  static bool _looksLikeAddress(String text) =>
-      _containsWord(text, addressKeywords) ||
-      _numberedUnit.hasMatch(text) ||
-      _postcode.hasMatch(text);
+  static bool _looksLikeAddress(String text) {
+    if (_numberedUnit.hasMatch(text) || _postcode.hasMatch(text)) return true;
+    return _containsWord(text, addressKeywords) && !namesABusiness(text);
+  }
+
+  /// Address words that are just as often part of a business's name: the
+  /// places businesses here are named after, and "House" without a number
+  /// ("Print House", "Fashion House").
+  static const Set<String> _placeOrHouseWords = <String>{
+    'house',
+    'market',
+    'tower',
+    'plaza',
+    'dhaka',
+    'chittagong',
+    'chattogram',
+    'sylhet',
+    'rajshahi',
+    'khulna',
+    'barisal',
+    'rangpur',
+    'mymensingh',
+    'comilla',
+    'narayanganj',
+    'gulshan',
+    'banani',
+    'dhanmondi',
+    'uttara',
+    'mirpur',
+    'motijheel',
+    'bashundhara',
+    'mohakhali',
+    'badda',
+    'tejgaon',
+    'farmgate',
+    'shantinagar',
+    'bangladesh',
+  };
+
+  /// Whether [text] is a business's name that happens to carry address words —
+  /// "Dhaka Print House", "Gulshan Pharmacy" — rather than an address.
+  ///
+  /// It is when the line ends in a business word and every address word on it
+  /// is a place or a bare "House". A street word ("Road", "Floor"), a unit
+  /// number or a postcode still makes it an address, and so does ending on
+  /// the place ("Print House, Dhaka"): that is a business and its city, read
+  /// together as where to find it.
+  ///
+  /// Shared by the card reader and the receipt reader's shop name, because
+  /// both once threw such a line out as an address — the card filed "Dhaka
+  /// Print House" as the address and promoted the person's name to company.
+  static bool namesABusiness(String text) {
+    if (_numberedUnit.hasMatch(text) || _postcode.hasMatch(text)) return false;
+    final List<String> words = text
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9.]+'))
+        .map((String w) => w.replaceAll(RegExp(r'\.+$'), ''))
+        .where((String w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return false;
+    final String last = words.last;
+    if (!companyKeywords.contains(last) &&
+        !companyKeywords.contains('$last.')) {
+      return false;
+    }
+    for (final String w in addressKeywords) {
+      if (_placeOrHouseWords.contains(w)) continue;
+      if (_containsWord(text, <String>[w])) return false;
+    }
+    return true;
+  }
 
   static void _extractAddress(
     List<OcrBlock> blocks,

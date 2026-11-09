@@ -155,6 +155,105 @@ void main() {
     expect(total.amountMinor, 1250);
   });
 
+  test('a shop whose capital I was read as a small l', () {
+    expect(
+      field(
+        ReceiptExtractor.extract(
+          paper(<Object>[
+            'lspahani Stores',
+            'Date: 05/10/2026',
+            ('Grand Total', '900.00'),
+          ]),
+        ),
+        ReceiptKeys.merchant,
+      )?.value,
+      'Ispahani Stores',
+    );
+  });
+
+  group('a refund', () {
+    int? total(List<Object> rows) => field(
+      ReceiptExtractor.extract(paper(rows)),
+      ReceiptKeys.total,
+    )?.amountMinor;
+
+    test('headed as one, printed without a minus: it comes off', () {
+      expect(
+        total(<Object>[
+          'STAR TECH',
+          'REFUND RECEIPT',
+          'Date: 05/10/2026',
+          ('Total', '1,200.00'),
+        ]),
+        -120000,
+      );
+    });
+
+    test('a refund amount, printed in brackets', () {
+      expect(
+        total(<Object>[
+          'STAR TECH',
+          'Date: 05/10/2026',
+          ('Refund Amount', '(450.50)'),
+        ]),
+        -45050,
+      );
+    });
+
+    test('the policy at the foot of a sale does not make it a refund', () {
+      expect(
+        total(<Object>[
+          'STAR TECH',
+          'Date: 05/10/2026',
+          ('Grand Total', '1,200.00'),
+          'No refund without this receipt',
+          'Refund within 7 days',
+        ]),
+        120000,
+      );
+    });
+  });
+
+  group('the day it was printed is not the day it was bought', () {
+    LocalDate? bought(List<Object> rows) => field(
+      ReceiptExtractor.extract(paper(rows)),
+      ReceiptKeys.purchaseDate,
+    )?.dateValue;
+
+    test('a reprint stamp above the sale date', () {
+      expect(
+        bought(<Object>[
+          'SHOPNO SUPER SHOP',
+          'Printed on: 09/03/2026',
+          'Sale date: 12/01/2026',
+          ('Grand Total', '432.60'),
+        ]),
+        LocalDate(2026, 1, 12),
+      );
+    });
+
+    test('only a print date: no date, rather than the wrong one', () {
+      expect(
+        bought(<Object>[
+          'SHOPNO SUPER SHOP',
+          'Reprint 09/03/2026',
+          ('Grand Total', '432.60'),
+        ]),
+        isNull,
+      );
+    });
+
+    test('a shop with Print in its name keeps its date', () {
+      expect(
+        bought(<Object>[
+          'Dhaka Print House Date: 05/10/2026',
+          ('Grand Total', '900.00'),
+        ]),
+        LocalDate(2026, 10, 5),
+      );
+    });
+  });
+
   test('a warranty date on the receipt is not the purchase date', () {
     final CardExtraction e = ReceiptExtractor.extract(
       paper(<Object>[
@@ -168,5 +267,31 @@ void main() {
       field(e, ReceiptKeys.purchaseDate)!.dateValue,
       LocalDate(2026, 10, 5),
     );
+  });
+
+  // The same fault as the card reader's "… House" (21 Oct): the shop's name
+  // was thrown out for carrying "House" or "Dhaka", as an address would.
+  test('a shop named "Dhaka Print House" is the merchant', () {
+    final CardExtraction e = ReceiptExtractor.extract(
+      paper(<Object>[
+        'Dhaka Print House',
+        'House 9, Road 2, Nilkhet, Dhaka',
+        'Date: 02/11/2026',
+        ('Visiting cards x 200', '600.00'),
+        ('Total', '600.00'),
+      ]),
+    );
+    expect(field(e, ReceiptKeys.merchant)!.value, 'Dhaka Print House');
+  });
+
+  test('the address under a shop is still not its name', () {
+    final CardExtraction e = ReceiptExtractor.extract(
+      paper(<Object>[
+        'House 9, Road 2, Nilkhet, Dhaka',
+        'Date: 02/11/2026',
+        ('Total', '600.00'),
+      ], headerHeight: 18),
+    );
+    expect(field(e, ReceiptKeys.merchant), isNull);
   });
 }

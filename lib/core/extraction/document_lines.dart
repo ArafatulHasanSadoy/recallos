@@ -93,6 +93,39 @@ Rect _bounds(List<OcrBlock> blocks, List<int> indices) => indices
     .map((int i) => blocks[i].rect)
     .reduce((Rect a, Rect b) => a.expandToInclude(b));
 
+final RegExp _leadingL = RegExp(
+  r'(?<![\w@./-])l([bcdfghjkmnpqrstvwxz][a-z]{2,})(?![\w@]|\.\w)',
+);
+
+/// Puts back a capital I that OCR read as a lowercase l at the start of a word.
+///
+/// In most sans-serif type the two letters are the same stroke, so "Islam"
+/// arrives as "lslam", "Iqbal" as "lqbal" and "International" as
+/// "lnternational". Left alone, a person's name fails the sentence-case test
+/// and disappears, and a company's keyword is never matched. No English word
+/// or common name starts with l and a consonant, apart from a double l, which
+/// is why that is the whole test. Emails and web addresses are left exactly
+/// as they were read.
+String repairLeadingI(String text) =>
+    text.replaceAllMapped(_leadingL, (Match m) => 'I${m[1]}');
+
+/// [blocks] with [repairLeadingI] applied. The same object when nothing
+/// changed. Every reader starts here; the blocks stored for the picker stay
+/// as the engine returned them.
+List<OcrBlock> withLeadingIRepaired(List<OcrBlock> blocks) {
+  if (!blocks.any((OcrBlock b) => _leadingL.hasMatch(b.text))) return blocks;
+  return <OcrBlock>[
+    for (final OcrBlock b in blocks)
+      OcrBlock(
+        text: repairLeadingI(b.text),
+        rect: b.rect,
+        confidence: b.confidence,
+        script: b.script,
+        engine: b.engine,
+      ),
+  ];
+}
+
 /// Bangla digits as ASCII, so every pattern below sees one alphabet.
 String asciiDigits(String s) {
   final StringBuffer out = StringBuffer();

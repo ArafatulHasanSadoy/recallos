@@ -20,9 +20,10 @@ abstract final class ReceiptExtractor {
   /// Reads [blocks]. Amounts are in [defaultCurrency] unless the receipt
   /// prints another.
   static CardExtraction extract(
-    List<OcrBlock> blocks, {
+    List<OcrBlock> read, {
     String defaultCurrency = 'BDT',
   }) {
+    final List<OcrBlock> blocks = withLeadingIRepaired(read);
     final List<DocLine> rows = rowsOf(blocks);
     final String text = rows.map((DocLine r) => r.text).join('\n');
     final String currency = currencyOf(text) ?? defaultCurrency;
@@ -64,7 +65,7 @@ abstract final class ReceiptExtractor {
   );
 
   static final RegExp _anyTotal = RegExp(
-    r'\btotal(?:\s*amount)?\b|মোট',
+    r'\btotal(?:\s*amount)?\b|\brefund(?:ed)?\s*amount\b|মোট',
     caseSensitive: false,
   );
 
@@ -82,11 +83,32 @@ abstract final class ReceiptExtractor {
     r'(?<![\d.,])\d+(?:\.\d{1,2})?(?![\d.,])',
   );
 
+  /// A row that says the whole paper is a refund: alone on its row, because
+  /// "No refund without this receipt" is printed on ordinary receipts.
+  static final RegExp _refundHeading = RegExp(
+    r'^\W*(?:refund|credit\s*note|sales?\s*return|return)'
+    r'(?:\s*(?:receipt|invoice|slip|memo|bill))?\W*$',
+    caseSensitive: false,
+  );
+
+  /// The total row of a refund, which may be the only sign there is.
+  static final RegExp _refundTotal = RegExp(
+    r'\brefund(?:ed)?\s*(?:total|amount|due)\b|\btotal\s*refund(?:ed)?\b',
+    caseSensitive: false,
+  );
+
+  static bool _isRefund(List<DocLine> rows) => rows.any(
+    (DocLine row) =>
+        _refundHeading.hasMatch(row.text.trim()) ||
+        _refundTotal.hasMatch(row.text),
+  );
+
   static ExtractedField? _total(
     List<DocLine> rows,
     List<OcrBlock> blocks,
     String currency,
   ) {
+    final bool refund = _isRefund(rows);
     ExtractedField? read(DocLine row, double certainty, {DocLine? next}) {
       final String line = asciiDigits(row.text);
       final RegExpMatch? label =
@@ -110,8 +132,14 @@ abstract final class ReceiptExtractor {
         }
       }
       if (amount == null) return null;
-      final Money? money = Money.parse(amount, currency: currency);
-      if (money == null || money.minor <= 0) return null;
+      final Money? parsed = Money.parse(amount, currency: currency);
+      if (parsed == null || parsed.minor == 0) return null;
+      // Printed with or without a minus, a refund comes off the figure. A
+      // negative amount on any other receipt is a discount line, not a total.
+      if (parsed.minor < 0 && !refund) return null;
+      final Money money = refund
+          ? Money(-parsed.minor.abs(), parsed.currency)
+          : parsed;
       return ExtractedField(
         fieldKey: ReceiptKeys.total,
         value: money.format(),
@@ -163,9 +191,12 @@ abstract final class ReceiptExtractor {
     caseSensitive: false,
   );
 
-  /// Dates that are about something else than the purchase.
+  /// Dates that are about something else than the purchase, the day the
+  /// slip was reprinted among them: a duplicate printed in March of something
+  /// bought in January was still bought in January.
   static final RegExp _otherDate = RegExp(
-    r'\b(?:warranty|expir|valid|due\s*date|delivery|exp\b|mfg|best before)',
+    r'\b(?:warranty|expir|valid|due\s*date|delivery|exp\b|mfg|best before|'
+    r'printed|print\s*(?:date|time|on)|re-?print)',
     caseSensitive: false,
   );
 
@@ -207,12 +238,22 @@ abstract final class ReceiptExtractor {
   /// Lines near the top that are about the receipt, not the shop's name.
   static final RegExp _notAName = RegExp(
     r'\b(?:invoice|receipt|cash\s*memo|bill|tax|vat|bin|mushak|reg\b|'
-    r'date|time|tel|phone|mobile|hotline|email|www|road|house|floor|'
-    r'level|shop\s*(?:no\.?|#)\s*[:#]?\s*\d|block|sector|dhaka|chattogram|'
-    r'chittagong|sylhet|'
+    r'date|time|tel|phone|mobile|hotline|email|www|'
     r'customer|cashier|counter|table|order|token)\b|@|\d{5,}',
     caseSensitive: false,
   );
+
+  /// Lines near the top that are the shop's address — unless the words are
+  /// part of its name, as in "Dhaka Print House" (see
+  /// [CardFieldExtractor.namesABusiness]).
+  static final RegExp _addressLike = RegExp(
+    r'\b(?:road|house|floor|level|shop\s*(?:no\.?|#)\s*[:#]?\s*\d|block|'
+    r'sector|dhaka|chattogram|chittagong|sylhet)\b',
+    caseSensitive: false,
+  );
+
+  static bool _isAddress(String t) =>
+      _addressLike.hasMatch(t) && !CardFieldExtractor.namesABusiness(t);
 
   static ExtractedField? _merchant(List<DocLine> rows, List<OcrBlock> blocks) {
     DocLine? best;
@@ -222,6 +263,7 @@ abstract final class ReceiptExtractor {
       // A row with a price on it is an item, never the shop's name.
       if (letters < 3 ||
           _notAName.hasMatch(t) ||
+          _isAddress(t) ||
           moneyPattern.hasMatch(asciiDigits(t))) {
         continue;
       }

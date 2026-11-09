@@ -43,7 +43,9 @@ class DocumentReading {
 /// Reads [blocks]: as [as] when the type is known, otherwise as whatever
 /// the page most looks like.
 DocumentReading readDocument(List<OcrBlock> blocks, {CardType? as}) {
-  final String text = rowsOf(blocks).map((DocLine r) => r.text).join('\n');
+  final String text = rowsOf(
+    withLeadingIRepaired(blocks),
+  ).map((DocLine r) => r.text).join('\n');
   final Classification c = classifyDocument(text);
   final CardType type = as ?? cardTypeOf(c.kind);
   return DocumentReading(

@@ -2,7 +2,10 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:recallos/core/extraction/card_extractor.dart';
+import 'package:recallos/core/extraction/document_lines.dart';
 import 'package:recallos/core/intelligence/ocr_engine.dart';
+
+import '../support/ocr_layout.dart';
 
 /// Builds a block laid out like a line of text on a card.
 ///
@@ -69,7 +72,10 @@ void main() {
     });
 
     test('joins the address', () {
-      expect(result.firstOfKey(FieldKeys.address)?.value, contains('Dhanmondi'));
+      expect(
+        result.firstOfKey(FieldKeys.address)?.value,
+        contains('Dhanmondi'),
+      );
     });
 
     test('every field carries the region it came from', () {
@@ -121,8 +127,9 @@ void main() {
 
   group('CardFieldExtractor — failure and recovery', () {
     test('an empty card yields an empty extraction rather than throwing', () {
-      final CardExtraction result =
-          CardFieldExtractor.extract(const <OcrBlock>[]);
+      final CardExtraction result = CardFieldExtractor.extract(
+        const <OcrBlock>[],
+      );
 
       expect(result.isEmpty, isTrue);
       expect(result.isUseful, isFalse);
@@ -243,8 +250,8 @@ void main() {
   // digit the card never carried is an inference.
   group('CardFieldExtractor — reformatted versus restored phones', () {
     ExtractedField phoneFrom(String line) => CardFieldExtractor.extract(
-          <OcrBlock>[block(line, top: 10, height: 16)],
-        ).firstOfKey(FieldKeys.phone)!;
+      <OcrBlock>[block(line, top: 10, height: 16)],
+    ).firstOfKey(FieldKeys.phone)!;
 
     test('an international print shown nationally is not a restoration', () {
       final ExtractedField phone = phoneFrom('+880 1711-223344');
@@ -311,8 +318,10 @@ void main() {
 
       // Both lines belong to the company, so neither may resurface as
       // unassigned text or the detail screen shows the name twice.
-      expect(result.firstOfKey(FieldKeys.company)?.sourceBlockIndices,
-          <int>[0, 1]);
+      expect(result.firstOfKey(FieldKeys.company)?.sourceBlockIndices, <int>[
+        0,
+        1,
+      ]);
       expect(result.unassignedBlockIndices, isEmpty);
     });
 
@@ -329,20 +338,25 @@ void main() {
       expect(result.firstOfKey(FieldKeys.personName)?.value, 'Rahim Uddin');
     });
 
-    test('leaves a small company line alone when a job title names a person',
-        () {
-      // Descriptor-sized company under a large name, which would otherwise
-      // merge — except the designation proves a human is on this card.
-      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
-        block('MD. KARIM', top: 10, height: 40),
-        block('Karim Traders Ltd', top: 56, height: 18),
-        block('Proprietor', top: 80, height: 14),
-        block('01711-223344', top: 110, height: 16),
-      ]);
+    test(
+      'leaves a small company line alone when a job title names a person',
+      () {
+        // Descriptor-sized company under a large name, which would otherwise
+        // merge — except the designation proves a human is on this card.
+        final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+          block('MD. KARIM', top: 10, height: 40),
+          block('Karim Traders Ltd', top: 56, height: 18),
+          block('Proprietor', top: 80, height: 14),
+          block('01711-223344', top: 110, height: 16),
+        ]);
 
-      expect(result.firstOfKey(FieldKeys.company)?.value, 'Karim Traders Ltd');
-      expect(result.firstOfKey(FieldKeys.personName)?.value, 'MD. KARIM');
-    });
+        expect(
+          result.firstOfKey(FieldKeys.company)?.value,
+          'Karim Traders Ltd',
+        );
+        expect(result.firstOfKey(FieldKeys.personName)?.value, 'MD. KARIM');
+      },
+    );
 
     test('does not join lines set far apart', () {
       final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
@@ -352,7 +366,10 @@ void main() {
         block('01711-223344', top: 260, height: 16),
       ]);
 
-      expect(result.firstOfKey(FieldKeys.company)?.value, isNot(contains('AQUARIUS')));
+      expect(
+        result.firstOfKey(FieldKeys.company)?.value,
+        isNot(contains('AQUARIUS')),
+      );
     });
   });
 
@@ -362,11 +379,11 @@ void main() {
   // one.
   group('CardFieldExtractor — shop card with a tagline', () {
     List<OcrBlock> shopCard(String tagline) => <OcrBlock>[
-          block('TechFix Repair Centre', top: 10, height: 60),
-          block(tagline, top: 80, height: 26),
-          block('+880 1617-223311', top: 116, height: 28),
-          block('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
-        ];
+      block('TechFix Repair Centre', top: 10, height: 60),
+      block(tagline, top: 80, height: 26),
+      block('+880 1617-223311', top: 116, height: 28),
+      block('Shop 14, Elephant Road, Dhaka', top: 154, height: 28),
+    ];
 
     for (final String tagline in <String>[
       'Laptop and Mobile Servicing',
@@ -438,20 +455,22 @@ void main() {
       expect(result.firstOfKey(FieldKeys.personName), isNull);
     });
 
-    test('a person named under their employer still counts, without a title',
-        () {
-      // The ordinary spread between a name and the company it works for — the
-      // same weights as the well-formed card above, minus its job title.
-      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
-        block('Medica Books Ltd', top: 10, height: 34),
-        block('Rahim Uddin', top: 60, height: 26),
-        block('01711-223344', top: 100, height: 16),
-        block('House 42, Road 7, Dhanmondi, Dhaka', top: 122, height: 16),
-      ]);
+    test(
+      'a person named under their employer still counts, without a title',
+      () {
+        // The ordinary spread between a name and the company it works for — the
+        // same weights as the well-formed card above, minus its job title.
+        final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+          block('Medica Books Ltd', top: 10, height: 34),
+          block('Rahim Uddin', top: 60, height: 26),
+          block('01711-223344', top: 100, height: 16),
+          block('House 42, Road 7, Dhanmondi, Dhaka', top: 122, height: 16),
+        ]);
 
-      expect(result.firstOfKey(FieldKeys.company)?.value, 'Medica Books Ltd');
-      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Rahim Uddin');
-    });
+        expect(result.firstOfKey(FieldKeys.company)?.value, 'Medica Books Ltd');
+        expect(result.firstOfKey(FieldKeys.personName)?.value, 'Rahim Uddin');
+      },
+    );
 
     test('a name set smaller still counts, without a title or email', () {
       final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
@@ -510,6 +529,141 @@ void main() {
         'Gulshan Avenue, Dhaka',
       );
       expect(result.firstOfKey(FieldKeys.company)?.value, 'Acme Traders');
+    });
+  });
+
+  // Found 21 Oct on a rendered card: "House" (as in "House 7") and "Dhaka"
+  // are address words, so a company called "Dhaka Print House" was joined
+  // onto the address, and with no company line left the person's name was
+  // promoted to company.
+  group('CardFieldExtractor — a company named "… House"', () {
+    test('a person-first card keeps the name, the title and the company', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Farhana Akter', top: 10, height: 34),
+        block('Sales Lead', top: 52, height: 16),
+        block('Dhaka Print House', top: 76, height: 22),
+        block('01711-223344', top: 108, height: 16),
+        block('House 12, Road 5, Mirpur, Dhaka', top: 130, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Farhana Akter');
+      expect(result.firstOfKey(FieldKeys.designation)?.value, 'Sales Lead');
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Dhaka Print House');
+      expect(
+        result.firstOfKey(FieldKeys.address)?.value,
+        'House 12, Road 5, Mirpur, Dhaka',
+      );
+    });
+
+    test('without a job title, the person is still not the company', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Farhana Akter', top: 10, height: 30),
+        block('Gulshan Fashion House', top: 50, height: 26),
+        block('01711-223344', top: 86, height: 16),
+      ]);
+
+      expect(
+        result.firstOfKey(FieldKeys.company)?.value,
+        'Gulshan Fashion House',
+      );
+      expect(result.firstOfKey(FieldKeys.personName)?.value, 'Farhana Akter');
+      expect(result.firstOfKey(FieldKeys.address), isNull);
+    });
+
+    test('a place-named business under its person is a company', () {
+      final CardExtraction result = CardFieldExtractor.extract(<OcrBlock>[
+        block('Dr. Kamal Hossain', top: 10, height: 30),
+        block('Gulshan Pharmacy', top: 50, height: 24),
+        block('01711-223344', top: 84, height: 16),
+      ]);
+
+      expect(result.firstOfKey(FieldKeys.company)?.value, 'Gulshan Pharmacy');
+      expect(result.firstOfKey(FieldKeys.address), isNull);
+    });
+
+    test('addresses that look like it are still addresses', () {
+      for (final String address in <String>[
+        'House 7, Dhanmondi',
+        'House 12, Road 5, Mirpur, Dhaka',
+        'Print House, Dhaka',
+        'Gulshan Avenue',
+        'Banani Road 11',
+        'Mirpur-1216',
+        'Dhaka',
+      ]) {
+        expect(
+          CardFieldExtractor.looksLikeAddress(address),
+          isTrue,
+          reason: address,
+        );
+      }
+      for (final String business in <String>[
+        'Dhaka Print House',
+        'Gulshan Fashion House',
+        'Gulshan Pharmacy',
+        'Uttara Traders Ltd.',
+      ]) {
+        expect(
+          CardFieldExtractor.looksLikeAddress(business),
+          isFalse,
+          reason: business,
+        );
+        expect(CardFieldExtractor.namesABusiness(business), isTrue);
+      }
+    });
+  });
+
+  group('a capital I read as a small l', () {
+    String? value(CardExtraction e, String key) => e.firstOfKey(key)?.value;
+    CardExtraction read(List<Object> rows) =>
+        CardFieldExtractor.extract(paper(rows));
+
+    test('the name is kept, and spelled right', () {
+      final CardExtraction e = read(<Object>[
+        'Rafiq lslam',
+        'Marketing Director',
+        'Bengal Esports Ltd',
+        'rafiq@bengalesports.example',
+      ]);
+      expect(value(e, FieldKeys.personName), 'Rafiq Islam');
+    });
+
+    test('other names that start with I', () {
+      for (final (String read_, String name) in <(String, String)>[
+        ('Mohammad lqbal', 'Mohammad Iqbal'),
+        ('lmran Hossain', 'Imran Hossain'),
+        ('lbrahim Khalil', 'Ibrahim Khalil'),
+        ('Sadia lsmail', 'Sadia Ismail'),
+      ]) {
+        final CardExtraction e = read(<Object>[
+          read_,
+          'Manager',
+          'Acme Ltd',
+          'x@acme.example',
+        ]);
+        expect(value(e, FieldKeys.personName), name);
+      }
+    });
+
+    test('a company keyword is matched once repaired', () {
+      expect(
+        read(<Object>[
+          'lspahani lndustries',
+          '+880 1711 555 012',
+        ]).firstOfKey(FieldKeys.company)?.value,
+        'Ispahani Industries',
+      );
+    });
+
+    test('what is really an l stays one', () {
+      expect(repairLeadingI('Lloyd lbs ltd lamp'), 'Lloyd lbs ltd lamp');
+      expect(repairLeadingI('llama'), 'llama');
+    });
+
+    test('an address is left as it was read', () {
+      expect(repairLeadingI('lmran@acme.example'), 'lmran@acme.example');
+      expect(repairLeadingI('www.lmnop.example'), 'www.lmnop.example');
+      expect(repairLeadingI('lmnop.example'), 'lmnop.example');
     });
   });
 }

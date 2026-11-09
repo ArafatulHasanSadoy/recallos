@@ -18,7 +18,8 @@ import 'document_lines.dart';
 import 'receipt_extractor.dart' show formatDay;
 
 abstract final class WarrantyExtractor {
-  static CardExtraction extract(List<OcrBlock> blocks) {
+  static CardExtraction extract(List<OcrBlock> read) {
+    final List<OcrBlock> blocks = withLeadingIRepaired(read);
     final List<DocLine> rows = rowsOf(blocks);
     final List<ExtractedField> fields = <ExtractedField>[
       ?_labelled(rows, blocks, WarrantyKeys.product, _productLabel),
