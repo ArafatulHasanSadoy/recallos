@@ -136,7 +136,7 @@ class _EditorState extends ConsumerState<_Editor> {
         label: 'Name',
         fieldKey: FieldKeys.personName,
         initial: e?.valueOf(FieldKeys.personName) ?? '',
-        hint: 'Arafatul Hasan Sadoy',
+        hint: 'Tasnim Ahmed',
       ),
       _Slot(
         label: 'What you do',
@@ -148,13 +148,13 @@ class _EditorState extends ConsumerState<_Editor> {
         label: 'Company',
         fieldKey: FieldKeys.company,
         initial: e?.valueOf(FieldKeys.company) ?? '',
-        hint: 'EnationX',
+        hint: 'Rupali Traders',
       ),
       _Slot(
         label: 'Phone',
         fieldKey: FieldKeys.phone,
         initial: e?.valueOf(FieldKeys.phone) ?? '',
-        hint: '01711 363991',
+        hint: '01700 000000',
       ),
       _Slot(
         label: 'Email',

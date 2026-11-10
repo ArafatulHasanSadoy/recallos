@@ -22,7 +22,7 @@ final myProfileProvider = StreamProvider<ProfileDetail?>(
   (Ref ref) => ref.watch(profileRepositoryProvider).watchDefault(),
 );
 
-/// One labelled line on the card: "MOBILE  01711 363991".
+/// One labelled line on the card: "MOBILE  01700 000000".
 class ProfileLine {
   const ProfileLine({required this.label, required this.value});
 

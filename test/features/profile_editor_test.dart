@@ -66,6 +66,29 @@ void main() {
     matching: find.text(text),
   );
 
+  // The hints are shown to every person who opens this screen. They once held
+  // the developer's own name and mobile number, so each new user was shown a
+  // real number as the example. An example number has to be one nobody owns.
+  testWidgets('an example phone number is one nobody owns', (
+    WidgetTester t,
+  ) async {
+    await pump(t);
+
+    final List<String> phoneHints = <String>[
+      for (final TextField f in t.widgetList<TextField>(
+        find.byType(TextField, skipOffstage: false),
+      ))
+        if (f.decoration?.hintText case final String h
+            when h.replaceAll(RegExp(r'\D'), '').length >= 10)
+          h.replaceAll(RegExp(r'\D'), ''),
+    ];
+
+    expect(phoneHints, isNotEmpty);
+    for (final String digits in phoneHints) {
+      expect(digits, matches(RegExp(r'^01[3-9]0*$')), reason: digits);
+    }
+  });
+
   testWidgets('opens as a blank card, not an error', (WidgetTester t) async {
     await pump(t);
 
@@ -118,7 +141,10 @@ void main() {
     // A sentence, not the validator's machine token — showing
     // `unrecognizedFormat` under somebody's phone number would render
     // perfectly and be useless.
-    expect(find.text('That does not look like a phone number.'), findsOneWidget);
+    expect(
+      find.text('That does not look like a phone number.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('unrecognizedFormat'), findsNothing);
     expect(find.text('Save'), findsOneWidget);
   });
