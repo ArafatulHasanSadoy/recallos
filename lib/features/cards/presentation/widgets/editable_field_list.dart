@@ -348,10 +348,18 @@ class _EditorSheet extends StatelessWidget {
     // needs and the card gives way, because a clipped value field is worse
     // than a covered photo. Closing the keyboard brings the card straight
     // back.
-    if (keyboard > 0) return body;
+    //
+    // Always the same widgets, with only the limit changing. Returning `body`
+    // bare when the keyboard is up gave the tree a different shape, so the
+    // keyboard opening or closing threw the editor away and built a new one:
+    // the chosen label went back to where it started and anything typed was
+    // lost. Tapping a label closes the keyboard for a moment, so with the
+    // keyboard up the labels appeared to do nothing at all.
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+        maxHeight: keyboard > 0
+            ? double.infinity
+            : MediaQuery.sizeOf(context).height * 0.6,
       ),
       child: body,
     );

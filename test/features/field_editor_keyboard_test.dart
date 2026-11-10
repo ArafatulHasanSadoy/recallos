@@ -115,6 +115,39 @@ void main() {
     expect(keyboardOf(tester), TextInputType.phone);
   });
 
+  testWidgets('the keyboard coming and going keeps the label and the text', (
+    WidgetTester tester,
+  ) async {
+    // Found on a real phone: the sheet changed shape with the keyboard, so
+    // the editor was rebuilt from nothing each time it opened or closed.
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.reset);
+    final CardDetail detail = await seed(FieldKeys.phone, '01711363991');
+    await pump(tester, detail);
+
+    await tester.tap(find.text('Add something it missed'));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'half written');
+    await tapLabel(tester, FieldKeys.email);
+
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+
+    expect(find.text('half written'), findsOneWidget);
+    expect(
+      tester
+          .widget<SelectChip>(
+            find.widgetWithText(SelectChip, fieldLabel(FieldKeys.email)),
+          )
+          .selected,
+      isTrue,
+    );
+  });
+
   testWidgets('re-labelling a phone as an email changes the keyboard',
       (WidgetTester tester) async {
     // The reported bug. Adding a field starts on Phone, so anyone adding an
