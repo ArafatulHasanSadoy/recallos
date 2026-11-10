@@ -273,6 +273,7 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: const Text('Moved the copy to the bin.'),
         action: SnackBarAction(
           label: 'Undo',
@@ -292,6 +293,7 @@ class _SpendingScreenState extends ConsumerState<SpendingScreen> {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: const Text('Both are counted.'),
         action: SnackBarAction(
           label: 'Undo',

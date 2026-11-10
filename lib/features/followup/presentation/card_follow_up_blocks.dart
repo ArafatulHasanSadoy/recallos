@@ -23,6 +23,7 @@ import 'follow_up_sheets.dart';
 void showNotificationsOffNotice(BuildContext context, NotificationPort port) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
+      persist: false,
       content: const Text(
         'Saved. Notifications are off for RecallOS, so it will only show on '
         'Today.',
@@ -132,6 +133,7 @@ class NextStepsBlock extends ConsumerWidget {
     await actions.complete(s.date.id);
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text('Done: ${s.date.title}'),
         action: SnackBarAction(
           label: 'Undo',

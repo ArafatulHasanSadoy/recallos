@@ -196,6 +196,7 @@ class LinkBlock extends ConsumerWidget {
     await links.dismiss(link.id);
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text('Not linked. It will not be suggested again.'),
         action: SnackBarAction(
           label: 'Undo',
@@ -215,6 +216,7 @@ class LinkBlock extends ConsumerWidget {
     await links.unlink(link.id);
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text('Unlinked from the $_otherNoun.'),
         action: SnackBarAction(
           label: 'Undo',

@@ -60,6 +60,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen>
     await actions.complete(e.step.id);
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text('Done: ${e.step.title}'),
         action: SnackBarAction(
           label: 'Undo',

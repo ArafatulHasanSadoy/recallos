@@ -74,6 +74,7 @@ class _EventScreenState extends ConsumerState<EventScreen> {
     setState(() => _justEnded = ended.id);
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text('${ended.name} has ended'),
         action: SnackBarAction(
           label: 'Undo',
@@ -102,6 +103,7 @@ class _EventScreenState extends ConsumerState<EventScreen> {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
+        persist: false,
         content: Text(
           'Removed ${gone.name}. The cards still say where you met.',
         ),

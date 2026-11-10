@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/backup/restore_swap.dart';
+import '../../../core/db/enums.dart';
 import '../../../core/search/match_evidence.dart';
 import '../../../core/search/query_plan.dart';
 import '../../../core/spending/spending_totals.dart';
@@ -729,7 +730,7 @@ class _SwipeableTile extends StatelessWidget {
           onDismissed: (_) => unawaited(onDelete(card)),
           child: WalletCardTile(
             title: card.title ?? 'Unread card',
-            subtitle: card.note ?? card.subtitle ?? 'No details read',
+            subtitle: card.note ?? card.subtitle ?? _noDetails(card),
             imagePath: card.displayPath,
             hasNote: card.note != null && card.note!.trim().isNotEmpty,
             heroTag: cardHeroTag(card.id),
@@ -895,7 +896,7 @@ class _SearchHitCard extends StatelessWidget {
           title: card.title ?? 'Unread card',
           subtitle: noteBelow
               ? card.subtitle!
-              : card.note ?? card.subtitle ?? 'No details read',
+              : card.note ?? card.subtitle ?? _noDetails(card),
           imagePath: card.displayPath,
           hasNote: card.note != null && card.note!.trim().isNotEmpty,
           heroTag: cardHeroTag(card.id),
@@ -1243,6 +1244,11 @@ class _AttentionRow extends ConsumerWidget {
 /// Filled with the page, not hollow: it sits over the bottom of the card
 /// stack, and an outline alone would show the cards through it. While an
 /// event runs, its ring turns ochre — a marker, rule 2.
+/// The line under a tile with nothing else to say. A record that was typed
+/// in was never read, so it cannot have failed to be.
+String _noDetails(CardSummary card) =>
+    card.status == ExtractionStatus.manual ? 'Typed in' : 'No details read';
+
 /// Adds something without the camera: typed in, or from a file.
 class _AddButton extends StatelessWidget {
   const _AddButton({required this.onTap});

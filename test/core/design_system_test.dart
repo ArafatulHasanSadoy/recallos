@@ -63,6 +63,32 @@ void main() {
     expect(hits(r'InkWell\('), isEmpty);
   });
 
+  test('an Undo bar goes away by itself', () {
+    // Flutter now keeps any SnackBar with a button until it is tapped, so an
+    // Undo bar sat over every screen after it, for good. Found on a device.
+    final RegExp bar = RegExp(r'\bSnackBar\(');
+    final List<String> stuck = <String>[];
+    for (final File f in sources) {
+      final String text = f.readAsStringSync();
+      for (final Match m in bar.allMatches(text)) {
+        // To the bracket that closes this call.
+        int depth = 1;
+        int at = m.end;
+        while (depth > 0 && at < text.length) {
+          final String c = text[at++];
+          if ('([{'.contains(c)) depth++;
+          if (')]}'.contains(c)) depth--;
+        }
+        final String body = text.substring(m.end, at);
+        if (body.contains('SnackBarAction(') &&
+            !body.contains('persist: false')) {
+          stuck.add('${f.path}@${m.start}');
+        }
+      }
+    }
+    expect(stuck, isEmpty);
+  });
+
   test('a loop goes through AppMotion, so it can hold still', () {
     // `repeat()` is the one animation Flutter does not shorten for Android's
     // *Remove animations*. The theme, which holds `AppMotion.loop`, is the
@@ -80,8 +106,10 @@ void main() {
     // Colors.transparent and Colors.black are legitimate for scrims and
     // barriers; a named hue is somebody bypassing the palette.
     final List<String> named = hits(r'(?<![A-Za-z])Colors\.')
-        .where((String h) =>
-            !h.contains('Colors.transparent') && !h.contains('Colors.black'))
+        .where(
+          (String h) =>
+              !h.contains('Colors.transparent') && !h.contains('Colors.black'),
+        )
         .toList();
     expect(named, isEmpty);
   });
