@@ -95,7 +95,32 @@ FieldValidation validateField(
   };
 }
 
+/// A run of letters inside an amount, Latin or Bangla.
+final RegExp _lettersInAmount = RegExp(r'[A-Za-z\u0985-\u09B9\u09BE-\u09CC]+');
+
+/// The only words an amount may carry: a currency's name, and "only".
+const Set<String> _amountWords = <String>{
+  'tk',
+  'taka',
+  'bdt',
+  'usd',
+  'inr',
+  'rs',
+  'eur',
+  'only',
+  'টাকা',
+};
+
 FieldValidation _amount(String text, String? currency) {
+  // `Money.parse` keeps the digits and drops the rest, which is right for
+  // "Tk 1,245/-" and wrong for anything else: a date typed in this box became
+  // BDT 92,026.00, marked as confirmed. A wrong amount is worse than none.
+  final bool otherWords = _lettersInAmount
+      .allMatches(text)
+      .any((Match m) => !_amountWords.contains(m[0]!.toLowerCase()));
+  if (otherWords || findDates(text).isNotEmpty) {
+    return const FieldValidation(issue: 'not_an_amount');
+  }
   final Money? money = Money.parse(
     text,
     currency: currencyOf(text) ?? currency ?? 'BDT',

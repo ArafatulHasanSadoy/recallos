@@ -81,4 +81,41 @@ void main() {
       }
     });
   });
+
+  group('validateField — an amount', () {
+    test('what an amount can look like', () {
+      for (final (String text, int minor) in <(String, int)>[
+        ('1,245.00', 124500),
+        ('432.60', 43260),
+        ('1299', 129900),
+        ('Tk 500/-', 50000),
+        ('৳ 500', 50000),
+        ('৫০০ টাকা', 50000),
+        ('BDT 1,500.00', 150000),
+        ('-BDT 400.00', -40000),
+        ('(120.00)', -12000),
+        ('Taka 500 only', 50000),
+      ]) {
+        expect(
+          validateField(ReceiptKeys.total, text).amountMinor,
+          minor,
+          reason: text,
+        );
+      }
+      expect(validateField(ReceiptKeys.total, 'USD 24.50').currency, 'USD');
+    });
+
+    test('a date in the wrong box is not an amount', () {
+      for (final String text in <String>[
+        '9 Nov 2026',
+        '03/11/2026',
+        'Nov 2026',
+        'about 200',
+      ]) {
+        final FieldValidation v = validateField(ReceiptKeys.total, text);
+        expect(v.issue, 'not_an_amount', reason: text);
+        expect(v.amountMinor, isNull, reason: text);
+      }
+    });
+  });
 }
