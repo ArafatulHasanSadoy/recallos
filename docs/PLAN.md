@@ -19,6 +19,14 @@ became M11 (STATUS): the "… House" reader fix (B10), Settings → *Licences*,
 Settings → *Help* (`docs/help.html`), `SECURITY.md`, and the B3 and B4
 exports below.
 
+**2026-11-10 — demo set and user manual (M14).** Invented papers in
+`demo/`, loaded through the app's own flows onto the phone (16 records), and
+`docs/manual.html` for every feature. The walk found and fixed four faults:
+label chips dead with the keyboard up, dates accepted as amounts, Undo bars
+that never left, and a wrong label on typed records. *Your card*'s example
+text, which was the developer's real name and number, is now invented. M14 in
+STATUS.
+
 **2026-11-09 — the rest of the readiness list (M13).** Typed records and
 file import (Home, beside *Scan*), refunds as their own entries, reprint dates
 ignored, reduced motion, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`. The

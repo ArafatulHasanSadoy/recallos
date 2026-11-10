@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RecallOS User Manual</title>
+<style>
+  /* The app's own wallet look: paper, ink, ochre as a marker. System fonts
+     only, so reading the manual fetches nothing from anywhere else.
+     Layout: a contents rail beside one reading column, with each feature's
+     screens set beside the steps they illustrate. */
+  :root {
+    --page: #E4DAC5; --sheet: #FBF7EE; --ink: #1F1B13; --muted: #6B6047;
+    --line: #E3D9C4; --mark: #C8901A; --link: #8A5A12; --note: #F3EBD9;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #15130F; --sheet: #1D1A15; --ink: #F0EADC; --muted: #A79E8B;
+      --line: #2C271F; --mark: #C8901A; --link: #E0AC45; --note: #27221A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #15130F; --sheet: #1D1A15; --ink: #F0EADC; --muted: #A79E8B;
+    --line: #2C271F; --mark: #C8901A; --link: #E0AC45; --note: #27221A;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 16px/1.62 var(--sans);
+    padding-block: 2rem 4rem;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .shell {
+    max-width: 66rem; margin: 0 auto; display: grid; gap: 2rem;
+    grid-template-columns: 14.5rem minmax(0, 1fr); align-items: start;
+  }
+  nav.toc {
+    position: sticky; top: calc(env(safe-area-inset-top, 0px) + 1rem);
+    max-height: calc(100vh - 2rem); overflow-y: auto; font-size: .9rem;
+  }
+  nav.toc p {
+    margin: 0 0 .5rem; font-size: .72rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+  nav.toc a { display: block; padding: .22rem 0; color: var(--ink); text-decoration: none; }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--link); text-decoration: underline; }
+  main {
+    background: var(--sheet); border-radius: 14px; min-width: 0;
+    padding: clamp(1.25rem, 4vw, 2.75rem);
+  }
+  h1, h2, h3 { text-wrap: balance; font-weight: 500; }
+  h1 { font: 500 clamp(2.1rem, 6vw, 3rem)/1.08 var(--serif); margin: 0; }
+  .meta { color: var(--muted); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; margin: .6rem 0 1.6rem; }
+  .lead { font-size: 1.08rem; max-width: 40rem; margin: 0 0 1rem; }
+  section { padding-top: 2.4rem; margin-top: 2.4rem; border-top: 1px solid var(--line); scroll-margin-top: 1rem; }
+  h2 { font: 500 1.75rem/1.15 var(--serif); margin: 0 0 .6rem; }
+  h3 { font: 600 1.02rem/1.3 var(--sans); margin: 1.6rem 0 .3rem; }
+  p { margin: .5rem 0; max-width: 40rem; }
+  ol, ul { padding-left: 1.2rem; max-width: 40rem; margin: .5rem 0; }
+  li { margin: .28rem 0; }
+  a { color: var(--link); }
+  a:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+  em { font-style: normal; font-weight: 600; }
+  .with-shots { display: grid; gap: 1.5rem; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .with-shots > div { min-width: 0; }
+  .shots { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0 0; }
+  .with-shots .shots { margin: 0; justify-content: flex-end; flex-direction: column; }
+  figure { margin: 0; width: 13.5rem; max-width: 100%; }
+  figure img {
+    display: block; width: 100%; height: auto; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--page);
+  }
+  figcaption { font-size: .8rem; color: var(--muted); margin-top: .35rem; }
+  .try {
+    background: var(--note); border-radius: 10px; padding: .7rem .9rem;
+    margin: 1rem 0 .2rem; max-width: 40rem; font-size: .95rem;
+  }
+  .try b { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--link); display: block; }
+  .plus {
+    font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--link);
+    border: 1px solid var(--mark); border-radius: 999px; padding: .05rem .45rem;
+    white-space: nowrap; font-weight: 600; vertical-align: .08em;
+  }
+  .table { overflow-x: auto; margin: .9rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: left; vertical-align: top; padding: .5rem .7rem .5rem 0; border-bottom: 1px solid var(--line); }
+  th { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td:first-child { min-width: 7.5rem; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+  @media (max-width: 62rem) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+    nav.toc { position: static; max-height: none; }
+    nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+  }
+  @media (max-width: 40rem) {
+    .with-shots { grid-template-columns: minmax(0, 1fr); }
+    .with-shots .shots { flex-direction: row; justify-content: flex-start; }
+    figure { width: calc(50% - .5rem); }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#start">Getting started</a></li>
+    <li><a href="#home">The home screen</a></li>
+    <li><a href="#adding">Adding something</a></li>
+    <li><a href="#correcting">Checking and correcting</a></li>
+    <li><a href="#finding">Search and Ask</a></li>
+    <li><a href="#people">People and companies</a></li>
+    <li><a href="#steps">Next steps and reminders</a></li>
+    <li><a href="#met">Where you met, Event Mode</a></li>
+    <li><a href="#hello">Reaching out</a></li>
+    <li><a href="#mycard">Your own card</a></li>
+    <li><a href="#receipts">Receipts and bills</a></li>
+    <li><a href="#warranties">Warranties</a></li>
+    <li><a href="#deleting">Deleting and restoring</a></li>
+    <li><a href="#privacy">Privacy and the lock</a></li>
+    <li><a href="#backup">Backup and a new phone</a></li>
+    <li><a href="#all-settings">All the settings</a></li>
+    <li><a href="#plus">RecallOS Plus</a></li>
+    <li><a href="#demo">The demo set</a></li>
+    <li><a href="#limits">What it does not do</a></li>
+    <li><a href="#trouble">If something goes wrong</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>RecallOS User Manual</h1>
+<p class="meta">Version 1.0.0 · Updated 10 November 2026</p>
+<p class="lead">RecallOS keeps business cards, receipts, bills and warranties on your phone, and finds them later by what you needed them for. You remember the need. It remembers the name.</p>
+<p>There is no account, and the app has no permission to use the internet. Everything you save stays on this phone unless you choose to send it somewhere.</p>
+
+<section id="start">
+  <h2>Getting started</h2>
+  <ol>
+    <li>Install RecallOS from Google Play and open it.</li>
+    <li>Read the three welcome screens, or tap <em>Skip</em>.</li>
+    <li>Tap <em>Scan</em> and save your first card.</li>
+  </ol>
+  <p>RecallOS asks for two things, and only when you first need them:</p>
+  <ul>
+    <li><strong>Camera</strong>, to scan a paper.</li>
+    <li><strong>Notifications</strong>, the first time you set a reminder.</li>
+  </ul>
+  <p>Most features are free. The ones marked <span class="plus">Plus</span> in this manual come with <a href="#plus">RecallOS Plus</a>, a single purchase.</p>
+</section>
+
+<section id="home">
+  <h2>The home screen</h2>
+  <div class="with-shots">
+    <div>
+      <p>Everything starts here.</p>
+      <ul>
+        <li><strong>Search box</strong> (<em>What do you need?</em>). Type what you remember, or ask a question.</li>
+        <li><strong>Reminder rows</strong>. These appear only when there is something to say: cards that need attention, your next step, and this month's receipt total. Tap one to open it.</li>
+        <li><strong>In your wallet</strong>. Everything you have saved, newest first. Tap to open. Swipe one to the left to delete it.</li>
+        <li><strong>Top right</strong>. Your own card, People, and Settings.</li>
+        <li><strong>Bottom row</strong>. <a href="#met">Event Mode</a>, <a href="#without-camera">add without scanning</a>, and <em>Scan</em>.</li>
+      </ul>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/02-home.jpg" alt="The RecallOS home screen with the search box, three reminder rows and the wallet of saved cards."><figcaption>Home, with the demo set.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="adding">
+  <h2>Adding something</h2>
+
+  <h3>Scan a card, receipt, bill or warranty</h3>
+  <div class="with-shots">
+    <div>
+      <ol>
+        <li>Tap <em>Scan</em>.</li>
+        <li>Hold the paper in the frame. The scanner finds the edges and takes the picture, or you can press the shutter. To use a photo you already have, tap the picture icon.</li>
+        <li>Tap <em>Next</em> or <em>Done</em> in the scanner.</li>
+        <li>RecallOS reads the paper and shows what it found. The photograph is saved first, so nothing is lost if the reading goes wrong.</li>
+        <li>Check the details, then tap <em>Save card</em>, <em>Save receipt</em> or <em>Save warranty</em>.</li>
+      </ol>
+      <p>If you do not like the picture, tap <em>Retake</em>.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/05-review-card.jpg" alt="The review screen showing a scanned business card and the company, name and job title read from it."><figcaption>What was read, ready to check.</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>What did you save?</h3>
+  <div class="with-shots">
+    <div>
+      <p>RecallOS works out by itself whether a paper is a business card, a receipt or a warranty. When the words could be either, it asks once. Tap the right one, or <em>Keep the best guess</em>. You can still change it with <em>Change</em> on the review screen.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/06-kind-sheet.jpg" alt="A sheet asking What did you save, with Business card marked as the best guess."><figcaption>Asked only when unsure.</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>Why are you saving this?</h3>
+  <div class="with-shots">
+    <div>
+      <p>After you save, RecallOS asks for one line in your own words. This is the most useful thing you can write, because it is how you will find the card when you have forgotten the name. Tap <em>Skip for now</em> if you are in a hurry, and add it later from the card's screen.</p>
+      <p>If nothing on the paper could be read, the card is still saved, and your line is what makes it findable.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/07-note-sheet.jpg" alt="A sheet asking Why are you saving this, with a short note typed in."><figcaption>One line is enough.</figcaption></figure>
+    </div>
+  </div>
+
+  <h3>Both sides of a card</h3>
+  <div class="with-shots">
+    <div>
+      <p>Tap <em>Add back</em> under the photograph and scan the other side. <em>Front</em> and <em>Back</em> then switch between them, and the menu beside them lets you <em>Retake back</em> or <em>Remove back</em>.</p>
+      <p>Tap a photograph to see it full size.</p>
+      <div class="try"><b>On the demo set</b>Open <em>Shapla Catering Service</em>.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/14-two-sided.jpg" alt="A card screen showing the back of a two-sided card, with Front and Back buttons."><figcaption>Front and Back.</figcaption></figure>
+    </div>
+  </div>
+
+  <h3 id="without-camera">Without the camera</h3>
+  <div class="with-shots">
+    <div>
+      <p>Tap the round button beside <em>Scan</em>.</p>
+      <p><strong>Type it in</strong> is for something you have no paper for, such as an online order or a warranty someone told you about.</p>
+      <ol>
+        <li>Choose <em>Business card</em>, <em>Receipt</em> or <em>Warranty</em>.</li>
+        <li>Write the one thing it is known by: a name, a shop or a product.</li>
+        <li>Tap <em>Add it</em>, then use <em>Add a detail</em> on its screen for anything else.</li>
+      </ol>
+      <p><strong>From a file</strong> brings in a PDF, JPG or PNG up to 25 MB. It is read just like a scan. Only the first page of a PDF is kept, and a PDF with a password cannot be opened.</p>
+      <div class="try"><b>On the demo set</b>Open <em>Bazaar Online Shop</em>, a typed receipt. The sample files are in your phone's <em>Download/RecallOS-demo</em> folder if you want to try <em>From a file</em>.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/03-add-sheet.jpg" alt="A sheet titled No paper to scan, offering Type it in and From a file."><figcaption>The two ways in.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/04-typed-sheet.jpg" alt="A sheet asking What are you adding, with three kinds and a name field."><figcaption>Type it in.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="correcting">
+  <h2>Checking and correcting</h2>
+  <div class="with-shots">
+    <div>
+      <p>Reading a paper is a guess, so RecallOS never hides which values are guesses. Every value carries a small label:</p>
+      <div class="table"><table>
+        <tr><th>Label</th><th>What it means</th></tr>
+        <tr><td><em>On the card</em> (or receipt, warranty)</td><td>Read from the photograph.</td></tr>
+        <tr><td><em>You confirmed</em></td><td>You checked it, or corrected it.</td></tr>
+        <tr><td><em>You typed</em></td><td>You wrote it yourself.</td></tr>
+        <tr><td><em>Calculated</em></td><td>Worked out by RecallOS, such as when a warranty ends.</td></tr>
+        <tr><td><em>Guess</em></td><td>RecallOS's suggestion, such as a spending category.</td></tr>
+        <tr><td><em>Needs a look</em> or <em>Check this</em></td><td>Please confirm this one.</td></tr>
+      </table></div>
+      <h3>Fix a value</h3>
+      <ol>
+        <li>Tap the value. Where it came from is boxed on the photograph, so you can compare.</li>
+        <li>Choose the cheapest fix that works:
+          <ul>
+            <li>Wrong label? Change it under <em>What is this?</em></li>
+            <li>Wrong words? Pick the right ones under <em>Or take it from the card</em>. Tap more than one to join them.</li>
+            <li>Otherwise, type it.</li>
+          </ul>
+        </li>
+        <li>Tap <em>Save</em>. Tapping <em>Save</em> without changing anything confirms the value. <em>Remove</em> deletes it.</li>
+      </ol>
+      <p><em>Add something it missed</em> at the end of the list adds a new detail.</p>
+      <h3>Cards that did not read well</h3>
+      <p>Open the <em>Needs attention</em> row on home, or go through Settings. Open a card to fix it by hand, or tap <em>Try reading them again</em>. The same card often reads better on a second try.</p>
+      <div class="try"><b>On the demo set</b><em>Unread card</em> could not be read at all. Search for <em>nothing could read</em> and its note still finds it.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/10-field-editor.jpg" alt="The field editor with the company name boxed on the photograph, label choices and text taken from the card."><figcaption>Editing one value.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/28-needs-attention.jpg" alt="The Needs attention screen with one unread card and a Try reading them again button, and Recently deleted below."><figcaption>Needs attention.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="finding">
+  <h2>Search and Ask</h2>
+  <div class="with-shots">
+    <div>
+      <p>The box on home does both. Type the way you would say it.</p>
+      <h3>Search</h3>
+      <p>Type part of a name, a company, a phone number, or best of all, what you needed: <em>cheap t-shirt print</em>. RecallOS looks at your notes and where you met first, then the words printed on the card. Each answer shows why it matched.</p>
+      <h3>Ask</h3>
+      <p>Ask a question and RecallOS answers from your own papers, and shows which ones. If it does not know, it says so.</p>
+      <ul>
+        <li><em>Who was interested in sponsorship?</em></li>
+        <li><em>When does my laptop warranty expire?</em></li>
+        <li><em>Met at CSE fest</em>, <em>met last week</em> or <em>who needs a next step</em> <span class="plus">Plus</span></li>
+        <li><em>What expires in the next 90 days?</em> <span class="plus">Plus</span></li>
+        <li><em>How much on electronics in September?</em> <span class="plus">Plus</span></li>
+      </ul>
+      <p>Search runs on your phone and works with no connection.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/08-search.jpg" alt="Search results for cheap t-shirt print, with the matching note shown under the first answer."><figcaption>Found by the need.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/09-ask.jpg" alt="An answer saying the laptop is covered until 1 November 2028, showing how it was worked out and the two papers it came from."><figcaption>An answer, with its papers.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="people">
+  <h2>People and companies</h2>
+  <div class="with-shots">
+    <div>
+      <p>Tap the People icon at the top of home. RecallOS builds this list from your cards, so one person with three cards is one entry. Search it by a name, a company or a place.</p>
+      <p>Open a person to see why you saved them, their numbers and emails for each business, next steps, and the cards behind it all. <em>Save to contacts</em> and <em>Share</em> are at the top. Companies work the same way.</p>
+      <h3>Possible duplicates</h3>
+      <p>Records that share a number or an email are combined by themselves. RecallOS never joins two people just because the names match. It asks you instead, under <em>Possible duplicates</em>.</p>
+      <ul>
+        <li><em>Same person</em> shows them as one contact. You can undo this with <em>Separate</em> on their page.</li>
+        <li><em>Different people</em> keeps them apart.</li>
+        <li>For the same card scanned twice, choose <em>Keep both</em> or <em>Delete one</em>.</li>
+      </ul>
+      <div class="try"><b>On the demo set</b>There are two <em>Md. Karim Rahman</em> cards with different numbers. Open <em>Duplicates to review</em> in Settings.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/32-people.jpg" alt="The People list with names, roles and companies, and a row saying two pairs may be the same."><figcaption>People.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/34-person.jpg" alt="One person's page with why you saved them, their business and contact details."><figcaption>One person.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/33-duplicates.jpg" alt="Possible duplicates asking whether two records are the same."><figcaption>Possible duplicates.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="steps">
+  <h2>Next steps and reminders</h2>
+  <div class="with-shots">
+    <div>
+      <h3>Add a next step</h3>
+      <ol>
+        <li>On any card, receipt or warranty, tap <em>+</em> beside <em>Next step</em>.</li>
+        <li>Say what you will do.</li>
+        <li>Choose when: <em>Today</em>, <em>Tomorrow</em>, <em>In 3 days</em>, <em>Next week</em>, or <em>Pick a date</em>.</li>
+        <li>Leave <em>Remind me</em> on for a notification at 9 AM that day, or turn it off and it will only show on Today.</li>
+        <li>Tap <em>Add step</em>.</li>
+      </ol>
+      <p>The free version keeps five reminders waiting at a time. Warranty reminders are not counted. With five waiting, a new step is still saved and shows on Today. <span class="plus">Plus</span> removes the limit.</p>
+      <h3>Today</h3>
+      <p>Tap the <em>Next</em> or <em>steps overdue</em> row on home. <em>Today</em> lists what is overdue, what is upcoming, warranties ending soon, and anything needing review. Tap the circle to mark a step done. You can undo it straight away.</p>
+      <h3>When a reminder arrives</h3>
+      <p>The notification has <em>Done</em> and <em>Snooze 1 hour</em>. On the lock screen its content stays hidden until you unlock the phone.</p>
+      <p>Finished steps stay under <em>Finished recently</em> on the card, with <em>Bring back</em> if you need them again. Open a step and use <em>Remove this step</em> to delete it.</p>
+      <div class="try"><b>On the demo set</b><em>Kingfisher Esports</em> has a step with a reminder. <em>Padma Print House</em> has one without.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/16-next-step.jpg" alt="The next step sheet with a due date choice and a Remind me switch."><figcaption>Adding a step.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/19-today.jpg" alt="The Today screen with two upcoming steps and two items needing review."><figcaption>Today.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="met">
+  <h2>Where you met, and Event Mode</h2>
+  <div class="with-shots">
+    <div>
+      <h3>Where you met</h3>
+      <p>On a card, tap <em>+</em> beside <em>Where you met</em>. Write the place, then choose <em>Day I scanned it</em>, <em>Pick a date</em> or <em>Not sure</em>. Only what you enter is saved.</p>
+      <h3>Event Mode <span class="plus">Plus</span></h3>
+      <p>For a fair or a conference, where you collect many cards at once.</p>
+      <ol>
+        <li>Tap the round button at the bottom left of home.</li>
+        <li>Name the event and tap <em>Start the event</em>.</li>
+        <li>Scan as usual. Every card is marked as met there, that day.</li>
+        <li>Tap <em>End the event</em> when you leave. You get everyone you met and what is next, in one list.</li>
+      </ol>
+      <div class="try"><b>On the demo set</b><em>Kingfisher Esports</em> was met at <em>Demo Expo, Dhaka</em>. Event Mode itself needs Plus, so it shows its example until then.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/18-where-you-met.jpg" alt="A sheet asking Where did you meet, with a place typed and a date choice."><figcaption>Where you met.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/39-event-mode.jpg" alt="The Event Mode screen with an example of what the end of an event looks like."><figcaption>Event Mode.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="hello">
+  <h2>Reaching out</h2>
+  <div class="with-shots">
+    <div>
+      <p>A card's screen has a button for each way to reach the person: <em>Call</em>, <em>WhatsApp</em>, <em>Email</em>, and <em>Map</em> when there is an address.</p>
+      <h3>Say hello</h3>
+      <p><em>Say hello</em> writes a short message that mentions why you met. Change anything you like, choose WhatsApp, SMS or Email, and tap the <em>Open in</em> button. RecallOS opens that app with the message ready. You send it from there, and nothing leaves until you do. Make <a href="#mycard">your own card</a> and the message can be signed.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/21-say-hello.jpg" alt="The Say hello sheet with a draft message and a choice of WhatsApp, SMS or Email."><figcaption>Say hello.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="mycard">
+  <h2>Your own card</h2>
+  <div class="with-shots">
+    <div>
+      <p>Tap the card icon at the top of home, then <em>Make my card</em>. Add your name, what you do, your company and how to reach you, and a photo if you want one.</p>
+      <ul>
+        <li><em>Show as a QR code</em>. Hold it up to someone's camera. Their phone offers to save you as a contact, and they need no app. The switches choose which lines are on the code.</li>
+        <li><em>Send my card</em> shares it to any app.</li>
+        <li><em>Save to my contacts</em> adds it to your phone's contacts.</li>
+      </ul>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/37-my-card.jpg" alt="Your card screen with a typeset card and buttons to save, show a QR code or send."><figcaption>Your card.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/38-my-card-qr.jpg" alt="A QR code with switches choosing which lines it carries."><figcaption>As a QR code.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="receipts">
+  <h2>Receipts and bills</h2>
+  <div class="with-shots">
+    <div>
+      <p>Scan a receipt, a bill or an invoice with the same <em>Scan</em> button. RecallOS reads the shop, date, total, invoice number and a suggested category.</p>
+      <h3>Check the total and the date</h3>
+      <p>A wrong reading would make a wrong sum, so these two are marked <em>Check this</em>. Tap each one and tap <em>Save</em> to confirm it. A receipt is added to your total only after both are checked.</p>
+      <h3>Receipt totals</h3>
+      <p>Tap the receipts row on home. The figure is what your saved, checked receipts add up to, which is not the same as everything you spent.</p>
+      <ul>
+        <li><strong>Possible second copies</strong>. A receipt that looks like one already counted waits for your answer: <em>Yes, bin this copy</em> or <em>No, count both</em>.</li>
+        <li><strong>Not added yet</strong>. Receipts still to check, each saying what to do.</li>
+        <li><strong>Counted</strong>. Everything in the figure. Tap one to open it.</li>
+        <li><strong>Currencies</strong>. Each has its own total. Nothing is ever converted.</li>
+        <li><strong>Refunds</strong>. A refund slip comes off the figure and is marked <em>Refund</em>.</li>
+      </ul>
+      <p>The free version shows this month. Other months and years, and what went to each shop and category, come with <span class="plus">Plus</span>.</p>
+      <p>The share button at the top sends a spreadsheet of the receipts behind the figure and the ones held back, each with why. You see what will go first.</p>
+      <div class="try"><b>On the demo set</b>Groceries (and a second copy of them), an electricity bill, a restaurant bill left unchecked, a receipt in dollars, a refund slip, a laptop receipt and a typed order.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/11-review-receipt.jpg" alt="A scanned receipt with shop, date and total read from it, and Check this beside the date."><figcaption>Checking a receipt.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/24-totals.jpg" alt="Receipt totals showing a figure in taka, a note about a refund, and a question about a second copy."><figcaption>Receipt totals.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/25-totals-held.jpg" alt="Lower on the totals screen: a receipt not added yet and the counted receipts, including a refund."><figcaption>Held back and counted.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="warranties">
+  <h2>Warranties</h2>
+  <div class="with-shots">
+    <div>
+      <p>Scan a warranty card and RecallOS reads the product, brand, model, serial number and length of cover.</p>
+      <h3>Covered until</h3>
+      <p>This shows the last covered day and how it is known: printed on the warranty, confirmed by you, or calculated from the purchase date and the cover.</p>
+      <h3>Linking it to its receipt</h3>
+      <p>A calculated end needs the purchase date, which is on the receipt. When a warranty and a receipt look alike, RecallOS asks <em>Is this its warranty?</em> and shows the evidence, such as the same serial number. Tap <em>Yes, link them</em> or <em>Not this one</em>. You can also use <em>Link its receipt</em> yourself, and <em>Unlink</em> later.</p>
+      <h3>The reminder</h3>
+      <p>RecallOS reminds you about a month before the cover ends, and the warranty shows under <em>Ending soon</em> on Today.</p>
+      <h3>Sending papers to a shop</h3>
+      <p>On a receipt or warranty, tap the share button at the top. <em>Share these papers?</em> shows every value with where it came from, and the photographs of that paper and the one linked to it. Nothing goes until you tap <em>Share</em>. The photographs are not encrypted once they leave.</p>
+      <p>RecallOS records what the papers say. It cannot tell you whether a shop or a maker will accept a claim.</p>
+      <div class="try"><b>On the demo set</b><em>Nimbus Laptop</em> is linked to its receipt, with a calculated end. <em>Frostline Refrigerator</em> has its end printed on it.</div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/49-link-suggestion.jpg" alt="A receipt asking Is this its warranty, listing the matching serial number, model and shop."><figcaption>A link, with its evidence.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/45-warranty-calculated.jpg" alt="A warranty screen showing Covered until 1 November 2028 and its linked receipt."><figcaption>Covered until.</figcaption></figure>
+      <figure><img loading="lazy" src="manual/46-share-papers.jpg" alt="A preview titled Share these papers listing every value that will be sent."><figcaption>Preview before sharing.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="deleting">
+  <h2>Deleting and restoring</h2>
+  <p>Open a card and tap the bin at the top, or swipe it to the left in the wallet. It moves to <em>Recently deleted</em>, under <em>Needs attention</em>, and waits there for 30 days.</p>
+  <ul>
+    <li><em>Restore</em> brings it back as it was.</li>
+    <li><em>Delete for good</em> removes it and its photographs. This cannot be undone.</li>
+  </ul>
+  <p>To remove everything, uninstall RecallOS. Without a backup, this cannot be undone.</p>
+</section>
+
+<section id="privacy">
+  <h2>Privacy and the lock</h2>
+  <ul>
+    <li><strong>On this phone only.</strong> RecallOS has no permission to use the internet, and tells Android not to back it up.</li>
+    <li><strong>Encrypted.</strong> Names, numbers, notes and photographs are scrambled on this phone with keys only this phone holds.</li>
+    <li><strong>Lock the wallet.</strong> In Settings, turn this on to ask for your fingerprint or PIN when the app opens. If your phone has no screen lock yet, the row takes you to where you can set one.</li>
+    <li><strong>Lock after.</strong> <em>Immediately</em>, <em>After a minute</em>, <em>After 5 minutes</em> or <em>After 15 minutes</em>. <em>Immediately</em> also locks each time you scan or make a call.</li>
+    <li><strong>Lock now.</strong> Closes the wallet without waiting.</li>
+  </ul>
+  <p>Anything you share to another app is up to that app. Backups are encrypted. <em>Take a copy</em> and shared photographs are not.</p>
+</section>
+
+<section id="backup">
+  <h2>Backup and moving to a new phone</h2>
+  <div class="with-shots">
+    <div>
+      <p><strong>Your wallet exists only on this phone.</strong> If you uninstall the app or lose the phone without a backup, it is gone. Google cannot restore it for you.</p>
+      <h3>Back up the wallet</h3>
+      <ol>
+        <li>In Settings, tap <em>Back up the wallet</em>.</li>
+        <li>Choose a passphrase of at least 10 characters. A short sentence is easiest. <strong>Nobody can reset it.</strong> Write it down somewhere safe.</li>
+        <li>Save the file somewhere that is not this phone, such as your email, Google Drive or a computer.</li>
+      </ol>
+      <h3>Restore on a new phone</h3>
+      <ol>
+        <li>Install RecallOS, then in Settings tap <em>Restore from a backup</em>.</li>
+        <li>Pick the file and type the passphrase.</li>
+        <li>You see what the backup holds before anything changes. Confirm, and the app restarts to finish.</li>
+      </ol>
+      <p>Restoring replaces everything on that phone. It does not merge.</p>
+      <h3>Take a copy</h3>
+      <p><em>Take a copy</em> makes a readable archive for other apps, with your contacts, notes and photographs. It is not encrypted and cannot be restored, so keep it private and use a backup for safekeeping.</p>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/43-backup-passphrase.jpg" alt="A sheet asking you to choose a passphrase for the backup."><figcaption>Choosing a passphrase.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="all-settings">
+  <h2>All the settings</h2>
+  <div class="with-shots">
+    <div>
+      <div class="table"><table>
+        <tr><th>Row</th><th>What it does</th></tr>
+        <tr><td><em>Your card</em></td><td><a href="#mycard">Your own card</a> and QR code.</td></tr>
+        <tr><td><em>RecallOS Plus</em></td><td>What it adds, buying, and restoring.</td></tr>
+        <tr><td><em>Recently deleted</em></td><td>Deleted items, kept for 30 days.</td></tr>
+        <tr><td><em>Duplicates to review</em></td><td>Pairs that may be the same.</td></tr>
+        <tr><td><em>Needs attention</em></td><td>Cards that did not read cleanly.</td></tr>
+        <tr><td><em>Lock the wallet</em></td><td>Fingerprint or PIN to open.</td></tr>
+        <tr><td><em>Your wallet is encrypted</em></td><td>Says whether the wallet opened encrypted.</td></tr>
+        <tr><td><em>On this phone only</em></td><td>Says that nothing is uploaded.</td></tr>
+        <tr><td><em>Back up the wallet</em></td><td>One encrypted file to keep off the phone.</td></tr>
+        <tr><td><em>Restore from a backup</em></td><td>Replaces the wallet with a backup.</td></tr>
+        <tr><td><em>Take a copy</em></td><td>A readable archive for other apps.</td></tr>
+        <tr><td><em>Appearance</em></td><td><em>Follow system</em>, <em>Always light</em> or <em>Always dark</em>.</td></tr>
+        <tr><td><em>Version</em></td><td>Tap to copy it, for a bug report.</td></tr>
+        <tr><td><em>Help</em></td><td>Short answers, in your browser.</td></tr>
+        <tr><td><em>Send feedback</em></td><td>Opens your email with the version filled in.</td></tr>
+        <tr><td><em>Privacy policy</em></td><td>What RecallOS keeps and never sends.</td></tr>
+        <tr><td><em>Licences</em></td><td>The fonts, search model and libraries used.</td></tr>
+      </table></div>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/40-settings-top.jpg" alt="The top of the Settings screen."><figcaption>Settings.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="plus">
+  <h2>RecallOS Plus</h2>
+  <div class="with-shots">
+    <div>
+      <p>One payment, with no subscription and no account. It is bought through Google Play at Play's own price for your country.</p>
+      <div class="table"><table>
+        <tr><th>Free</th><th>Plus adds</th></tr>
+        <tr><td>Scanning, reading and correcting</td><td>No limit on reminders (free keeps five waiting)</td></tr>
+        <tr><td>Search, notes and next steps</td><td>Event Mode</td></tr>
+        <tr><td>Receipts, warranties and this month's total</td><td>Receipt totals for any month, by shop and category</td></tr>
+        <tr><td>When a warranty ends, and its reminder</td><td>Finding people by when you met</td></tr>
+        <tr><td>Say hello and your QR code</td><td>Asking about dates and totals</td></tr>
+        <tr><td>Backup, restore and the lock</td><td></td></tr>
+      </table></div>
+      <ul>
+        <li><strong>New phone:</strong> sign in to the Play Store with the same Google account and Plus comes back by itself. If it does not, open Plus and tap <em>Already bought it? Restore</em>.</li>
+        <li><strong>Refunds</strong> go through Google Play. If Plus is refunded, the app returns to the free features and nothing in your wallet is deleted.</li>
+      </ul>
+    </div>
+    <div class="shots">
+      <figure><img loading="lazy" src="manual/47-plus.jpg" alt="The RecallOS Plus screen listing what it adds."><figcaption>What Plus adds.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <h2>The demo set</h2>
+  <p>The app on the demonstration phone holds a set of made-up records, one for each feature. The people, shops and serial numbers are invented, phone numbers are placeholders, and email addresses use the reserved <code>.example</code> domain.</p>
+  <p>Every demo record's note starts with <em>Demo:</em>, so searching for <em>demo</em> finds them. To clear one, open it and tap the bin. It goes to <em>Recently deleted</em> and disappears after 30 days.</p>
+  <div class="table"><table>
+    <tr><th>Feature</th><th>Record</th><th>What to look at</th></tr>
+    <tr><td>Business card</td><td>Padma Print House, Arif Hossain</td><td>Search <em>cheap t-shirt print</em>. A next step with no reminder.</td></tr>
+    <tr><td>Reminder, where you met</td><td>Kingfisher Esports Ltd, Nadia Islam</td><td>Step due Fri 13 Nov with a 9 AM reminder. Met at Demo Expo. Ask <em>Who was interested in sponsorship?</em></td></tr>
+    <tr><td>Two-sided card</td><td>Shapla Catering Service, Sumaiya Akter</td><td><em>Front</em> and <em>Back</em> on the card.</td></tr>
+    <tr><td>Duplicates</td><td>Md. Karim Rahman, twice</td><td>Different numbers, so RecallOS asks. Settings, <em>Duplicates to review</em>.</td></tr>
+    <tr><td>Needs attention</td><td>Unread card</td><td>Nothing could be read. Search <em>nothing could read</em>.</td></tr>
+    <tr><td>Receipt</td><td>Anondo Super Shop, BDT 432.60</td><td>Date and total confirmed, so it is counted.</td></tr>
+    <tr><td>Second copy</td><td>Anondo Super Shop again</td><td>Receipt totals asks <em>Is this a second copy?</em></td></tr>
+    <tr><td>Utility bill</td><td>Metro Power Company, BDT 1,245.00</td><td>Counted.</td></tr>
+    <tr><td>Unchecked bill</td><td>Kacchi Corner Restaurant, BDT 1,850.00</td><td>Listed under <em>Not added yet</em>.</td></tr>
+    <tr><td>Other currency</td><td>Harbor Books, USD 24.50</td><td>Tap <em>USD</em> in Receipt totals.</td></tr>
+    <tr><td>Refund</td><td>Jamuna Tech Mart, -BDT 400.00</td><td>Marked <em>Refund</em>, and comes off the figure.</td></tr>
+    <tr><td>Typed record</td><td>Bazaar Online Shop, BDT 1,299.00</td><td>No photograph, and everything typed.</td></tr>
+    <tr><td>Linked warranty</td><td>Nimbus Laptop, with Jamuna Tech Mart's BDT 85,000.00 receipt</td><td>Covered until 1 Nov 2028, calculated. Ask <em>When does my laptop warranty expire?</em></td></tr>
+    <tr><td>Printed warranty</td><td>Frostline Refrigerator</td><td>Covered until 15 Jan 2027, printed. Reminder on 16 Dec.</td></tr>
+  </table></div>
+  <p>The figure in Receipt totals is BDT 87,576.60 for November 2026: 432.60 + 1,245.00 − 400.00 + 85,000.00 + 1,299.00.</p>
+  <p>The source papers are in the phone's <em>Download/RecallOS-demo</em> folder, for trying <em>From a file</em> again. The demo reminders are real, so that phone will show notifications on those dates unless the records are deleted.</p>
+</section>
+
+<section id="limits">
+  <h2>What RecallOS does not do</h2>
+  <ul>
+    <li><strong>Coupons, tickets, memberships, insurance or ID documents.</strong> It saves business cards, receipts or bills, and warranties.</li>
+    <li><strong>Long documents.</strong> A record has a front and a back. Only the first page of a PDF is kept.</li>
+    <li><strong>Bangla text.</strong> The phone's text reader reads English letters and numbers, so a name printed only in Bangla is usually not read. Write it in the note or type it in, and search will find both.</li>
+    <li><strong>Sync.</strong> Nothing moves between phones by itself. Use a backup.</li>
+    <li><strong>Sending for you.</strong> RecallOS prepares a message and opens your own app. You send it.</li>
+    <li><strong>All your spending.</strong> Totals cover only the receipts you saved and checked.</li>
+    <li><strong>Claims.</strong> It records what a warranty says, and cannot promise a shop will honour it.</li>
+  </ul>
+</section>
+
+<section id="trouble">
+  <h2>If something goes wrong</h2>
+  <div class="table"><table>
+    <tr><th>What you see</th><th>What to do</th></tr>
+    <tr><td>A value is wrong</td><td>Tap it and <a href="#correcting">correct it</a>.</td></tr>
+    <tr><td>A receipt is not in the total</td><td>Open <em>Receipt totals</em>. It says what to check.</td></tr>
+    <tr><td>A reminder did not arrive</td><td>Check that notifications are on for RecallOS. <em>Today</em> says so when they are off. Some phones stop idle apps, so allow RecallOS to start by itself in your phone's settings. After a restart, reminders return once you unlock the phone.</td></tr>
+    <tr><td>Travelling</td><td>Days and times follow the phone's clock. A 9 AM reminder stays at 9 AM where you are, once you have opened RecallOS there.</td></tr>
+    <tr><td><em>Your phone is out of storage</em></td><td>That item was not saved. Free some space and try again.</td></tr>
+    <tr><td>A file is refused</td><td>The message says why: wrong type, over 25 MB, damaged, or password-protected.</td></tr>
+    <tr><td>Forgot the backup passphrase</td><td>It cannot be recovered, and that backup cannot be opened. Make a new one while you still have the wallet.</td></tr>
+    <tr><td>Plus did not unlock</td><td>Open Plus and tap <em>Already bought it? Restore</em>.</td></tr>
+  </table></div>
+  <p>Still stuck? In Settings, tap <em>Send feedback</em>. It opens your email with the app's version filled in, and you see it all before it is sent. Short answers are also in <a href="https://arafatulhasansadoy.github.io/recallos/help.html">Help</a>.</p>
+</section>
+
+<footer>
+  <p>RecallOS is an independent project. Questions: arafatsadoy@gmail.com</p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

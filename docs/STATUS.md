@@ -5,7 +5,7 @@ is in `CLAUDE.md`.) The owner starts fresh chats to save tokens, so anything
 decided or built in a chat that is not written here or in `docs/PLAN.md` is
 lost.
 
-Last updated: **10 Nov 2026** (M13: the rest of the readiness list).
+Last updated: **10 Nov 2026** (M14: demo set and user manual).
 
 ## Read in this order
 
@@ -39,9 +39,11 @@ beside the merge):** the readiness handoff audited (`docs/READINESS.md`),
 the "… House" reader fix, Settings → *Licences* and *Help*, `SECURITY.md`,
 and the B3 and B4 exports. **9 Nov (M12 and M13, uncommitted, beside M11):**
 the reminder checks, then everything else a developer could do in
-`docs/READINESS.md`. `flutter analyze` clean, **1,173 tests** pass (2
-skipped). The phone runs `1.0.0 (2) · f9dba7f-m13` (debug-signed release
-build of this working tree, 9 Nov).
+`docs/READINESS.md`. **10 Nov (M14, uncommitted):** a demo set in the
+phone's wallet, `docs/manual.html`, and four faults the demo walk found.
+`flutter analyze` clean, **1,178 tests** pass (2 skipped). The phone runs
+`1.0.0 (2) · 9ad07e2-m14b` (debug-signed release build of this working tree,
+10 Nov); its wallet is the owner's 16 cards plus the 16 demo records.
 
 - **Built and walked on the phone:** F1–F4 (foundation: fixes, encrypted
   backup and restore, photos encrypted at rest), **A1** context and next step,
@@ -123,6 +125,51 @@ build of this working tree, 9 Nov).
 
 **Read this before anything else in a new chat.** Continue from the first
 unticked box below.
+
+### M14 — Demo set and user manual (10 Nov)
+
+The owner asked for a demo set in the app, one for each feature, and a user
+manual for every feature.
+
+- [x] **1. Demo papers.** `demo/make-papers.sh` renders 15 invented papers
+  into `demo/papers/`: placeholder 01700-0000xx numbers, `.example` addresses.
+  Copies are on the phone in `Download/RecallOS-demo` and
+  `Pictures/RecallOS-demo`.
+- [x] **2. Demo set on the phone**, through the app's own flows: 6 cards
+  (one two-sided, a duplicate pair, one unreadable), 7 receipts and bills (a
+  second copy, one left unchecked, one in dollars, a refund), 2 warranties
+  (one linked, calculated; one printed), 1 typed receipt, 2 next steps, 1
+  where-you-met. Every note starts `Demo:`, so searching "demo" finds all 16.
+  Receipt totals: BDT 87,576.60. Real notifications are set for 13 Nov, 16 Dec
+  and 2 Oct 2028 unless the records are deleted. *Your card* was left alone.
+  **Coupons are not a feature** (READINESS §11, deferred), so none was made.
+  The table of what is where is in the manual.
+- [x] **3. Four faults the walk found**, each fixed everywhere with a test:
+  - **Label chips did nothing with the keyboard up.** `_EditorSheet` changed
+    tree shape with the keyboard, so the editor was rebuilt and lost its
+    label and any typed text. Fails on the old code.
+  - **A date typed as a total became money** (BDT 92,026.00, confirmed).
+    `_amount` now refuses dates and words that are not a currency.
+  - **Undo bars never left.** Flutter now keeps any SnackBar with a button
+    until tapped; `persist: false` on every one, guarded in
+    `design_system_test.dart`.
+  - A typed record said *No details read*; it now says *Typed in*.
+- [x] **4. `docs/manual.html`**, linked from `docs/help.html`, with 30
+  screenshots in `docs/manual/`. Taken on a throwaway emulator holding only
+  demo data (deleted afterwards), plus one phone shot of a demo card, so no
+  real card reaches the public repo. Every label checked against the code.
+- [x] **5. *Your card*'s example text was the developer's own** (owner said
+  replace it, 10 Nov). The empty Name, Company and Phone fields showed a real
+  name, company and mobile number to every user. Now *Tasnim Ahmed*, *Rupali
+  Traders* and *01700 000000*; `profile_editor_test.dart` fails if a
+  phone-shaped example is a number someone could own (checked failing on the
+  old hints). Checked in the installed APK's `libapp.so`: the old strings are
+  gone, the new ones present. The owner's own card is filled in, so the
+  hints themselves were not seen on the phone. Tests and the app's support
+  email and links still carry the owner's details on purpose; the tests'
+  copies are not shown to anyone.
+- **Not walked:** Event Mode and the Plus answers (no purchase made); sending
+  through *Say hello* (the sheet was opened, nothing sent).
 
 ### M13 — The rest of the readiness list (9 Nov)
 
@@ -1858,3 +1905,10 @@ One short entry per chat, newest last. The details live in `docs/PLAN.md`.
     the wallet list.
   - 1,173 tests pass. The final build is on the phone and the new add flows
     were walked there on 10 Nov; wallet back at 16 cards. Nothing committed.
+- **10 Nov** (M14, same chat): demo set on the phone (16 records, all noted
+  `Demo:`) and `docs/manual.html`. The demo walk found and fixed four faults
+  (label chips with the keyboard up, dates accepted as totals, Undo bars that
+  never left, a wrong label on typed records). 1,177 tests pass. Phone on
+  `f9dba7f-m14`. Nothing committed. Then, on the owner's yes, *Your card*'s
+  example name, company and number replaced with invented ones (1,178 tests;
+  phone on `9ad07e2-m14b`).

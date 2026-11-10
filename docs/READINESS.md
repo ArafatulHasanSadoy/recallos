@@ -321,6 +321,7 @@ and a question set. Nothing in this repository claims a measured accuracy.
 | Release checklist and build evidence | DONE | `docs/RELEASE.md` |
 | Licence inventory | CODE READY (8 Nov) | the *Licences* screen; this file §16 |
 | Architecture and ER diagrams, threat model, data-flow diagram | DONE (9 Nov) | `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md` |
+| User manual for every feature | DONE (10 Nov) | `docs/manual.html`, with screenshots; the demo set it refers to is on the phone (STATUS M14) |
 | Evaluation method and results | CODE READY → EXTERNAL | harnesses; results need data |
 
 ## Next work packages, in order
